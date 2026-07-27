@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kordloom.com/loomseal/schema/0.1/loomseal-bundle.schema.json",
+  "title": "LoomSeal bundle",
+  "description": "A portable, offline-verifiable attestation bundle. See loomseal-format-spec.md.",
+  "type": "object",
+  "required": ["loomseal", "bundle_id", "created_at", "producer", "subject", "claims", "signatures"],
+  "additionalProperties": false,
+  "properties": {
+    "loomseal": { "const": "0.1" },
+    "bundle_id": { "type": "string", "minLength": 1 },
+    "created_at": { "$ref": "#/$defs/time" },
+    "producer": { "$ref": "#/$defs/producer" },
+    "subject": { "$ref": "#/$defs/subject" },
+    "chain": { "$ref": "#/$defs/chain" },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/claim" }
+    },
+    "anchors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/anchor" }
+    },
+    "signatures": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/signature" }
+    }
+  },
+  "$defs": {
+    "time": { "type": "string", "format": "date-time" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "link": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "producer": {
+      "type": "object",
+      "required": ["product", "product_version", "install_id", "public_key", "key_id"],
+      "additionalProperties": false,
+      "properties": {
+        "product": { "type": "string", "minLength": 1 },
+        "product_version": { "type": "string", "minLength": 1 },
+        "install_id": { "type": "string", "minLength": 1 },
+        "public_key": { "type": "string", "contentEncoding": "base64" },
+        "key_id": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["url", "fleet", "repo"] },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "chain": {
+      "type": "object",
+      "required": ["profile", "keyed", "head"],
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "enum": ["dormouse-audit-chain-v2", "switchtender-audit-v1", "loomseal-chain-v1"]
+        },
+        "keyed": { "type": "boolean" },
+        "params": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "head": { "$ref": "#/$defs/coords" }
+      }
+    },
+    "coords": {
+      "type": "object",
+      "required": ["seq", "link"],
+      "additionalProperties": false,
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "prev": {
+          "anyOf": [{ "$ref": "#/$defs/link" }, { "const": "" }]
+        },
+        "link": { "$ref": "#/$defs/link" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "required": ["type", "at", "payload"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_-]*/[0-9]+$" },
+        "at": { "$ref": "#/$defs/time" },
+        "payload": { "type": "object" },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "verdict": { "$ref": "#/$defs/verdict" },
+        "chain": { "$ref": "#/$defs/coords" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["role", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "#/$defs/digest" },
+        "media_type": { "type": "string" },
+        "present": { "type": "boolean" },
+        "location": { "type": "string" }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "required": ["policy", "decision"],
+      "additionalProperties": false,
+      "properties": {
+        "policy": { "type": "string", "minLength": 1 },
+        "policy_digest": { "$ref": "#/$defs/digest" },
+        "inputs_digest": { "$ref": "#/$defs/digest" },
+        "decision": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string" }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "required": ["type", "seq", "link", "at", "ref"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["rfc3161", "git", "https", "rekor"] },
+        "seq": { "type": "integer", "minimum": 1 },
+        "link": { "$ref": "#/$defs/link" },
+        "at": { "$ref": "#/$defs/time" },
+        "ref": { "type": "string", "minLength": 1 },
+        "proof": { "type": "string", "contentEncoding": "base64" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "required": ["key_id", "alg", "sig"],
+      "additionalProperties": false,
+      "properties": {
+        "key_id": { "$ref": "#/$defs/digest" },
+        "alg": { "const": "ed25519" },
+        "sig": { "type": "string", "contentEncoding": "base64" }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+.idea
+loomseal
+*.exe
+*.test
+*.out
+dist/

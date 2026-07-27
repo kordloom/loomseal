@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoomSeal</title>
+<meta name="description" content="Proof, not promises. One file. Verified by anyone.">
+<link rel="canonical" href="https://loomseal.com">
+<link rel="icon" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://loomseal.com">
+<meta property="og:title" content="LoomSeal">
+<meta property="og:description" content="Proof, not promises. One file. Verified by anyone.">
+<meta property="og:image" content="https://loomseal.com/loomseal-og.png">
+<style>
+  :root {
+    --field: #f8f6f0;
+    --ink: #141312;
+    --muted: #57534c;
+    --rule: #e3ded2;
+    --code-bg: #efece2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --field: #121110;
+      --ink: #ece8dc;
+      --muted: #a49e92;
+      --rule: #2b2925;
+      --code-bg: #1c1a17;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--field);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 3.5rem 1.4rem 2rem; }
+  .banner { display: block; width: 100%; max-width: 560px; margin: 0 auto 2.2rem; }
+  .banner img { width: 100%; height: auto; display: block; }
+  h1 { font-size: 1.9rem; letter-spacing: 0.01em; margin-bottom: 0.4rem; }
+  .creed {
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: 1.25rem;
+    color: var(--ink);
+    margin-bottom: 0.3rem;
+  }
+  .line { color: var(--muted); margin-bottom: 2rem; }
+  p { margin-bottom: 1rem; }
+  .muted { color: var(--muted); }
+  h2 {
+    font-size: 0.82rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 2.6rem 0 0.9rem;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 0.9rem 1.1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    margin-bottom: 1rem;
+  }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  ul { margin: 0 0 1rem 1.2rem; }
+  li { margin-bottom: 0.55rem; }
+  a { color: inherit; text-decoration-color: var(--muted); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--ink); }
+  .links { display: flex; flex-wrap: wrap; gap: 0.6rem 1.6rem; margin: 1.4rem 0 0; }
+  .links a { font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--rule); }
+  .links a:hover { border-color: var(--ink); }
+  footer {
+    border-top: 1px solid var(--rule);
+    margin-top: 3rem;
+    padding: 1.4rem 0 0.6rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    justify-content: space-between;
+  }
+  footer a { text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <picture class="banner">
+    <source media="(prefers-color-scheme: dark)" srcset="/loomseal-banner-dark.png">
+    <img src="/loomseal-banner.png" alt="LoomSeal woven LS mark">
+  </picture>
+
+  <h1>LoomSeal</h1>
+  <p class="creed">Proof, not promises.</p>
+  <p class="line">The KordLoom proof format. One file. Verified by anyone.</p>
+
+  <p>Anyone can generate a convincing screenshot now. A log can be edited, a dashboard can
+  lie, and a compliance PDF can be written five minutes before the meeting. When every
+  artifact is cheap to fabricate, the only evidence worth sending is evidence a stranger can
+  check without trusting the sender.</p>
+
+  <p>That is what a LoomSeal bundle is: one signed, chained, anchored file. When a KordLoom
+  product says proved, this is the receipt. Verification runs offline, with no account, no
+  server, and no trust in KordLoom or the operator who sent it.</p>
+
+  <h2>Verify one right now</h2>
+  <pre><code>go install github.com/kordloom/loomseal@latest
+git clone https://github.com/kordloom/loomseal
+cd loomseal
+loomseal verify examples/audit.loomseal.json --evidence examples/evidence</code></pre>
+  <pre><code>bundle     lsb_example_0001 from loomseal-demo 0.1.0
+subject    fleet demo-yard
+signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
+chain      loomseal-chain-v1, full, 2 claims, head matched true
+anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
+evidence   1 verified, 0 missing, 0 referenced only
+VERIFIED   signed, chained (full), anchored by reference</code></pre>
+
+  <h2>What a verified bundle means</h2>
+  <ul>
+    <li>The producer holding the signing key assembled these exact claims. Flip one byte and
+    the signature fails, loudly, with the break named.</li>
+    <li>The claims sit in an append-only chain that has not been reordered, rewritten, or
+    trimmed since its heads were anchored outside the producer's reach. Anchored history
+    cannot be manufactured after the fact. Whoever has been recording, wins.</li>
+    <li>Every artifact you were handed matches its recorded digest exactly: the page as it
+    stood, the run as it happened, the approval as it was given.</li>
+  </ul>
+  <p class="muted">And the boundary, stated plainly: a chain fixes the record, not the
+  character of the recorder. The conformance wording is exactly three words: signed,
+  chained, anchored. No other adjectives, on purpose.</p>
+
+  <div class="links">
+    <a href="https://github.com/kordloom/loomseal">GitHub</a>
+    <a href="https://github.com/kordloom/loomseal/blob/main/FORMAT.md">The spec</a>
+    <a href="https://github.com/kordloom/loomseal/blob/main/docs/FAQ.md">FAQ</a>
+  </div>
+
+  <footer>
+    <span>&copy; 2026 KordLoom LLC</span>
+    <a href="https://kordloom.com">A KordLoom format &middot; kordloom.com</a>
+  </footer>
+</main>
+</body>
+</html>

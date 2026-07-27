@@ -1,0 +1,11 @@
+{
+  // Serves loomseal.com. The worker predates the site and keeps its original name so the
+  // custom domains stay attached; rename in the dashboard requires re-attaching them.
+  "name": "loomseal-redirect",
+  "compatibility_date": "2026-07-01",
+  "assets": { "directory": "./public" },
+  "routes": [
+    { "pattern": "loomseal.com", "custom_domain": true },
+    { "pattern": "www.loomseal.com", "custom_domain": true }
+  ]
+}

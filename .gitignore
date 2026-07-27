@@ -5,3 +5,4 @@ loomseal
 *.out
 dist/
 .DS_Store
+.wrangler/

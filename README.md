@@ -7,16 +7,16 @@
 
 # LoomSeal
 
-**The KordLoom proof format, and the free verifier anyone can run.**
+**Proof, not promises.**
 
 KordLoom products record what they did in keyed, append-only hash chains. LoomSeal is how that
 proof travels: one JSON bundle carrying claims, evidence digests, chain coordinates, external
 anchors, and an ed25519 producer signature. The `loomseal` verifier checks a bundle offline,
 without an account, without a server, and without trusting KordLoom.
 
-- SwitchTender proves what you run and exports LoomSeal.
-- Dormouse proves what you watch and exports LoomSeal.
-- Anyone on earth verifies the file for free.
+- SwitchTender proves what you run.
+- Dormouse proves what you watch.
+- LoomSeal is the format their proof speaks, and anyone on earth verifies it for free.
 
 One binary. One file. Provable.
 
@@ -33,17 +33,17 @@ verification decision is in this repository.
 
 ## Verify a bundle
 
-    loomseal verify evidence.loomseal.json
+    loomseal verify examples/audit.loomseal.json --evidence examples/evidence
 
-Typical output:
+The output, reproducible from this repository right now:
 
-    bundle     lsb_9c41d0a2b7e3 from dormouse 0.4.0
-    subject    url https://vendor.example.com/legal/subprocessors
-    signature  ok, key sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
-    chain      dormouse-audit-chain-v2, structural, 3 claims, head matched true
-    anchors    1 matched by coordinates, 1 proofs carried, not validated in this version
+    bundle     lsb_example_0001 from loomseal-demo 0.1.0
+    subject    fleet demo-yard
+    signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
+    chain      loomseal-chain-v1, full, 2 claims, head matched true
+    anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
     evidence   1 verified, 0 missing, 0 referenced only
-    VERIFIED   signed, chained (structural), anchored by reference
+    VERIFIED   signed, chained (full), anchored by reference
 
 Flags: `--evidence <dir>` checks artifact digests against files you were given,
 `--fingerprint sha256:<hex>` pins the producer key to the fingerprint published on the
@@ -93,6 +93,13 @@ Producers use the [seal](seal) package to sign bundles and compute generic chain
 The format document is [FORMAT.md](FORMAT.md); the schema is
 [schema/loomseal-bundle.schema.json](schema/loomseal-bundle.schema.json). New claim types enter
 through the registry in the spec.
+
+## Status
+
+Format v0.1 draft. The format, the schema, the verifier, and the seal package are complete,
+tested, and exercised by the example bundle in this repository. The SwitchTender and Dormouse
+exporters that emit LoomSeal from live systems ship with their next releases; until then, the
+example bundle and the seal package are the reference producers.
 
 ## License
 

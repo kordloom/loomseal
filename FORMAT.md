@@ -10,7 +10,7 @@ an append-only history, the external anchors that fix that history in time, and 
 the producer. A third party verifies a bundle offline with an open verifier, without trusting
 KordLoom and without contacting KordLoom.
 
-KordLoom products emit it, one verifier checks it:
+KordLoom products speak it, one verifier checks it:
 
 - SwitchTender proves what you run.
 - Dormouse proves what you watch.

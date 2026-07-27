@@ -52,15 +52,32 @@ codes: 0 verified, 1 verification failed, 2 usage or read error.
 
 ## What verification proves
 
-A verified bundle proves the producer holding the signing key assembled these claims, that the
-claims sit in an append-only order that has not been rewritten since the anchored moments, and
-that any artifacts you supplied match their recorded digests.
+Anyone can generate a convincing screenshot now. A log can be edited, a dashboard can lie, and
+a compliance PDF can be written five minutes before the meeting. When every artifact is cheap
+to fabricate, the only evidence worth sending is evidence a stranger can check without
+trusting the sender. That is what a bundle is.
 
-It does not prove the producer observed the world honestly at capture time: a chain fixes the
-record, not the honesty of the recorder. Keyed chains verify structurally here and fully for
-the key holder. Anchor proofs are carried but not yet validated by this version; confirm anchor
-refs out of band. The full claim discipline is in [FORMAT.md](FORMAT.md), which is the
-specification, and the conformance wording is exactly three words: signed, chained, anchored.
+Run `loomseal verify` on one file and, seconds later, offline, with no account and no trust in
+KordLoom or the operator who sent it, you know three things:
+
+- The producer holding the signing key assembled these exact claims. Flip one byte anywhere in
+  the bundle and the signature fails, loudly, with the break named.
+- The claims sit in an append-only chain that has not been reordered, rewritten, or trimmed
+  since its heads were anchored outside the producer's reach. Anchored history cannot be
+  manufactured after the fact, at any price, by anyone. Whoever has been recording, wins.
+- Every artifact you were handed matches its recorded digest exactly: the page as it stood,
+  the run as it happened, the approval as it was given.
+
+Send that file to an auditor, a security reviewer, a customer, a regulator, or another
+machine. None of them has to believe a word you say. That is the point.
+
+And because proof that overclaims is just marketing, the verifier states its boundary plainly:
+it cannot prove the recorder observed the world honestly at capture time. A chain fixes the
+record, not the character of the recorder. Keyed chains verify structurally here and fully for
+the key holder, and anchor proofs are carried but not yet validated by this version, so
+confirm anchor refs out of band. The full discipline is in [FORMAT.md](FORMAT.md), which is
+the specification, and the conformance wording is exactly three words: signed, chained,
+anchored. No other adjectives, on purpose.
 
 ## Emit the format
 

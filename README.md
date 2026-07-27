@@ -79,6 +79,9 @@ confirm anchor refs out of band. The full discipline is in [FORMAT.md](FORMAT.md
 the specification, and the conformance wording is exactly three words: signed, chained,
 anchored. No other adjectives, on purpose.
 
+Why it exists, what it is worth, the cryptography, quantum computers, and what happens if
+KordLoom disappears: [docs/FAQ.md](docs/FAQ.md).
+
 ## Emit the format
 
 Producers use the [seal](seal) package to sign bundles and compute generic chain links:

@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/loomseal-mark.png" alt="LoomSeal woven LS mark" width="240">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/loomseal-banner-dark.png">
+    <img src="assets/loomseal-banner.png" alt="LoomSeal woven LS mark" width="820">
+  </picture>
 </p>
 
 # LoomSeal

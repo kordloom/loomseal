@@ -16,139 +16,529 @@
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
 <style>
   :root {
-    --field: #f8f6f0;
-    --ink: #141312;
-    --muted: #57534c;
-    --rule: #e3ded2;
-    --code-bg: #efece2;
+    --paper: #f8f2e4;
+    --ink: #111111;
+    --body-c: #555550;
+    --deep: #33332f;
+    --faint: #96917f;
+    --meta-c: #c2bca9;
+    --rule-c: #e7e0cd;
+    --border: #e2dbc7;
+    --grid: rgba(17, 17, 17, 0.055);
+    --glow: rgba(255, 253, 244, 0.85);
+    --panel: #fffdf6;
+    --hover: #f3ecdb;
+    --code-bg: #f1ead7;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --field: #121110;
+      --paper: #0d0c0b;
       --ink: #ece8dc;
-      --muted: #a49e92;
-      --rule: #2b2925;
-      --code-bg: #1c1a17;
+      --body-c: #aaa496;
+      --deep: #cfc9ba;
+      --faint: #7d786c;
+      --meta-c: #4a463e;
+      --rule-c: #26231f;
+      --border: #2b2823;
+      --grid: rgba(236, 232, 220, 0.05);
+      --glow: rgba(236, 232, 220, 0.045);
+      --panel: #161412;
+      --hover: #211e1a;
+      --code-bg: #171512;
     }
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  html { scroll-behavior: smooth; }
   body {
-    background: var(--field);
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse 64% 50% at 50% 46%, var(--glow) 20%, rgba(255,255,255,0) 100%),
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+    background-position: center center;
+    background-attachment: fixed;
     color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100%;
+    padding: 2rem 1.5rem;
   }
-  main { max-width: 720px; margin: 0 auto; padding: 3.5rem 1.4rem 2rem; }
-  .banner { display: block; width: 100%; max-width: 560px; margin: 0 auto 2.2rem; }
-  .banner img { width: 100%; height: auto; display: block; }
-  h1 { font-size: 1.9rem; letter-spacing: 0.01em; margin-bottom: 0.4rem; }
-  .creed {
-    font-family: Georgia, "Times New Roman", serif;
-    font-style: italic;
-    font-size: 1.25rem;
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    width: 100%;
+    max-width: 34rem;
+    min-height: calc(100dvh - 5rem);
+  }
+  .mark {
+    width: clamp(130px, 24vw, 170px);
+    height: auto;
+    margin-bottom: 2.25rem;
+  }
+  h1 {
+    font-size: clamp(1.75rem, 5vw, 2.35rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
     color: var(--ink);
-    margin-bottom: 0.3rem;
   }
-  .line { color: var(--muted); margin-bottom: 2rem; }
-  p { margin-bottom: 1rem; }
-  .muted { color: var(--muted); }
-  h2 {
-    font-size: 0.82rem;
-    letter-spacing: 0.14em;
+  .rule { width: 40px; height: 1px; background: var(--rule-c); margin: 1rem 0; }
+  .lead {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: clamp(0.95rem, 3.2vw, 1.32rem);
+    line-height: 1.5;
+    color: var(--deep);
+    white-space: nowrap;
+  }
+  .sub {
+    margin-top: 0.9rem;
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-size: clamp(0.85rem, 2.2vw, 0.95rem);
+    line-height: 1.6;
+    color: var(--faint);
+    max-width: 46ch;
+    text-wrap: balance;
+  }
+  .section {
+    width: 100%;
+    max-width: 60rem;
+    padding: 3.75rem 0;
+    border-top: 1px solid var(--rule-c);
+    scroll-margin-top: 2rem;
+  }
+  .eyebrow {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.24em;
     text-transform: uppercase;
-    color: var(--muted);
-    margin: 2.6rem 0 0.9rem;
+    color: var(--faint);
+    text-align: center;
+    margin-bottom: 1.9rem;
+  }
+  .thesis {
+    max-width: 42rem;
+    margin: 0 auto;
+    text-align: center;
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: clamp(1.1rem, 2.6vw, 1.4rem);
+    line-height: 1.45;
+    color: var(--deep);
+    text-wrap: balance;
+  }
+  .prose {
+    max-width: 44rem;
+    margin: 1.9rem auto 0;
+    text-align: left;
+  }
+  .prose p { font-size: 0.95rem; line-height: 1.7; color: var(--body-c); margin-bottom: 1rem; }
+  .prose p:last-child { margin-bottom: 0; }
+  .prose a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
+  .prose a:hover { text-decoration-color: var(--ink); }
+  .prose code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.1em 0.35em;
   }
   pre {
+    max-width: 46rem;
+    margin: 1.4rem auto 0;
+    text-align: left;
     background: var(--code-bg);
-    border: 1px solid var(--rule);
-    border-radius: 10px;
-    padding: 0.9rem 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
     overflow-x: auto;
-    font-size: 0.85rem;
-    line-height: 1.55;
-    margin-bottom: 1rem;
+    font-size: 0.82rem;
+    line-height: 1.6;
   }
-  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-  ul { margin: 0 0 1rem 1.2rem; }
-  li { margin-bottom: 0.55rem; }
-  a { color: inherit; text-decoration-color: var(--muted); text-underline-offset: 3px; }
-  a:hover { text-decoration-color: var(--ink); }
-  .links { display: flex; flex-wrap: wrap; gap: 0.6rem 1.6rem; margin: 1.4rem 0 0; }
-  .links a { font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--rule); }
-  .links a:hover { border-color: var(--ink); }
+  pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--deep); }
+  .note {
+    max-width: 44rem;
+    margin: 1rem auto 0;
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--faint);
+  }
+  .tenets {
+    margin: 2.75rem auto 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    text-align: left;
+  }
+  .tenet { border-top: 2px solid var(--ink); padding-top: 1.1rem; }
+  .tenet-num {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--faint);
+    margin-bottom: 0.9rem;
+  }
+  .tenet-name { font-size: 1.02rem; font-weight: 600; letter-spacing: 0.01em; color: var(--ink); margin-bottom: 0.45rem; }
+  .tenet-text { font-size: 0.92rem; line-height: 1.6; color: var(--body-c); }
+  .spine { margin-top: 3rem; display: flex; flex-direction: column; align-items: center; }
+  .spine-rule { width: 40px; height: 1px; background: var(--rule-c); margin: 0 0 1.1rem; }
+  .spine-line {
+    font-size: clamp(1.05rem, 2.5vw, 1.2rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+  }
   footer {
-    border-top: 1px solid var(--rule);
-    margin-top: 3rem;
-    padding: 1.4rem 0 0.6rem;
-    color: var(--muted);
-    font-size: 0.88rem;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem 1.4rem;
-    justify-content: space-between;
+    width: 100%;
+    max-width: 60rem;
+    text-align: center;
+    padding: 2.75rem 0 1rem;
+    border-top: 1px solid var(--rule-c);
   }
-  footer a { text-decoration: none; }
-  footer a:hover { text-decoration: underline; }
+  .foot-links {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.82rem;
+  }
+  .foot-links a { color: var(--body-c); text-decoration: none; transition: color 0.15s ease; }
+  .foot-links a:hover { color: var(--ink); }
+  .foot-sep { color: var(--meta-c); }
+  .dom { margin-top: 0.9rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--faint); }
+
+  .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  .frame {
+    position: fixed;
+    inset: clamp(12px, 2.2vw, 22px);
+    border: 1px solid var(--rule-c);
+    pointer-events: none;
+    z-index: 2;
+  }
+  .frame .corner { position: absolute; width: 15px; height: 15px; border: 0 solid var(--ink); }
+  .frame .tl { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; }
+  .frame .tr { top: -1px; right: -1px; border-top-width: 2px; border-right-width: 2px; }
+  .frame .bl { bottom: -1px; left: -1px; border-bottom-width: 2px; border-left-width: 2px; }
+  .frame .br { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
+  .frame .meta {
+    position: absolute;
+    font-size: 0.62rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--meta-c);
+    white-space: nowrap;
+  }
+  .frame .m-tl { top: 13px; left: 22px; }
+  .frame .m-tr { top: 13px; right: 22px; }
+  .frame .m-bl { bottom: 13px; left: 22px; }
+  .frame .m-br { bottom: 13px; right: 22px; }
+
+  @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .mark, h1, .rule, .lead, .sub { animation: riseIn 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  .mark { animation-delay: 0.05s; }
+  h1 { animation-delay: 0.28s; }
+  .rule { animation-delay: 0.42s; }
+  .lead { animation-delay: 0.54s; }
+  .sub { animation-delay: 0.68s; }
+  .frame { animation: fadeIn 1.1s ease 0.15s both; }
+
+  .menu { position: fixed; top: clamp(40px, 5vh, 54px); left: clamp(20px, 2.6vw, 38px); z-index: 6; animation: fadeIn 1.05s ease 0.7s both; }
+  .menu > summary {
+    list-style: none; cursor: pointer;
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    width: 40px; height: 40px; padding: 0 9px; border-radius: 8px;
+    transition: background 0.18s ease;
+  }
+  .menu > summary::-webkit-details-marker { display: none; }
+  .menu > summary:hover { background: var(--hover); }
+  .menu > summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .menu > summary span { display: block; height: 1.5px; width: 100%; background: var(--ink); transition: transform 0.24s ease, opacity 0.2s ease; }
+  .menu[open] > summary span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+  .menu[open] > summary span:nth-child(2) { opacity: 0; }
+  .menu[open] > summary span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+  .menu-panel {
+    position: absolute; top: 48px; left: 0; width: 360px; max-width: calc(100vw - 32px); transform-origin: top left;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18); padding: 0.7rem;
+  }
+  .menu[open] .menu-panel { animation: menuIn 0.16s ease both; }
+  @keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
+  .menu-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--faint); padding: 0.75rem 0.7rem 0.5rem; }
+  .menu-item {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 0.9rem;
+    padding: 0.68rem 0.7rem; border-radius: 10px; text-decoration: none; color: var(--ink); font-size: 0.95rem;
+    transition: background 0.15s ease;
+  }
+  .mi-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .m-name { font-weight: 500; }
+  .m-desc { font-size: 0.77rem; line-height: 1.4; font-weight: 400; color: var(--faint); }
+  a.menu-item:hover { background: var(--hover); }
+  .menu-div { height: 1px; background: var(--rule-c); margin: 0.5rem 0.55rem; }
+  .menu-contact .m-name { font-weight: 500; font-size: 0.86rem; color: var(--deep); }
+  .menu-tagline { padding: 0.75rem 0.7rem 0.3rem; font-family: ui-serif, Georgia, "Times New Roman", serif; font-style: italic; font-size: 0.8rem; line-height: 1.5; color: var(--body-c); white-space: nowrap; }
+  .menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.7rem 0.7rem 0.35rem; margin-top: 0.5rem; border-top: 1px solid var(--rule-c); font-size: 0.64rem; letter-spacing: 0.03em; color: var(--faint); }
+  .menu-ext { color: var(--meta-c); font-size: 0.82rem; margin-top: 2px; flex-shrink: 0; }
+  .menu-gh { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--faint); transition: color 0.15s ease; }
+  .menu-gh:hover { color: var(--ink); }
+  .menu-gh svg { display: block; width: 15px; height: 15px; }
+
+  @media (max-width: 640px) {
+    .tenets { grid-template-columns: 1fr; gap: 1.5rem; }
+    .section { padding: 3rem 0; }
+    .frame .meta { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .mark, h1, .rule, .lead, .sub, .frame, .menu { animation: none; }
+    .menu[open] .menu-panel { animation: none; }
+    .menu > summary span { transition: none; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <picture class="banner">
-    <source media="(prefers-color-scheme: dark)" srcset="/loomseal-banner-dark.png">
-    <img src="/loomseal-banner.png" alt="LoomSeal woven LS mark">
-  </picture>
 
-  <h1>LoomSeal</h1>
-  <p class="creed">Proof, not promises.</p>
-  <p class="line">The KordLoom proof format. One file. Verified by anyone.</p>
+  <div class="frame" aria-hidden="true">
+    <span class="corner tl"></span>
+    <span class="corner tr"></span>
+    <span class="corner bl"></span>
+    <span class="corner br"></span>
+    <span class="meta m-tl">No Trust Required</span>
+    <span class="meta m-tr">Est. 2026</span>
+    <span class="meta m-bl">Open Spec</span>
+    <span class="meta m-br">Offline Verified</span>
+  </div>
 
-  <p>Anyone can generate a convincing screenshot now. A log can be edited, a dashboard can
-  lie, and a compliance PDF can be written five minutes before the meeting. When every
-  artifact is cheap to fabricate, the only evidence worth sending is evidence a stranger can
-  check without trusting the sender.</p>
+  <details class="menu" id="menu">
+    <summary class="menu-btn" aria-label="Open menu" title="Menu">
+      <span></span><span></span><span></span>
+    </summary>
+    <nav class="menu-panel" aria-label="LoomSeal menu">
+      <p class="menu-label">LoomSeal</p>
+      <a class="menu-item" href="#about"><span class="m-name">Why it exists</span></a>
+      <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
+      <a class="menu-item" href="#proves"><span class="m-name">What a bundle proves</span></a>
+      <a class="menu-item" href="#producers"><span class="m-name">For producers</span></a>
+      <div class="menu-div"></div>
+      <p class="menu-label">Documentation</p>
+      <a class="menu-item" href="https://github.com/kordloom/loomseal/blob/main/FORMAT.md" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">The spec</span>
+          <span class="m-desc">FORMAT.md, the canonical specification.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="menu-item" href="https://github.com/kordloom/loomseal/blob/main/docs/FAQ.md" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">FAQ</span>
+          <span class="m-desc">Why, value, security, quantum, and the limits.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="menu-item" href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">GitHub</span>
+          <span class="m-desc">Spec, schema, verifier, and example bundle.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-label">KordLoom</p>
+      <a class="menu-item" href="https://kordloom.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">kordloom.com</span>
+          <span class="m-desc">Software that proves itself.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="menu-item" href="https://dormousehq.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">Dormouse</span>
+          <span class="m-desc">Watches every page. Proves every check.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="menu-item" href="https://switchtender.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">SwitchTender</span>
+          <span class="m-desc">Runs every host. Proves every change.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-label">Contact</p>
+      <a class="menu-item menu-contact" href="mailto:hello@kordloom.com">
+        <span class="m-name">hello@kordloom.com</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-tagline">Proof, not promises.</p>
+      <div class="menu-foot">
+        <span>&copy; 2026 KordLoom LLC</span>
+        <a class="menu-gh" href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener" aria-label="LoomSeal on GitHub" title="GitHub">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+    </nav>
+  </details>
 
-  <p>That is what a LoomSeal bundle is: one signed, chained, anchored file. When a KordLoom
-  product says proved, this is the receipt. Verification runs offline, with no account, no
-  server, and no trust in KordLoom or the operator who sent it.</p>
+  <main>
+    <img class="mark" src="/loomseal-512.png" alt="LoomSeal woven LS mark">
+    <h1>LoomSeal</h1>
+    <div class="rule" aria-hidden="true"></div>
+    <p class="lead">Proof, not promises.</p>
+    <p class="sub">One file. Verified by anyone. The KordLoom proof format: signed, chained,
+    anchored bundles that verify offline, free, with no account and no trust in the sender.</p>
+  </main>
 
-  <h2>Verify one right now</h2>
-  <pre><code>go install github.com/kordloom/loomseal@latest
+  <section id="about" class="section reveal" aria-label="Why LoomSeal exists">
+    <p class="eyebrow">Why it exists</p>
+    <p class="thesis">When everything can be fabricated, the only evidence worth sending is
+    evidence a stranger can check.</p>
+    <div class="prose">
+      <p>Anyone can generate a convincing screenshot now. A log can be edited, a dashboard can
+      lie, and a compliance PDF can be written five minutes before the meeting. The old ways of
+      showing your work stopped being evidence the day generating them became free.</p>
+      <p>LoomSeal is the KordLoom answer: when a KordLoom product says proved, this is the
+      receipt. One JSON bundle carries the claims, the digests of the evidence behind them,
+      their position in an append-only hash chain, the external anchors that fix that chain in
+      time, and the producer's signature. A small open verifier checks all of it in seconds,
+      offline. Send the file to an auditor, a security reviewer, a customer, a regulator, or
+      another machine. None of them has to believe a word you say. That is the point.</p>
+    </div>
+  </section>
+
+  <section id="verify" class="section reveal" aria-label="Verify one right now">
+    <p class="eyebrow">Verify one right now</p>
+    <p class="thesis">Sixty seconds from clone to verdict.</p>
+    <pre><code>go install github.com/kordloom/loomseal@latest
 git clone https://github.com/kordloom/loomseal
 cd loomseal
 loomseal verify examples/audit.loomseal.json --evidence examples/evidence</code></pre>
-  <pre><code>bundle     lsb_example_0001 from loomseal-demo 0.1.0
+    <pre><code>bundle     lsb_example_0001 from loomseal-demo 0.1.0
 subject    fleet demo-yard
 signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
 chain      loomseal-chain-v1, full, 2 claims, head matched true
 anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
 evidence   1 verified, 0 missing, 0 referenced only
 VERIFIED   signed, chained (full), anchored by reference</code></pre>
+    <p class="note">Real output, reproducible from the public repository. The verifier is built
+    on the Go standard library alone, so every line that touches a verdict is readable in an
+    afternoon.</p>
+  </section>
 
-  <h2>What a verified bundle means</h2>
-  <ul>
-    <li>The producer holding the signing key assembled these exact claims. Flip one byte and
-    the signature fails, loudly, with the break named.</li>
-    <li>The claims sit in an append-only chain that has not been reordered, rewritten, or
-    trimmed since its heads were anchored outside the producer's reach. Anchored history
-    cannot be manufactured after the fact. Whoever has been recording, wins.</li>
-    <li>Every artifact you were handed matches its recorded digest exactly: the page as it
-    stood, the run as it happened, the approval as it was given.</li>
-  </ul>
-  <p class="muted">And the boundary, stated plainly: a chain fixes the record, not the
-  character of the recorder. The conformance wording is exactly three words: signed,
-  chained, anchored. No other adjectives, on purpose.</p>
+  <section id="proves" class="section reveal" aria-label="What a verified bundle means">
+    <p class="eyebrow">What a verified bundle means</p>
+    <div class="tenets">
+      <div class="tenet">
+        <span class="tenet-num" aria-hidden="true">01</span>
+        <p class="tenet-name">Signed</p>
+        <p class="tenet-text">The producer holding the signing key assembled these exact
+        claims. Flip one byte anywhere and the signature fails, loudly, with the break
+        named.</p>
+      </div>
+      <div class="tenet">
+        <span class="tenet-num" aria-hidden="true">02</span>
+        <p class="tenet-name">Chained</p>
+        <p class="tenet-text">The claims sit in an append-only chain that has not been
+        reordered, rewritten, or trimmed. Anchored history cannot be manufactured after the
+        fact. Whoever has been recording, wins.</p>
+      </div>
+      <div class="tenet">
+        <span class="tenet-num" aria-hidden="true">03</span>
+        <p class="tenet-name">Anchored</p>
+        <p class="tenet-text">Chain heads are fixed in time outside the producer's reach, and
+        every artifact you were handed matches its recorded digest: the page as it stood, the
+        run as it happened.</p>
+      </div>
+    </div>
+    <div class="prose">
+      <p>And the boundary, stated plainly, because proof that overclaims is just marketing: a
+      chain fixes the record, not the character of the recorder. What verification cannot prove
+      is spelled out in the <a href="https://github.com/kordloom/loomseal/blob/main/FORMAT.md">spec</a>
+      right next to what it can.</p>
+    </div>
+    <div class="spine">
+      <div class="rule spine-rule" aria-hidden="true"></div>
+      <p class="spine-line">Signed. Chained. Anchored.</p>
+    </div>
+  </section>
 
-  <div class="links">
-    <a href="https://github.com/kordloom/loomseal">GitHub</a>
-    <a href="https://github.com/kordloom/loomseal/blob/main/FORMAT.md">The spec</a>
-    <a href="https://github.com/kordloom/loomseal/blob/main/docs/FAQ.md">FAQ</a>
-  </div>
+  <section id="producers" class="section reveal" aria-label="For producers">
+    <p class="eyebrow">For producers</p>
+    <p class="thesis">One format across products, one verifier for everyone.</p>
+    <div class="prose">
+      <p>Dormouse and SwitchTender speak LoomSeal, and their exporters ship with their next
+      releases; until then the example bundle and the <code>seal</code> package are the
+      reference producers. If you build software that should prove what it did, import
+      <code>github.com/kordloom/loomseal/seal</code> to sign bundles and compute chain links,
+      follow the bundle shape in the spec, and register your claim types through the registry.
+      The envelope, chain profiles, and verification stay common, so one verifier checks
+      everyone, and the format is Apache-2.0, so adopting it requires no negotiation and no
+      permission.</p>
+    </div>
+  </section>
 
   <footer>
-    <span>&copy; 2026 KordLoom LLC</span>
-    <a href="https://kordloom.com">A KordLoom format &middot; kordloom.com</a>
+    <div class="foot-links">
+      <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">GitHub</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="https://github.com/kordloom/loomseal/blob/main/FORMAT.md" target="_blank" rel="noopener">The spec</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="https://github.com/kordloom/loomseal/blob/main/docs/FAQ.md" target="_blank" rel="noopener">FAQ</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="https://kordloom.com" target="_blank" rel="noopener">kordloom.com</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="mailto:hello@kordloom.com">Contact</a>
+    </div>
+    <div class="dom">&copy; 2026 KordLoom LLC &middot; loomseal.com</div>
   </footer>
-</main>
+
+  <script>
+  (function () {
+    var menu = document.getElementById("menu");
+    if (!menu) return;
+    document.addEventListener("click", function (e) {
+      if (menu.open && !menu.contains(e.target)) menu.open = false;
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && menu.open) { menu.open = false; var s = menu.querySelector("summary"); if (s) s.focus(); }
+    });
+    menu.querySelectorAll("a").forEach(function (a) {
+      a.addEventListener("click", function () { menu.open = false; });
+    });
+  })();
+  (function () {
+    var reveals = document.querySelectorAll(".reveal");
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !("IntersectionObserver" in window)) {
+      reveals.forEach(function (el) { el.classList.add("in"); });
+      return;
+    }
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("in");
+          obs.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.14 });
+    reveals.forEach(function (el) { obs.observe(el); });
+  })();
+  </script>
 </body>
 </html>

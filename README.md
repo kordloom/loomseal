@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/loomseal-mark.png" alt="LoomSeal woven LS mark" width="240">
+</p>
+
 # LoomSeal
 
 **The KordLoom proof format, and the free verifier anyone can run.**

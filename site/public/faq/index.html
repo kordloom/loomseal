@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ &middot; LoomSeal</title>
+<meta name="description" content="LoomSeal, answered: why it exists, what it is worth, the cryptography, quantum computers, and the limits.">
+<link rel="canonical" href="https://loomseal.com/faq">
+<link rel="icon" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://loomseal.com/faq">
+<meta property="og:title" content="LoomSeal FAQ">
+<meta property="og:description" content="Why it exists, what it is worth, the cryptography, quantum computers, and the limits.">
+<meta property="og:image" content="https://loomseal.com/loomseal-og.png">
+<style>
+  :root {
+    --paper: #f8f2e4;
+    --ink: #111111;
+    --body-c: #555550;
+    --deep: #33332f;
+    --faint: #96917f;
+    --meta-c: #c2bca9;
+    --rule-c: #e7e0cd;
+    --border: #e2dbc7;
+    --grid: rgba(17, 17, 17, 0.055);
+    --glow: rgba(255, 253, 244, 0.85);
+    --panel: #fffdf6;
+    --hover: #f3ecdb;
+    --code-bg: #f1ead7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0d0c0b;
+      --ink: #ece8dc;
+      --body-c: #aaa496;
+      --deep: #cfc9ba;
+      --faint: #7d786c;
+      --meta-c: #4a463e;
+      --rule-c: #26231f;
+      --border: #2b2823;
+      --grid: rgba(236, 232, 220, 0.05);
+      --glow: rgba(236, 232, 220, 0.045);
+      --panel: #161412;
+      --hover: #211e1a;
+      --code-bg: #171512;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  html { scroll-behavior: smooth; }
+  body {
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse 64% 50% at 50% 46%, var(--glow) 20%, rgba(255,255,255,0) 100%),
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+    background-position: center center;
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100%;
+    padding: 2rem 1.5rem;
+  }
+  .page-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+    max-width: 34rem;
+    padding: 5.5rem 0 3rem;
+  }
+  .mark-sm { width: 84px; height: auto; margin-bottom: 1.6rem; }
+  h1 { font-size: clamp(1.6rem, 4.5vw, 2.1rem); font-weight: 600; letter-spacing: 0.02em; color: var(--ink); }
+  .rule { width: 40px; height: 1px; background: var(--rule-c); margin: 1rem 0; }
+  .lead {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: clamp(0.95rem, 3vw, 1.2rem);
+    line-height: 1.5;
+    color: var(--deep);
+  }
+  .crumb { margin-top: 1rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--faint); }
+  .crumb a { color: var(--faint); text-decoration: none; }
+  .crumb a:hover { color: var(--ink); }
+  .page-head .mark-sm, .page-head h1, .page-head .rule, .page-head .lead, .page-head .crumb {
+    animation: riseIn 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .page-head h1 { animation-delay: 0.16s; }
+  .page-head .rule { animation-delay: 0.28s; }
+  .page-head .lead { animation-delay: 0.4s; }
+  .page-head .crumb { animation-delay: 0.52s; }
+  .qa-wrap { width: 100%; max-width: 46rem; padding-bottom: 2rem; }
+  .qa {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 0.8rem;
+    overflow: hidden;
+  }
+  .qa summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.05rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.98rem;
+    color: var(--ink);
+    transition: background 0.15s ease;
+  }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary:hover { background: var(--hover); }
+  .qa summary:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .qa-ind {
+    color: var(--faint);
+    font-weight: 400;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+  .qa[open] .qa-ind { transform: rotate(45deg); }
+  .qa-body { padding: 0.1rem 1.25rem 1.15rem; }
+  .qa[open] .qa-body { animation: qaIn 0.25s ease both; }
+  @keyframes qaIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .qa-body p { font-size: 0.92rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.8rem; }
+  .qa-body p:last-child { margin-bottom: 0; }
+  .qa-body a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
+  .qa-body a:hover { text-decoration-color: var(--ink); }
+  .qa-body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.1em 0.35em;
+  }
+  footer {
+    width: 100%;
+    max-width: 60rem;
+    text-align: center;
+    padding: 2.75rem 0 1rem;
+    border-top: 1px solid var(--rule-c);
+    margin-top: 2rem;
+  }
+  .foot-links {
+    display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+    gap: 0.9rem; margin-bottom: 0.4rem; font-size: 0.82rem;
+  }
+  .foot-links a { color: var(--body-c); text-decoration: none; transition: color 0.15s ease; }
+  .foot-links a:hover { color: var(--ink); }
+  .foot-sep { color: var(--meta-c); }
+  .dom { margin-top: 0.9rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--faint); }
+  .frame {
+    position: fixed; inset: clamp(12px, 2.2vw, 22px);
+    border: 1px solid var(--rule-c);
+    pointer-events: none; z-index: 2;
+    animation: fadeIn 1.1s ease 0.15s both;
+  }
+  .frame .corner { position: absolute; width: 15px; height: 15px; border: 0 solid var(--ink); }
+  .frame .tl { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; }
+  .frame .tr { top: -1px; right: -1px; border-top-width: 2px; border-right-width: 2px; }
+  .frame .bl { bottom: -1px; left: -1px; border-bottom-width: 2px; border-left-width: 2px; }
+  .frame .br { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
+  .frame .meta {
+    position: absolute; font-size: 0.62rem; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--meta-c); white-space: nowrap;
+  }
+  .frame .m-tl { top: 13px; left: 22px; }
+  .frame .m-tr { top: 13px; right: 22px; }
+  .frame .m-bl { bottom: 13px; left: 22px; }
+  .frame .m-br { bottom: 13px; right: 22px; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .menu { position: fixed; top: clamp(40px, 5vh, 54px); left: clamp(20px, 2.6vw, 38px); z-index: 6; animation: fadeIn 1.05s ease 0.7s both; }
+  .menu > summary {
+    list-style: none; cursor: pointer;
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    width: 40px; height: 40px; padding: 0 9px; border-radius: 8px;
+    transition: background 0.18s ease;
+  }
+  .menu > summary::-webkit-details-marker { display: none; }
+  .menu > summary:hover { background: var(--hover); }
+  .menu > summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .menu > summary span { display: block; height: 1.5px; width: 100%; background: var(--ink); transition: transform 0.24s ease, opacity 0.2s ease; }
+  .menu[open] > summary span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+  .menu[open] > summary span:nth-child(2) { opacity: 0; }
+  .menu[open] > summary span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+  .menu-panel {
+    position: absolute; top: 48px; left: 0; width: 360px; max-width: calc(100vw - 32px); transform-origin: top left;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18); padding: 0.7rem;
+  }
+  .menu[open] .menu-panel { animation: menuIn 0.16s ease both; }
+  @keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
+  .menu-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--faint); padding: 0.75rem 0.7rem 0.5rem; }
+  .menu-item {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 0.9rem;
+    padding: 0.68rem 0.7rem; border-radius: 10px; text-decoration: none; color: var(--ink); font-size: 0.95rem;
+    transition: background 0.15s ease;
+  }
+  .mi-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .m-name { font-weight: 500; }
+  .m-desc { font-size: 0.77rem; line-height: 1.4; font-weight: 400; color: var(--faint); }
+  a.menu-item:hover { background: var(--hover); }
+  .menu-div { height: 1px; background: var(--rule-c); margin: 0.5rem 0.55rem; }
+  .menu-contact .m-name { font-weight: 500; font-size: 0.86rem; color: var(--deep); }
+  .menu-tagline { padding: 0.75rem 0.7rem 0.3rem; font-family: ui-serif, Georgia, "Times New Roman", serif; font-style: italic; font-size: 0.8rem; line-height: 1.5; color: var(--body-c); white-space: nowrap; }
+  .menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.7rem 0.7rem 0.35rem; margin-top: 0.5rem; border-top: 1px solid var(--rule-c); font-size: 0.64rem; letter-spacing: 0.03em; color: var(--faint); }
+  .menu-ext { color: var(--meta-c); font-size: 0.82rem; margin-top: 2px; flex-shrink: 0; }
+  .menu-gh { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--faint); transition: color 0.15s ease; }
+  .menu-gh:hover { color: var(--ink); }
+  .menu-gh svg { display: block; width: 15px; height: 15px; }
+  @media (max-width: 640px) {
+    .frame .meta { display: none; }
+    .page-head { padding-top: 4.5rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .page-head .mark-sm, .page-head h1, .page-head .rule, .page-head .lead, .page-head .crumb,
+    .frame, .menu { animation: none; }
+    .menu[open] .menu-panel { animation: none; }
+    .qa[open] .qa-body { animation: none; }
+    .menu > summary span { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="frame" aria-hidden="true">
+    <span class="corner tl"></span>
+    <span class="corner tr"></span>
+    <span class="corner bl"></span>
+    <span class="corner br"></span>
+    <span class="meta m-tl">No Trust Required</span>
+    <span class="meta m-tr">Est. 2026</span>
+    <span class="meta m-bl">Open Spec</span>
+    <span class="meta m-br">Offline Verified</span>
+  </div>
+
+  <details class="menu" id="menu">
+    <summary class="menu-btn" aria-label="Open menu" title="Menu">
+      <span></span><span></span><span></span>
+    </summary>
+    <nav class="menu-panel" aria-label="LoomSeal menu">
+      <p class="menu-label">LoomSeal</p>
+      <a class="menu-item" href="/"><span class="m-name">Home</span></a>
+      <a class="menu-item" href="/#verify"><span class="m-name">Verify one right now</span></a>
+      <a class="menu-item" href="/#proves"><span class="m-name">What a bundle proves</span></a>
+      <a class="menu-item" href="/#producers"><span class="m-name">For producers</span></a>
+      <div class="menu-div"></div>
+      <p class="menu-label">Documentation</p>
+      <a class="menu-item" href="/spec">
+        <span class="mi-text">
+          <span class="m-name">The spec</span>
+          <span class="m-desc">The format, typeset and readable.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/faq">
+        <span class="mi-text">
+          <span class="m-name">FAQ</span>
+          <span class="m-desc">Why, value, security, quantum, and the limits.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">GitHub</span>
+          <span class="m-desc">Source of truth: spec, schema, verifier, example.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-label">KordLoom</p>
+      <a class="menu-item" href="https://kordloom.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">kordloom.com</span>
+          <span class="m-desc">Software that proves itself.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="menu-item" href="https://dormousehq.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">Dormouse</span>
+          <span class="m-desc">Watches every page. Proves every check.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="menu-item" href="https://switchtender.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">SwitchTender</span>
+          <span class="m-desc">Runs every host. Proves every change.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-label">Contact</p>
+      <a class="menu-item menu-contact" href="mailto:hello@kordloom.com">
+        <span class="m-name">hello@kordloom.com</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-tagline">Proof, not promises.</p>
+      <div class="menu-foot">
+        <span>&copy; 2026 KordLoom LLC</span>
+        <a class="menu-gh" href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener" aria-label="LoomSeal on GitHub" title="GitHub">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+    </nav>
+  </details>
+
+  <div class="page-head">
+    <img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark">
+    <h1>Questions, answered</h1>
+    <div class="rule" aria-hidden="true"></div>
+    <p class="lead">Short answers to the ones that matter.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; FAQ</p>
+  </div>
+
+  <div class="qa-wrap">
+
+    <details class="qa">
+      <summary>Why does LoomSeal exist?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Because generating convincing artifacts became free. Screenshots, logs, dashboards,
+        and compliance documents can all be produced or edited in seconds, which means none of
+        them are evidence anymore. When anything can be fabricated, the scarce and valuable
+        thing is a claim a stranger can check.</p>
+        <p>LoomSeal is the format for such claims: one file that carries what happened, the
+        digests of the evidence behind it, its position in an append-only chain, the external
+        anchors that fix that chain in time, and a signature. The verifier checks all of it
+        offline, with no account and no trust in the producer or in KordLoom.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What is the value if I operate a system?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>You stop asking people to believe you. When an auditor, a security reviewer, a
+        customer, or a regulator asks how you know your controls ran, you send a file they can
+        verify in seconds instead of a deck they have to take on faith.</p>
+        <p>And because chained history cannot be created retroactively, every quiet month you
+        record is evidence a competitor who starts later can never manufacture. The record
+        compounds.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What is the value if I am the one reviewing?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>You verify instead of trusting. No vendor portal, no screenshots, no phone calls to
+        confirm a PDF. One command, offline, and the math either holds or it does not. If the
+        bundle was altered, verification fails loudly and names the break.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>Why should I trust the verifier?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>You should not have to, which is the design. The verifier is small, Apache-2.0, and
+        built on the Go standard library alone, so every line that touches a verification
+        decision is in the repository and readable in an afternoon.</p>
+        <p>If you would rather not run our binary, build it from source, or implement your own
+        verifier from <a href="/spec">the spec</a> and the schema; the format belongs to anyone
+        who implements it.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>Why is the format open if KordLoom is a business?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>A sealed format cannot be a standard, and proof that only its vendor can check is
+        not proof. KordLoom's products are the business; the proof language they speak is
+        public on purpose.</p>
+        <p>The license tiers are deliberate: the products carry their own licenses, while the
+        format, schema, and verifier are Apache-2.0 so adopting them requires no negotiation
+        and carries an express patent grant. The LoomSeal name and mark are trademarks, not
+        part of the code license.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What cryptography does it use, and why so plain?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>SHA-256 for content digests, HMAC-SHA256 for keyed chains, ed25519 for signatures.
+        Boring on purpose: every primitive is decades-tested, standardized, and available in
+        every mainstream language.</p>
+        <p>There is no blockchain, no token, no consensus, and no network dependency. The
+        security model is a private ledger with a maker's mark, not a coin.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>How is it kept secure?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>The chain key is the secret that prevents forgery, it is generated on the producing
+        install, and it never travels: not in bundles, not to KordLoom, not anywhere. Signing
+        keys likewise stay on the install; only the public key travels, and relying parties
+        can pin its fingerprint from the operator's trust page.</p>
+        <p>Verification is offline by design, so there is no service to compromise between the
+        evidence and the person checking it.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What about quantum computers?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>The chains and digests rest on SHA-256, which known quantum algorithms do not
+        meaningfully weaken, so the part of LoomSeal that carries history is built on the
+        quantum-resilient half of cryptography.</p>
+        <p>The ed25519 signature is the component a large future quantum computer would break,
+        and the format is ready for that: signatures carry an algorithm field, so a
+        NIST-standardized post-quantum signature can be added beside ed25519 without a new
+        envelope.</p>
+        <p>Anchoring already bounds the damage, because a signature forged years from now
+        cannot rewrite history whose heads were published outside the producer's control
+        before such forgery was possible. A quantum computer does not un-publish a hash.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What does verification prove, exactly?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Three things: the producer holding the signing key assembled these exact claims;
+        the claims sit in an append-only order that has not been reordered, rewritten, or
+        trimmed since its heads were anchored; and any artifacts supplied match their recorded
+        digests. The conformance wording is exactly three words: signed, chained, anchored.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What does it deliberately not prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>That the producer observed the world honestly at capture time. A chain fixes the
+        record, not the character of the recorder. A dishonest producer can record fiction;
+        what it cannot do is rewrite that fiction later without breaking the chain, or
+        backdate a history it never kept.</p>
+        <p>Keyed chains verify structurally for third parties and fully for the key holder,
+        and in the current verifier anchor proofs are carried but not validated, so relying
+        parties confirm anchor references out of band. Stating this boundary plainly is a
+        feature: proof that overclaims is just marketing.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>Why not a blockchain?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Because the property needed is tamper evidence, not distributed consensus. An
+        append-only keyed chain plus anchors published where the producer cannot rewrite them,
+        a timestamp authority, a public repository, a transparency log, delivers that property
+        without gas fees, without volatility, and without asking an auditor to believe in a
+        coin.</p>
+        <p>Anchoring borrows exactly one idea from that world, publishing a commitment where
+        you cannot take it back, and leaves the rest.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What happens if KordLoom disappears?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Nothing happens to your proof. Bundles verify offline forever, the spec and schema
+        and verifier are Apache-2.0 and forkable, and no verification step ever contacts
+        KordLoom. Records you anchored stay anchored, because the anchors live outside
+        KordLoom too.</p>
+        <p>A proof format you could lose in a vendor's shutdown would not be worth adopting,
+        so LoomSeal is built to outlive its author.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>How do I emit bundles from my own software?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Import the <code>seal</code> package from the
+        <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">repository</a>
+        to sign bundles and compute generic chain links, follow the bundle shape in
+        <a href="/spec">the spec</a> and the schema, and register new claim types through the
+        registry. Producers own their payloads; the envelope, chain profiles, and verification
+        procedure stay common so one verifier checks everyone.</p>
+      </div>
+    </details>
+
+  </div>
+
+  <footer>
+    <div class="foot-links">
+      <a href="/">Home</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="/spec">The spec</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">GitHub</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="https://kordloom.com" target="_blank" rel="noopener">kordloom.com</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="mailto:hello@kordloom.com">Contact</a>
+    </div>
+    <div class="dom">&copy; 2026 KordLoom LLC &middot; loomseal.com</div>
+  </footer>
+
+  <script>
+  (function () {
+    var menu = document.getElementById("menu");
+    if (!menu) return;
+    document.addEventListener("click", function (e) {
+      if (menu.open && !menu.contains(e.target)) menu.open = false;
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && menu.open) { menu.open = false; var s = menu.querySelector("summary"); if (s) s.focus(); }
+    });
+    menu.querySelectorAll("a").forEach(function (a) {
+      a.addEventListener("click", function () { menu.open = false; });
+    });
+  })();
+  </script>
+</body>
+</html>

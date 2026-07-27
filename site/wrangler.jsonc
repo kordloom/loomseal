@@ -3,7 +3,7 @@
   // custom domains stay attached; rename in the dashboard requires re-attaching them.
   "name": "loomseal-redirect",
   "compatibility_date": "2026-07-01",
-  "assets": { "directory": "./public" },
+  "assets": { "directory": "./public", "html_handling": "drop-trailing-slash" },
   "routes": [
     { "pattern": "loomseal.com", "custom_domain": true },
     { "pattern": "www.loomseal.com", "custom_domain": true }

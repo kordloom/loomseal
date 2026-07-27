@@ -153,6 +153,14 @@ the caller provides one.
 SwitchTender's existing signed audit export uses hex-encoded keys; its LoomSeal emitter re-encodes
 the same key as base64. Same key, same trust, one envelope.
 
+Signature entries carry an `alg` field so the format can adopt new algorithms without a new
+envelope. The chains and evidence digests rest on SHA-256 and HMAC-SHA256, which known quantum
+algorithms do not meaningfully weaken. The ed25519 signature is the component a large future
+quantum computer would break; a later format version adds a NIST-standardized post-quantum
+signature algorithm beside it. External anchoring already bounds that risk: a signature forged
+years from now cannot rewrite history whose heads were anchored outside the producer's control
+before such forgery was possible.
+
 ## Chain profiles
 
 A chain fixes claims in an append-only order. Products already have chains with different

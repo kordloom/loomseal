@@ -175,6 +175,13 @@ profiles. A bundle declares one profile in `chain.profile`. Claims carry `chain.
 `chain.prev`, and `chain.link`. Claims in a bundle are sorted by ascending `seq` and must be
 contiguous; discontinuous history means separate bundles.
 
+`chain.head` records the newest coordinates the producer attests for the whole chain, which may
+lead the claims a bundle carries: a bundle is a window into a longer history. When the head
+sequence equals the newest bundled claim, the verifier confirms the head link against that claim
+and reports the head as matched. When the head leads the claims, its link cannot be recomputed
+from the bundle and stays unverified; the report says so and does not treat that head as proof of
+anything beyond the window.
+
 ### dormouse-audit-chain-v2
 
 The shipped Dormouse construction. Each check's link is HMAC-SHA256 (keyed) or SHA-256 (unkeyed)
@@ -224,11 +231,15 @@ optionally an embedded `proof`.
 | `https`   | Published head URL with retrieval date | By reference                         |
 | `rekor`   | Transparency log entry                 | Planned, not in v0.1                 |
 
-The verifier checks that each anchor's `seq` and `link` match a claim in the bundle or the
-declared head. Verifier v0.1 reports embedded `rfc3161` tokens as carried without validating
-them; token validation lands in v0.2, and until then the report says anchored by reference and
-the relying party confirms the ref out of band. Anchoring cadence bounds the
-window in which a compromised producer key could rewrite unanchored history; anchor often.
+The verifier checks that each anchor's `seq` and `link` match a coordinate it verified: a claim
+in the bundle, or the head when the head tied to the newest claim. An anchor that matches only a
+declared head beyond the bundled claims is reported, but because that head link is unverified the
+anchor binds nothing the verifier confirmed and does not by itself earn the anchored level. An
+anchor that matches no verified coordinate fails the bundle. Verifier v0.1 reports embedded
+`rfc3161` tokens as carried without validating them; token validation lands in v0.2, and until
+then a matched anchor reports as anchored by reference and the relying party confirms the ref out
+of band. Anchoring cadence bounds the window in which a compromised producer key could rewrite
+unanchored history; anchor often.
 
 ## Conformance levels
 

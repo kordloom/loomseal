@@ -68,8 +68,13 @@ type Report struct {
 	HeadMatched bool `json:"head_matched"`
 	// ClaimsChecked is how many chained claims were checked.
 	ClaimsChecked int `json:"claims_checked"`
-	// AnchorsMatched is how many anchors matched a bundled claim or the head.
+	// AnchorsMatched is how many anchors matched a coordinate the verifier checked: a bundled
+	// claim, or the head when it tied to the newest claim.
 	AnchorsMatched int `json:"anchors_matched"`
+	// AnchorsToDeclaredHead is how many anchors matched only a declared head that lies beyond
+	// the bundled claims. That head's link is unverified here, so such an anchor binds nothing
+	// this verifier confirmed and does not earn the anchored conformance word.
+	AnchorsToDeclaredHead int `json:"anchors_to_declared_head,omitempty"`
 	// AnchorProofsCarried is how many anchors embed a proof blob.
 	AnchorProofsCarried int `json:"anchor_proofs_carried"`
 	// AnchorProofsValidated is false in this version: proofs are carried, not validated,
@@ -196,7 +201,10 @@ func (r *Report) checkChain(raw []byte, b *bundle.Bundle) {
 	r.HeadMatched = res.HeadMatched
 }
 
-// checkAnchors matches every anchor's coordinates against the bundled claims and head.
+// checkAnchors matches every anchor's coordinates against the coordinates the verifier
+// checked. A bundled claim always counts. The declared head counts only when it tied to the
+// newest claim; a head beyond the claims is unverified, so an anchor that matches only it is
+// reported separately and does not earn the anchored conformance word.
 func (r *Report) checkAnchors(b *bundle.Bundle) {
 	if len(b.Anchors) == 0 {
 		return
@@ -205,17 +213,25 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 		r.problem("anchors present without a chain declaration")
 		return
 	}
-	coords := map[int64]string{b.Chain.Head.Seq: b.Chain.Head.Link}
+	verified := map[int64]string{}
 	for _, c := range b.Claims {
 		if c.Chain != nil {
-			coords[c.Chain.Seq] = c.Chain.Link
+			verified[c.Chain.Seq] = c.Chain.Link
 		}
 	}
+	if r.HeadMatched {
+		verified[b.Chain.Head.Seq] = b.Chain.Head.Link
+	}
+	head := b.Chain.Head
 	for i, a := range b.Anchors {
-		if link, ok := coords[a.Seq]; ok && link == a.Link {
+		switch {
+		case verified[a.Seq] == a.Link && a.Link != "":
 			r.AnchorsMatched++
-		} else {
-			r.problem("anchor %d (%s) does not match any bundled claim or the head", i, a.Type)
+		case !r.HeadMatched && a.Seq == head.Seq && a.Link == head.Link:
+			r.AnchorsToDeclaredHead++
+		default:
+			r.problem("anchor %d (%s) does not match any bundled claim or the declared head", i,
+				a.Type)
 		}
 		if a.Proof != "" {
 			r.AnchorProofsCarried++

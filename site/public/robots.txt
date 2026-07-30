@@ -1,3 +1,2 @@
 User-agent: *
-Allow: /
-Sitemap: https://loomseal.com/sitemap.xml
+Disallow: /

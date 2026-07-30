@@ -7,6 +7,11 @@
 
 # LoomSeal
 
+> **Retired.** LoomSeal is no longer maintained as a public format and loomseal.com is no
+> longer live. No product ships it. The specification, the Go implementation, and the
+> reference verifier stay here for anyone who wants to read them, and bundles already issued
+> still verify offline. Nothing below is being developed.
+
 **Proof, not promises.**
 
 KordLoom products record what they did in keyed, append-only hash chains. LoomSeal is how that

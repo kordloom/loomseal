@@ -133,10 +133,16 @@ Example, a Dormouse bundle at level 3 (digests are illustrative):
 ## Canonical form and digests
 
 The canonical form of a bundle is the RFC 8785 (JSON Canonicalization Scheme) serialization of
-the bundle object. Digest strings are `sha256:` followed by 64 lowercase hex characters. Times
-are RFC 3339 in UTC; fractional seconds are allowed where a chain profile requires them. Numbers
-in a bundle are integers with absolute value at most 2^53; anything else is invalid, because
-RFC 8785 serializes numbers as IEEE doubles and larger or fractional values do not round-trip.
+the bundle object. Object keys are ordered by their UTF-16 code units, which RFC 8785 requires
+and which differs from code point order above the basic multilingual plane. Strings must be
+valid UTF-8, and every `\u` escape must denote a valid Unicode scalar value. A lone surrogate,
+whether written as a `\uD800`-through-`\uDFFF` escape or as raw bytes, is rejected at parse and
+never coerced to the replacement character; coercion would let two different documents share one
+canonical form and one signature. Digest strings are `sha256:` followed by 64 lowercase hex
+characters. Times are RFC 3339 in UTC; fractional seconds are allowed where a chain profile
+requires them. Numbers in a bundle are written as plain integer literals with absolute value at
+most 2^53; fractions, exponents, and larger magnitudes are invalid, because RFC 8785 serializes
+numbers as IEEE doubles and those forms do not round-trip.
 
 ## Producer and signatures
 

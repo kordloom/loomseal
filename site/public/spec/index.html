@@ -461,11 +461,18 @@
 
     <h2>Canonical form and digests</h2>
     <p>The canonical form of a bundle is the RFC 8785 (JSON Canonicalization Scheme)
-    serialization of the bundle object. Digest strings are <code>sha256:</code> followed by 64
-    lowercase hex characters. Times are RFC 3339 in UTC; fractional seconds are allowed where
-    a chain profile requires them. Numbers in a bundle are integers with absolute value at
-    most 2^53; anything else is invalid, because RFC 8785 serializes numbers as IEEE doubles
-    and larger or fractional values do not round-trip.</p>
+    serialization of the bundle object. Object keys are ordered by their UTF-16 code units,
+    which RFC 8785 requires and which differs from code point order above the basic
+    multilingual plane. Strings must be valid UTF-8, and every <code>\u</code> escape must
+    denote a valid Unicode scalar value. A lone surrogate, whether written as a
+    <code>\uD800</code>-through-<code>\uDFFF</code> escape or as raw bytes, is rejected at
+    parse and never coerced to the replacement character; coercion would let two different
+    documents share one canonical form and one signature. Digest strings are
+    <code>sha256:</code> followed by 64 lowercase hex characters. Times are RFC 3339 in UTC;
+    fractional seconds are allowed where a chain profile requires them. Numbers in a bundle are
+    written as plain integer literals with absolute value at most 2^53; fractions, exponents,
+    and larger magnitudes are invalid, because RFC 8785 serializes numbers as IEEE doubles and
+    those forms do not round-trip.</p>
 
     <h2>Producer and signatures</h2>
     <p><code>producer.public_key</code> is the producer's raw 32-byte ed25519 public key,

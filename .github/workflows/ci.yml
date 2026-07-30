@@ -60,6 +60,20 @@ jobs:
           go run testdata/vectors/generate.go
           git diff --exit-code testdata/vectors
 
+  reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The independent Python verifier must agree with every conformance vector. If it and the
+      # Go verifier ever disagree, the format has drifted from at least one implementation.
+      - name: Independent verifier agrees with the vectors
+        run: |
+          pip install -r reference/requirements.txt
+          python3 reference/loomverify.py --vectors testdata/vectors
+
   vuln:
     runs-on: ubuntu-latest
     steps:

@@ -463,7 +463,9 @@
     <p>The canonical form of a bundle is the RFC 8785 (JSON Canonicalization Scheme)
     serialization of the bundle object. Object keys are ordered by their UTF-16 code units,
     which RFC 8785 requires and which differs from code point order above the basic
-    multilingual plane. Strings must be valid UTF-8, and every <code>\u</code> escape must
+    multilingual plane. Object keys must be unique within an object; a repeated key has no
+    canonical form and the bundle is rejected. Strings must be valid UTF-8, and every
+    <code>\u</code> escape must
     denote a valid Unicode scalar value. A lone surrogate, whether written as a
     <code>\uD800</code>-through-<code>\uDFFF</code> escape or as raw bytes, is rejected at
     parse and never coerced to the replacement character; coercion would let two different
@@ -515,10 +517,14 @@
     (unkeyed) over a length-prefixed field list: the domain string
     <code>dormouse-audit-chain-v2</code>, the install identifier, the previous link, then the
     check's target id, outcome, status, snapshot hash, error, elapsed nanoseconds, and
-    checked-at Unix nanoseconds. Each field is serialized as <code>length:value</code>, so
-    field boundaries are unambiguous. The genesis previous link is the empty string. Sequence
-    numbers are the 1-based trail position, matching the product's position-based head
-    anchoring.</p>
+    checked-at Unix nanoseconds. The snapshot hash is the 64 lowercase hex characters of the
+    snapshot-role evidence digest, the value after <code>sha256:</code>, and is the empty string
+    when the check carries no snapshot. Status, elapsed nanoseconds, and checked-at Unix
+    nanoseconds are decimal strings; checked-at is the claim's <code>at</code> time as
+    nanoseconds since the Unix epoch. Each field is serialized as <code>length:value</code>
+    where <code>length</code> is the UTF-8 byte count of the value, so field boundaries are
+    unambiguous. The genesis previous link is the empty string. Sequence numbers are the 1-based
+    trail position, matching the product's position-based head anchoring.</p>
     <p>The keyed form is by design not recomputable by third parties: the chain key is the
     secret that prevents forgery by parties who can write the database. Relying parties
     verify keyed chains structurally (each claim's <code>prev</code> equals the prior claim's
@@ -527,11 +533,14 @@
 
     <h3>switchtender-audit-v1</h3>
     <p>The shipped SwitchTender construction. Each audit entry's link is SHA-256 over the
-    JSON array of its sequence (decimal string), time (RFC 3339 with nanoseconds, UTC),
-    actor, method, path, and previous link. Sequence starts at 1; the genesis previous link
-    is the empty string. This profile is unkeyed: any verifier recomputes every link from the
-    claim payloads alone. Recomputation formats the parsed time back to RFC 3339 nanosecond
-    form in UTC, which round-trips the stored form exactly.</p>
+    compact JSON array, no insignificant whitespace, of six strings: its sequence as a decimal
+    string, the time, actor, method, path, and previous link. Sequence starts at 1; the genesis
+    previous link is the empty string. This profile is unkeyed: any verifier recomputes every
+    link from the claim payloads alone. The time is the claim's <code>at</code> in UTC, RFC 3339
+    with nanosecond precision, trailing zeros in the fractional part trimmed and the fractional
+    part and its dot omitted entirely when the fraction is zero, so an <code>at</code> of
+    <code>2026-07-27T15:00:00Z</code> serializes back to <code>2026-07-27T15:00:00Z</code>. That
+    round-trips the stored form exactly.</p>
 
     <h3>loomseal-chain-v1</h3>
     <p>The generic profile for future producers. The claim digest is <code>sha256:</code>

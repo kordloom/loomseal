@@ -134,8 +134,9 @@ Example, a Dormouse bundle at level 3 (digests are illustrative):
 
 The canonical form of a bundle is the RFC 8785 (JSON Canonicalization Scheme) serialization of
 the bundle object. Object keys are ordered by their UTF-16 code units, which RFC 8785 requires
-and which differs from code point order above the basic multilingual plane. Strings must be
-valid UTF-8, and every `\u` escape must denote a valid Unicode scalar value. A lone surrogate,
+and which differs from code point order above the basic multilingual plane. Object keys must be
+unique within an object; a repeated key has no canonical form and the bundle is rejected. Strings
+must be valid UTF-8, and every `\u` escape must denote a valid Unicode scalar value. A lone surrogate,
 whether written as a `\uD800`-through-`\uDFFF` escape or as raw bytes, is rejected at parse and
 never coerced to the replacement character; coercion would let two different documents share one
 canonical form and one signature. Digest strings are `sha256:` followed by 64 lowercase hex
@@ -187,10 +188,14 @@ anything beyond the window.
 The shipped Dormouse construction. Each check's link is HMAC-SHA256 (keyed) or SHA-256 (unkeyed)
 over a length-prefixed field list: the domain string `dormouse-audit-chain-v2`, the install
 identifier, the previous link, then the check's target id, outcome, status, snapshot hash,
-error, elapsed nanoseconds, and checked-at Unix nanoseconds. Each field is serialized as
-`length:value`, so field boundaries are unambiguous. The genesis previous link is the empty
-string. Sequence numbers are the 1-based trail position, matching the product's position-based
-head anchoring.
+error, elapsed nanoseconds, and checked-at Unix nanoseconds. The snapshot hash is the 64
+lowercase hex characters of the snapshot-role evidence digest, the value after `sha256:`, and is
+the empty string when the check carries no snapshot. Status, elapsed nanoseconds, and checked-at
+Unix nanoseconds are decimal strings; checked-at is the claim's `at` time as nanoseconds since the
+Unix epoch. Each field is serialized as `length:value` where `length` is the UTF-8 byte count of
+the value, so field boundaries are unambiguous. The genesis previous link is the empty string.
+Sequence numbers are the 1-based trail position, matching the product's position-based head
+anchoring.
 
 The keyed form is by design not recomputable by third parties: the chain key is the secret that
 prevents forgery by parties who can write the database. Relying parties verify keyed chains
@@ -199,12 +204,14 @@ operator, holding the key, verifies fully with `dormouse verify`.
 
 ### switchtender-audit-v1
 
-The shipped SwitchTender construction. Each audit entry's link is SHA-256 over the JSON array of
-its sequence (decimal string), time (RFC 3339 with nanoseconds, UTC), actor, method, path, and
-previous link. Sequence starts at 1; the genesis previous link is the empty string. This profile
-is unkeyed: any verifier recomputes every link from the claim payloads alone. Recomputation
-formats the parsed time back to RFC 3339 nanosecond form in UTC, which round-trips the stored
-form exactly.
+The shipped SwitchTender construction. Each audit entry's link is SHA-256 over the compact JSON
+array, no insignificant whitespace, of six strings: its sequence as a decimal string, the time,
+actor, method, path, and previous link. Sequence starts at 1; the genesis previous link is the
+empty string. This profile is unkeyed: any verifier recomputes every link from the claim payloads
+alone. The time is the claim's `at` in UTC, RFC 3339 with nanosecond precision, trailing zeros in
+the fractional part trimmed and the fractional part and its dot omitted entirely when the fraction
+is zero, so an `at` of `2026-07-27T15:00:00Z` serializes back to `2026-07-27T15:00:00Z`. That
+round-trips the stored form exactly.
 
 ### loomseal-chain-v1
 

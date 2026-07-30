@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kordloom.com/loomseal/schema/0.1/loomseal-bundle.schema.json",
   "title": "LoomSeal bundle",
-  "description": "A portable, offline-verifiable attestation bundle. See loomseal-format-spec.md.",
+  "description": "A portable, offline-verifiable attestation bundle. See FORMAT.md.",
   "type": "object",
   "required": ["loomseal", "bundle_id", "created_at", "producer", "subject", "claims", "signatures"],
   "additionalProperties": false,

@@ -401,15 +401,33 @@
     <p class="thesis">When everything can be fabricated, the only evidence worth sending is
     evidence a stranger can check.</p>
     <div class="prose">
-      <p>Anyone can generate a convincing screenshot now. A log can be edited, a dashboard can
-      lie, and a compliance PDF can be written five minutes before the meeting. The old ways of
-      showing your work stopped being evidence the day generating them became free.</p>
-      <p>LoomSeal is the KordLoom answer: when a KordLoom product says proved, this is the
-      receipt. One JSON bundle carries the claims, the digests of the evidence behind them,
-      their position in an append-only hash chain, the external anchors that fix that chain in
-      time, and the producer's signature. A small open verifier checks all of it in seconds,
-      offline. Send the file to an auditor, a security reviewer, a customer, a regulator, or
-      another machine. None of them has to believe a word you say. That is the point.</p>
+      <p>Sooner or later somebody asks you to prove something. A customer wants to know you
+      patched what you said you patched. An auditor wants to know who changed production on the
+      day it went down, and whether the record was touched afterward. So you go and pull the
+      logs, and somewhere on the way to the meeting it lands on you that your logs are a table
+      in a database you control. You know you did not edit them. You have no way to show it.</p>
+      <p>That is the gap LoomSeal closes, and it closes it by answering the three things a
+      skeptic gets to say. <em>You made this up.</em> The file is signed by the machine that
+      produced it, so it could not have come from anywhere else. <em>You deleted the parts you
+      did not like.</em> Every entry is linked to the one before it, so a removed or reordered
+      line breaks the chain and the verifier names the exact spot. <em>You wrote this last
+      night.</em> The chain is anchored somewhere outside your control, so the entries have to
+      have existed before that anchor did. None of this is new cryptography. It is three
+      ordinary ideas arranged so the person holding the file does not have to trust you for any
+      of it.</p>
+      <p>Sending it is the dull part, which is the point. One JSON file, small enough to email.
+      The recipient runs a free, open-source verifier, offline, with no account and nothing
+      installed from you, and a few seconds later they have a yes or a no.</p>
+      <p>We use it on our own products for a reason that is a little uncomfortable.
+      SwitchTender's promise is that it proves every change. Without a bundle, that promise is a
+      sentence on a website, and you would simply have to believe us that the audit trail behind
+      it is honest. Building a company on <em>do not take our word for it</em> and then asking
+      you to take our word for it is not a position we can defend. So SwitchTender's audit export
+      is being rebuilt as a LoomSeal bundle, and when it lands you will be able to check the
+      claim on the box without asking us anything.</p>
+      <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
+      A bundle is worth the same to a stranger as it is to your oldest customer, because checking
+      it never involves you at all.</p>
     </div>
   </section>
 

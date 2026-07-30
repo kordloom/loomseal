@@ -70,6 +70,13 @@ KordLoom or the operator who sent it, you know three things:
 Send that file to an auditor, a security reviewer, a customer, a regulator, or another
 machine. None of them has to believe a word you say. That is the point.
 
+KordLoom uses this on its own products for a reason that is a little uncomfortable.
+SwitchTender's promise is that it proves every change. Without a bundle, that promise is a
+sentence on a website, and you would simply have to believe us that the audit trail behind it
+is honest. Building on `do not take our word for it` and then asking you to take our word for
+it is not a position we can defend, so SwitchTender's audit export is being rebuilt as a
+LoomSeal bundle.
+
 And because proof that overclaims is just marketing, the verifier states its boundary plainly:
 it cannot prove the recorder observed the world honestly at capture time. A chain fixes the
 record, not the character of the recorder. Keyed chains verify structurally here and fully for

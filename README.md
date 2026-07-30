@@ -9,13 +9,33 @@
 
 **Proof, not promises.**
 
-KordLoom products record what they did in keyed, append-only hash chains. LoomSeal is how that
-proof travels: one JSON bundle carrying claims, evidence digests, chain coordinates, external
-anchors, and an ed25519 producer signature. The `loomseal` verifier checks a bundle offline,
-without an account, without a server, and without trusting KordLoom.
+An open format for evidence somebody else can check.
 
-- SwitchTender proves what you run.
-- LoomSeal is the format that proof speaks, and anyone on earth verifies it for free.
+You already have a record of what your software did. The trouble is that the person who needs to
+believe it, an auditor, a customer, a security reviewer, a regulator, cannot, because you own the
+system that record lives in. Your log is worth exactly as much as their trust in you.
+
+LoomSeal turns that record into one JSON file: the claims, the digests of the evidence behind
+them, their position in an append-only hash chain, the anchors that fix that chain in time, and
+an ed25519 signature from the machine that produced it. You send the file. They run a verifier
+and get a yes or a no in seconds, offline. You are not in the loop, which is the point.
+
+## Free, and structurally so
+
+This is not a trial, an open-core tease, or a format with a paid tier waiting behind it.
+
+- **Apache-2.0.** Adopt it, fork it, re-implement it, ship it in a competing product. No
+  negotiation, no license call, no per-seat price, no permission.
+- **Nothing to charge for.** LoomSeal is a file format and a checker. There is no server to rent
+  and no seat to meter, which is why it is free permanently rather than free for now.
+- **Verification never phones home.** No account, no server, no network, no telemetry. The
+  verifier works on a machine that has never heard of KordLoom and never will.
+- **Auditable end to end.** The binary has no dependencies outside the Go standard library, so
+  every line that touches a verification decision is in this repository and readable in an
+  afternoon. A tool that checks evidence should not itself have to be taken on faith.
+- **Two independent implementations already.** The Go verifier here and a separate Python one in
+  `reference/`, cross-checked in CI against the same conformance vectors. A format with one
+  implementation is a product. A format with two is a standard.
 
 One binary. One file. Provable.
 

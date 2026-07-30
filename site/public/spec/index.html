@@ -287,13 +287,6 @@
         </span>
         <span class="menu-ext" aria-hidden="true">&#8599;</span>
       </a>
-      <a class="menu-item" href="https://dormousehq.com" target="_blank" rel="noopener">
-        <span class="mi-text">
-          <span class="m-name">Dormouse</span>
-          <span class="m-desc">Watches every page. Proves every check.</span>
-        </span>
-        <span class="menu-ext" aria-hidden="true">&#8599;</span>
-      </a>
       <a class="menu-item" href="https://switchtender.com" target="_blank" rel="noopener">
         <span class="mi-text">
           <span class="m-name">SwitchTender</span>
@@ -343,14 +336,12 @@
     <p>KordLoom products speak it, one verifier checks it:</p>
     <ul>
       <li>SwitchTender proves what you run.</li>
-      <li>Dormouse proves what you watch.</li>
       <li>Future products register new claim types and inherit the same verifier.</li>
     </ul>
-    <p>This spec generalizes what Dormouse and SwitchTender already do in shipped code. It
-    invents no new cryptography. Dormouse chains checks with a keyed HMAC-SHA256 and
-    content-addresses every snapshot. SwitchTender chains audit entries with SHA-256 and
-    already exports the chain signed with ed25519 for offline verification. LoomSeal is the
-    shared envelope around those primitives.</p>
+    <p>This spec generalizes constructions KordLoom already ships. It invents no new
+    cryptography. SwitchTender chains audit entries with SHA-256 and already exports the
+    chain signed with ed25519 for offline verification. LoomSeal is the shared envelope
+    around those primitives.</p>
 
     <h2>Design rules</h2>
     <ol>

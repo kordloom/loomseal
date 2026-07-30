@@ -42,7 +42,6 @@ post-quantum signature algorithm can join ed25519 without a new envelope.
 ## Related
 
 - [KordLoom](https://kordloom.com): the company. Software that proves itself.
-- [Dormouse](https://dormousehq.com): watches vendor compliance pages, proves every check.
 - [SwitchTender](https://switchtender.com): runs a fleet from one binary, proves every change.
 - [Source](https://github.com/kordloom/loomseal): spec, JSON schema, verifier, seal SDK for
   producers, and a signed example bundle anyone can verify.

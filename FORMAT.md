@@ -13,13 +13,11 @@ KordLoom and without contacting KordLoom.
 KordLoom products speak it, one verifier checks it:
 
 - SwitchTender proves what you run.
-- Dormouse proves what you watch.
 - Future products register new claim types and inherit the same verifier.
 
-This spec generalizes what Dormouse and SwitchTender already do in shipped code. It invents no
-new cryptography. Dormouse chains checks with a keyed HMAC-SHA256 and content-addresses every
-snapshot. SwitchTender chains audit entries with SHA-256 and already exports the chain signed
-with ed25519 for offline verification. LoomSeal is the shared envelope around those primitives.
+This spec generalizes constructions KordLoom already ships. It invents no new cryptography.
+SwitchTender chains audit entries with SHA-256 and already exports the chain signed with
+ed25519 for offline verification. LoomSeal is the shared envelope around those primitives.
 
 ## Design rules
 

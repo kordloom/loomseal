@@ -46,6 +46,20 @@ jobs:
           go build -o loomseal .
           ./loomseal verify examples/audit.loomseal.json --evidence examples/evidence
 
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # The conformance vectors are what third parties implement against, so the checked-in
+      # bundles must be exactly what the generator produces. Regenerate and fail on any drift.
+      - name: Vectors match the generator
+        run: |
+          go run testdata/vectors/generate.go
+          git diff --exit-code testdata/vectors
+
   vuln:
     runs-on: ubuntu-latest
     steps:

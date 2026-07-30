@@ -1,0 +1,180 @@
+{
+  "description": "LoomSeal v0.1 conformance vectors. Each entry declares whether the bundle must verify, and when it must not, which check fails and why. A verifier is conformant when it agrees with every entry.",
+  "vectors": [
+    {
+      "name": "anchor-matches-nothing",
+      "file": "anchor-matches-nothing.loomseal.json",
+      "must_verify": false,
+      "failing_check": "anchor",
+      "why": "An anchor whose coordinates match nothing in the bundle fails."
+    },
+    {
+      "name": "anchor-only-declared-head",
+      "file": "anchor-only-declared-head.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An anchor matching only a head beyond the claims is reported but not counted as anchored."
+    },
+    {
+      "name": "chain-broken-prev",
+      "file": "chain-broken-prev.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A prev link that does not match the prior link breaks continuity."
+    },
+    {
+      "name": "dormouse-unkeyed",
+      "file": "dormouse-unkeyed.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The shipped Dormouse unkeyed profile recomputes every link."
+    },
+    {
+      "name": "duplicate-top-level-key",
+      "file": "duplicate-top-level-key.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A repeated object key has no canonical form and is rejected."
+    },
+    {
+      "name": "evidence-referenced",
+      "file": "evidence-referenced.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Evidence not supplied to the verifier is referenced, never counted as verified."
+    },
+    {
+      "name": "head-behind-claims",
+      "file": "head-behind-claims.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A head sequence behind the newest claim is a broken chain."
+    },
+    {
+      "name": "head-wrong-link",
+      "file": "head-wrong-link.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A head at the newest sequence must carry that claim's link."
+    },
+    {
+      "name": "keyed-structural",
+      "file": "keyed-structural.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (structural)",
+      "why": "A keyed chain verifies as structural: continuity holds, links are not recomputed."
+    },
+    {
+      "name": "lone-high-surrogate",
+      "file": "lone-high-surrogate.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A lone high surrogate escape is invalid and is rejected, not coerced."
+    },
+    {
+      "name": "lone-low-surrogate",
+      "file": "lone-low-surrogate.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A lone low surrogate escape is invalid and is rejected, not coerced."
+    },
+    {
+      "name": "non-integer-number",
+      "file": "non-integer-number.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A fractional number is outside the integer profile and is rejected."
+    },
+    {
+      "name": "noncontiguous-seq",
+      "file": "noncontiguous-seq.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "Claims must be contiguous in sequence; a gap is a broken chain."
+    },
+    {
+      "name": "number-exceeds-2p53",
+      "file": "number-exceeds-2p53.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "An integer beyond 2^53 does not round-trip through an IEEE double and is rejected."
+    },
+    {
+      "name": "producer-keyid-mismatch",
+      "file": "producer-keyid-mismatch.loomseal.json",
+      "must_verify": false,
+      "failing_check": "signature",
+      "why": "The producer key_id must be the digest of the embedded public key."
+    },
+    {
+      "name": "raw-invalid-utf8",
+      "file": "raw-invalid-utf8.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "Invalid UTF-8 input is rejected, not coerced to the replacement character."
+    },
+    {
+      "name": "signed-chained-anchored",
+      "file": "signed-chained-anchored.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference",
+      "why": "An anchor whose coordinates match the verified head earns the anchored level."
+    },
+    {
+      "name": "signed-chained-full",
+      "file": "signed-chained-full.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An unkeyed loomseal-chain-v1 chain with the head tied to the newest claim."
+    },
+    {
+      "name": "signed-only",
+      "file": "signed-only.loomseal.json",
+      "must_verify": true,
+      "level": "signed",
+      "why": "A bundle with no chain reaches the signed level and no further."
+    },
+    {
+      "name": "switchtender-audit",
+      "file": "switchtender-audit.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The shipped SwitchTender profile recomputes every link."
+    },
+    {
+      "name": "tampered-payload",
+      "file": "tampered-payload.loomseal.json",
+      "must_verify": false,
+      "failing_check": "signature",
+      "why": "A byte changed after signing fails the producer signature."
+    },
+    {
+      "name": "unknown-claim-type",
+      "file": "unknown-claim-type.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A claim type outside the registry verifies and is noted, never failed."
+    },
+    {
+      "name": "valid-surrogate-pair",
+      "file": "valid-surrogate-pair.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An astral character encodes as a surrogate pair and verifies."
+    },
+    {
+      "name": "windowed-head",
+      "file": "windowed-head.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A head beyond the claims is a window; its link is unverified and it is not anchored."
+    },
+    {
+      "name": "wrong-version",
+      "file": "wrong-version.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A verifier speaks one format version and rejects others."
+    }
+  ]
+}

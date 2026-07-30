@@ -23,13 +23,6 @@
       "why": "A prev link that does not match the prior link breaks continuity."
     },
     {
-      "name": "dormouse-unkeyed",
-      "file": "dormouse-unkeyed.loomseal.json",
-      "must_verify": true,
-      "level": "signed, chained (full)",
-      "why": "The shipped Dormouse unkeyed profile recomputes every link."
-    },
-    {
       "name": "duplicate-top-level-key",
       "file": "duplicate-top-level-key.loomseal.json",
       "must_verify": false,

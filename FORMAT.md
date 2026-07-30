@@ -49,7 +49,7 @@ A bundle is a JSON object with these members:
 | `anchors`    | no       | External anchor records (level 3)                    |
 | `signatures` | yes      | At least one producer signature over the bundle      |
 
-Example, a Dormouse bundle at level 3 (digests are illustrative):
+Example, a bundle at level 3 on the generic profile (digests are illustrative):
 
 ```json
 {
@@ -57,18 +57,18 @@ Example, a Dormouse bundle at level 3 (digests are illustrative):
   "bundle_id": "lsb_9c41d0a2b7e3",
   "created_at": "2026-07-27T15:04:05Z",
   "producer": {
-    "product": "dormouse",
-    "product_version": "0.4.0",
+    "product": "switchtender",
+    "product_version": "1.33.0",
     "install_id": "in_7f3a9b2c",
     "public_key": "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=",
     "key_id": "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
   },
   "subject": {
-    "type": "url",
-    "id": "https://vendor.example.com/legal/subprocessors"
+    "type": "host",
+    "id": "web-07.fleet.example.com"
   },
   "chain": {
-    "profile": "dormouse-audit-chain-v2",
+    "profile": "loomseal-chain-v1",
     "keyed": true,
     "params": { "install_id": "in_7f3a9b2c" },
     "head": {
@@ -78,29 +78,29 @@ Example, a Dormouse bundle at level 3 (digests are illustrative):
   },
   "claims": [
     {
-      "type": "dormouse.check/1",
+      "type": "switchtender.audit/1",
       "at": "2026-07-27T14:00:11Z",
       "payload": {
-        "target_id": "tg_4b1e",
-        "url": "https://vendor.example.com/legal/subprocessors",
-        "outcome": "changed",
-        "status": 200,
+        "actor": "u_4b1e",
+        "method": "POST",
+        "path": "/api/jobs/deploy-web",
+        "outcome": "applied",
         "elapsed_ns": 412000000,
         "error": ""
       },
       "evidence": [
         {
-          "role": "snapshot",
+          "role": "transcript",
           "digest": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-          "media_type": "text/html",
+          "media_type": "application/json",
           "present": false
         }
       ],
       "verdict": {
-        "policy": "vendor-subprocessors/3",
+        "policy": "fleet-change-control/3",
         "policy_digest": "sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
         "decision": "notify",
-        "detail": "entity added: Example Analytics GmbH"
+        "detail": "changed hosts: 4 of 210"
       },
       "chain": {
         "seq": 18209,
@@ -115,7 +115,7 @@ Example, a Dormouse bundle at level 3 (digests are illustrative):
       "seq": 18000,
       "link": "1f2d3c4b5a69788766554433221100ffeeddccbbaa99887766554433221100ff",
       "at": "2026-07-26T00:00:00Z",
-      "ref": "https://github.com/acme/dormouse-anchors/commit/8f14e45fceea167a"
+      "ref": "https://github.com/acme/audit-anchors/commit/8f14e45fceea167a"
     }
   ],
   "signatures": [
@@ -181,25 +181,6 @@ and reports the head as matched. When the head leads the claims, its link cannot
 from the bundle and stays unverified; the report says so and does not treat that head as proof of
 anything beyond the window.
 
-### dormouse-audit-chain-v2
-
-The shipped Dormouse construction. Each check's link is HMAC-SHA256 (keyed) or SHA-256 (unkeyed)
-over a length-prefixed field list: the domain string `dormouse-audit-chain-v2`, the install
-identifier, the previous link, then the check's target id, outcome, status, snapshot hash,
-error, elapsed nanoseconds, and checked-at Unix nanoseconds. The snapshot hash is the 64
-lowercase hex characters of the snapshot-role evidence digest, the value after `sha256:`, and is
-the empty string when the check carries no snapshot. Status, elapsed nanoseconds, and checked-at
-Unix nanoseconds are decimal strings; checked-at is the claim's `at` time as nanoseconds since the
-Unix epoch. Each field is serialized as `length:value` where `length` is the UTF-8 byte count of
-the value, so field boundaries are unambiguous. The genesis previous link is the empty string.
-Sequence numbers are the 1-based trail position, matching the product's position-based head
-anchoring.
-
-The keyed form is by design not recomputable by third parties: the chain key is the secret that
-prevents forgery by parties who can write the database. Relying parties verify keyed chains
-structurally (each claim's `prev` equals the prior claim's `link`) and against anchors. The
-operator, holding the key, verifies fully with `dormouse verify`.
-
 ### switchtender-audit-v1
 
 The shipped SwitchTender construction. Each audit entry's link is SHA-256 over the compact JSON
@@ -213,7 +194,7 @@ round-trips the stored form exactly.
 
 ### loomseal-chain-v1
 
-The generic profile for future producers, Burler included. The claim digest is `sha256:` over
+The generic profile for new producers. The claim digest is `sha256:` over
 the canonical form of the claim object with its `chain` member removed. The link is HMAC-SHA256
 (keyed) or SHA-256 (unkeyed) over the canonical form of:
 
@@ -222,6 +203,11 @@ the canonical form of the claim object with its `chain` member removed. The link
 ```
 
 Keyed chains state `"keyed": true` in the bundle's `chain` member.
+
+The keyed form is by design not recomputable by third parties: the chain key is the secret that
+prevents forgery by a party who can write the underlying store. Relying parties verify keyed
+chains structurally, checking that each claim's `prev` equals the prior claim's `link`, and
+against anchors. The operator, holding the key, verifies fully.
 
 ## Anchors
 
@@ -291,9 +277,6 @@ emitting product and documented there; this registry fixes the names and require
 
 | Type                   | Emitted by   | Status   | Payload minimum                       |
 |------------------------|--------------|----------|---------------------------------------|
-| `dormouse.check/1`     | Dormouse     | v0.1     | target_id, url, outcome, status       |
-| `dormouse.change/1`    | Dormouse     | draft    | target_id, url, from and to snapshots |
-| `dormouse.coverage/1`  | Dormouse     | draft    | target_id, window, expected, performed|
 | `switchtender.audit/1` | SwitchTender | v0.1     | actor, method, path                   |
 | `switchtender.run/1`   | SwitchTender | draft    | run id, kind, hosts, approver         |
 

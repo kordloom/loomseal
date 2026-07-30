@@ -37,7 +37,6 @@ const at = "2026-07-27T15:00:00Z"
 // Chain profile names, duplicated here so the generator needs no internal imports.
 const (
 	profileV1           = "loomseal-chain-v1"
-	profileDormouse     = "dormouse-audit-chain-v2"
 	profileSwitchTender = "switchtender-audit-v1"
 )
 
@@ -140,10 +139,6 @@ func (s *state) positives() {
 	s.add("anchor-only-declared-head", true, "signed, chained (full)", "",
 		"An anchor matching only a head beyond the claims is reported but not counted as anchored.",
 		s.sign(m))
-
-	// Shipped Dormouse unkeyed construction.
-	s.add("dormouse-unkeyed", true, "signed, chained (full)", "",
-		"The shipped Dormouse unkeyed profile recomputes every link.", s.sign(s.dormouse()))
 
 	// Shipped SwitchTender construction.
 	s.add("switchtender-audit", true, "signed, chained (full)", "",
@@ -367,24 +362,6 @@ func (s *state) keyed(n int) map[string]any {
 	return m
 }
 
-// dormouse builds a shipped Dormouse unkeyed chain with one recomputable link.
-func (s *state) dormouse() map[string]any {
-	m := s.base()
-	payload := map[string]any{"target_id": "tg_1", "url": "https://vendor.example.com/legal",
-		"outcome": "unchanged", "status": int64(200), "error": "", "elapsed_ns": int64(412000000)}
-	link := dormouseLink("", "tg_1", "unchanged", 200, "", "", 412000000, at)
-	m["claims"] = []any{map[string]any{
-		"type": "dormouse.check/1", "at": at, "payload": payload,
-		"chain": map[string]any{"seq": int64(1), "prev": "", "link": link},
-	}}
-	m["chain"] = map[string]any{
-		"profile": profileDormouse, "keyed": false,
-		"params": map[string]any{"install_id": installID},
-		"head":   map[string]any{"seq": int64(1), "link": link},
-	}
-	return m
-}
-
 // switchTender builds a shipped SwitchTender chain with one recomputable link.
 func (s *state) switchTender() map[string]any {
 	m := s.base()
@@ -408,23 +385,6 @@ func stripChain(claim map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
-}
-
-// dormouseLink recomputes a dormouse-audit-chain-v2 unkeyed link.
-func dormouseLink(prev, targetID, outcome string, status int64, snapshot, errText string,
-	elapsed int64, atStr string) string {
-	unix := parseUnixNano(atStr)
-	fields := []string{profileDormouse, installID, prev, targetID, outcome,
-		strconv.FormatInt(status, 10), snapshot, errText, strconv.FormatInt(elapsed, 10),
-		strconv.FormatInt(unix, 10)}
-	var sb strings.Builder
-	for _, f := range fields {
-		sb.WriteString(strconv.Itoa(len(f)))
-		sb.WriteByte(':')
-		sb.WriteString(f)
-	}
-	sum := sha256.Sum256([]byte(sb.String()))
-	return hex.EncodeToString(sum[:])
 }
 
 // switchTenderLink recomputes a switchtender-audit-v1 link.

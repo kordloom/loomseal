@@ -21,12 +21,8 @@ import (
 // knownClaimTypes is the registry of claim types this verifier understands. Unknown types
 // are reported, never failed, so newer producers stay verifiable.
 var knownClaimTypes = map[string]bool{
-	"dormouse.check/1":     true,
-	"dormouse.change/1":    true,
-	"dormouse.coverage/1":  true,
 	"switchtender.audit/1": true,
 	"switchtender.run/1":   true,
-	"burler.grade/1":       true,
 }
 
 // Options carries the caller's verification inputs.

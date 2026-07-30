@@ -15,8 +15,7 @@ anchors, and an ed25519 producer signature. The `loomseal` verifier checks a bun
 without an account, without a server, and without trusting KordLoom.
 
 - SwitchTender proves what you run.
-- Dormouse proves what you watch.
-- LoomSeal is the format their proof speaks, and anyone on earth verifies it for free.
+- LoomSeal is the format that proof speaks, and anyone on earth verifies it for free.
 
 One binary. One file. Provable.
 
@@ -97,9 +96,8 @@ through the registry in the spec.
 ## Status
 
 Format v0.1 draft. The format, the schema, the verifier, and the seal package are complete,
-tested, and exercised by the example bundle in this repository. The SwitchTender and Dormouse
-exporters that emit LoomSeal from live systems ship with their next releases; until then, the
-example bundle and the seal package are the reference producers.
+tested, and exercised by the example bundle in this repository. No product emits LoomSeal from a
+live system yet, so the example bundle and the seal package are the reference producers.
 
 ## License
 

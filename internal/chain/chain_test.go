@@ -38,29 +38,6 @@ func stLink(t *testing.T, seq int64, actor, method, path, prev string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// dmLink recomputes the Dormouse construction for building fixtures.
-func dmLink(t *testing.T, installID, prev, targetID, outcome string, status int64,
-	snapshot, errText string, elapsed int64) string {
-	t.Helper()
-	parsed, err := time.Parse(time.RFC3339Nano, at)
-	if err != nil {
-		t.Fatalf("parse time: %v", err)
-	}
-	fields := []string{
-		bundle.ProfileDormouse, installID, prev, targetID, outcome,
-		strconv.FormatInt(status, 10), snapshot, errText, strconv.FormatInt(elapsed, 10),
-		strconv.FormatInt(parsed.UnixNano(), 10),
-	}
-	var sb strings.Builder
-	for _, f := range fields {
-		sb.WriteString(strconv.Itoa(len(f)))
-		sb.WriteByte(':')
-		sb.WriteString(f)
-	}
-	sum := sha256.Sum256([]byte(sb.String()))
-	return hex.EncodeToString(sum[:])
-}
-
 // wrap assembles a parseable bundle around chained claims and returns the raw document
 // and the parsed bundle.
 func wrap(t *testing.T, profile string, keyed bool, params map[string]any,
@@ -120,12 +97,12 @@ func TestVerifySwitchTender(t *testing.T) {
 		WantResult Result
 		Want       error
 	}{{ // Test 0: An intact two-entry chain verifies fully with a tied head.
-		Claims: []any{stClaim(1, "amy", "", link1), stClaim(2, "bo", link1, link2)},
-		Head:   map[string]any{"seq": 2, "link": link2},
+		Claims:     []any{stClaim(1, "amy", "", link1), stClaim(2, "bo", link1, link2)},
+		Head:       map[string]any{"seq": 2, "link": link2},
 		WantResult: Result{Mode: ModeFull, Claims: 2, HeadMatched: true},
 	}, { // Test 1: A head beyond the bundled claims stays untied but verifies.
-		Claims: []any{stClaim(1, "amy", "", link1)},
-		Head:   map[string]any{"seq": 9, "link": strings.Repeat("cd", 32)},
+		Claims:     []any{stClaim(1, "amy", "", link1)},
+		Head:       map[string]any{"seq": 9, "link": strings.Repeat("cd", 32)},
 		WantResult: Result{Mode: ModeFull, Claims: 1},
 	}, { // Test 2: A tampered actor breaks link recomputation.
 		Claims: []any{stClaim(1, "mallory", "", link1)},
@@ -172,61 +149,6 @@ func TestVerifySwitchTender(t *testing.T) {
 				t.Errorf("mismatch (-want +got):\n%s", diff)
 			}
 		})
-	}
-}
-
-func TestVerifyDormouse(t *testing.T) {
-	t.Parallel()
-	snapshot := strings.Repeat("aa", 32)
-	link1 := dmLink(t, "in_1", "", "tg_1", "unchanged", 200, snapshot, "", 5000)
-
-	// dmClaim builds one dormouse.check claim with chain coordinates.
-	dmClaim := func(status int64) any {
-		return map[string]any{
-			"type": "dormouse.check/1", "at": at,
-			"payload": map[string]any{
-				"target_id": "tg_1", "outcome": "unchanged", "status": status,
-				"error": "", "elapsed_ns": 5000,
-			},
-			"evidence": []any{map[string]any{"role": "snapshot", "digest": "sha256:" + snapshot}},
-			"chain":    map[string]any{"seq": 1, "prev": "", "link": link1},
-		}
-	}
-	head := map[string]any{"seq": 1, "link": link1}
-	params := map[string]any{"install_id": "in_1"}
-
-	// Test 0: An intact unkeyed chain recomputes fully.
-	raw, b := wrap(t, bundle.ProfileDormouse, false, params, []any{dmClaim(200)}, head)
-	got, err := Verify(raw, b)
-	if err != nil {
-		t.Fatalf("verify: %v", err)
-	}
-	want := Result{Mode: ModeFull, Claims: 1, HeadMatched: true}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
-	}
-
-	// Test 1: A tampered status breaks link recomputation.
-	raw, b = wrap(t, bundle.ProfileDormouse, false, params, []any{dmClaim(404)}, head)
-	if _, err := Verify(raw, b); !errors.Is(err, ErrBroken) {
-		t.Errorf("error mismatch: got %v, want %v", err, ErrBroken)
-	}
-
-	// Test 2: A keyed chain verifies structurally without recomputation.
-	raw, b = wrap(t, bundle.ProfileDormouse, true, params, []any{dmClaim(404)}, head)
-	got, err = Verify(raw, b)
-	if err != nil {
-		t.Fatalf("verify keyed: %v", err)
-	}
-	want = Result{Mode: ModeStructural, Claims: 1, HeadMatched: true}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
-	}
-
-	// Test 3: A missing install_id is a profile error for unkeyed recomputation.
-	raw, b = wrap(t, bundle.ProfileDormouse, false, nil, []any{dmClaim(200)}, head)
-	if _, err := Verify(raw, b); !errors.Is(err, ErrProfile) {
-		t.Errorf("error mismatch: got %v, want %v", err, ErrProfile)
 	}
 }
 

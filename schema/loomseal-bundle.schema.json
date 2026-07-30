@@ -59,7 +59,7 @@
       "additionalProperties": false,
       "properties": {
         "profile": {
-          "enum": ["dormouse-audit-chain-v2", "switchtender-audit-v1", "loomseal-chain-v1"]
+          "enum": ["switchtender-audit-v1", "loomseal-chain-v1"]
         },
         "keyed": { "type": "boolean" },
         "params": {

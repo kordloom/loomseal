@@ -18,7 +18,7 @@ failed, 2 usage error.
   run in sixty seconds, and what a verified bundle does and does not prove.
 - [The spec](https://loomseal.com/spec): the format itself. Bundle shape, canonical form
   (RFC 8785), producer keys and signatures, the three chain profiles
-  (dormouse-audit-chain-v2, switchtender-audit-v1, loomseal-chain-v1), anchors, conformance
+  (switchtender-audit-v1, loomseal-chain-v1), anchors, conformance
   levels, the verification procedure, and the claim-type registry.
 - [FAQ](https://loomseal.com/faq): why it exists, the value to operators and to reviewers,
   the cryptography, how keys are kept, quantum computers, why not a blockchain, and what

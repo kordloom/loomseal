@@ -22,11 +22,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MAX_SAFE = 2 ** 53
 V1 = "loomseal-chain-v1"
-DORMOUSE = "dormouse-audit-chain-v2"
 SWITCHTENDER = "switchtender-audit-v1"
 
-KNOWN_TYPES = {"dormouse.check/1", "dormouse.change/1", "dormouse.coverage/1",
-               "switchtender.audit/1", "switchtender.run/1"}
+KNOWN_TYPES = {"switchtender.audit/1", "switchtender.run/1"}
 
 
 class VError(Exception):
@@ -271,8 +269,6 @@ def _recompute_links(b):
     profile = b["chain"]["profile"]
     if profile == V1:
         _links_v1(b)
-    elif profile == DORMOUSE:
-        _links_dormouse(b)
     elif profile == SWITCHTENDER:
         _links_switchtender(b)
     else:
@@ -291,25 +287,6 @@ def _links_v1(b):
                              "claim": claim_digest})
         if hashlib.sha256(link_input).hexdigest() != c["chain"]["link"]:
             raise VError("chain", f"claim {i} link does not recompute")
-
-
-def _links_dormouse(b):
-    install = (b["chain"].get("params") or {}).get("install_id")
-    if not install:
-        raise VError("chain", "dormouse profile requires params.install_id")
-    for i, c in enumerate(b["claims"]):
-        p = c["payload"]
-        snapshot = ""
-        for e in c.get("evidence", []):
-            if e.get("role") == "snapshot":
-                snapshot = e["digest"].split("sha256:")[-1]
-                break
-        fields = [DORMOUSE, install, c["chain"].get("prev", ""), p.get("target_id", ""),
-                  p.get("outcome", ""), str(p.get("status", "")), snapshot, p.get("error", ""),
-                  str(p.get("elapsed_ns", "")), str(_unix_nanos(c["at"]))]
-        blob = "".join(f"{len(f.encode('utf-8'))}:{f}" for f in fields).encode("utf-8")
-        if hashlib.sha256(blob).hexdigest() != c["chain"]["link"]:
-            raise VError("chain", f"claim {i} link does not recompute (dormouse)")
 
 
 def _links_switchtender(b):

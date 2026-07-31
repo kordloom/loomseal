@@ -399,8 +399,8 @@
 
   <section id="about" class="section reveal" aria-label="Why LoomSeal exists">
     <p class="eyebrow">Why it exists</p>
-    <p class="thesis">When everything can be fabricated, the only evidence worth sending is
-    evidence a stranger can check.</p>
+    <p class="thesis">The hard part is not proving what happened. It is proving nothing else
+    did.</p>
     <div class="prose">
       <p>Sooner or later somebody asks you to prove something. A customer wants to know you
       patched what you said you patched. An auditor wants to know who changed production on the
@@ -416,6 +416,12 @@
       have existed before that anchor did. None of this is new cryptography. It is three
       ordinary ideas arranged so the person holding the file does not have to trust you for any
       of it.</p>
+      <p>This is also where a timestamp stops being enough. A timestamp proves one document
+      existed at one moment, which is worth something, but it says nothing about the documents
+      you chose not to stamp. Nobody can tell from a stamped file whether it was the only
+      record or the flattering one out of nine. A chain closes that gap: the entries are linked
+      to each other, so the set is either whole or visibly broken. Proving what happened is the
+      easy half. Proving nothing was left out is the half that is worth paying for.</p>
       <p>Sending it is the dull part, which is the point. One JSON file, small enough to email.
       The recipient runs a free, open-source verifier, offline, with no account and nothing
       installed from you, and a few seconds later they have a yes or a no.</p>
@@ -434,7 +440,7 @@
 
   <section id="how" class="section reveal" aria-label="How it works">
     <p class="eyebrow">How it works</p>
-    <p class="thesis">Nobody can backfill a history that was published as it happened.</p>
+    <p class="thesis">The chain is built as you go. That is the entire trick.</p>
     <div class="prose">
       <p>Three things happen while your software runs, and one happens when somebody asks. Your
       software records what it did, which it already does. Each entry is hashed together with the

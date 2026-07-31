@@ -135,6 +135,24 @@
     color: var(--deep);
     text-wrap: balance;
   }
+  .asks { max-width: 40rem; margin: 1.6rem auto 0; text-align: left; }
+  .ask {
+    display: flex; gap: 0.85rem; align-items: baseline;
+    padding: 0.5rem 0; font-size: 0.94rem; line-height: 1.6; color: var(--body-c);
+  }
+  .ask::before {
+    content: ""; flex: 0 0 auto; width: 5px; height: 5px; margin-top: 0.55rem;
+    border-radius: 50%; background: var(--meta-c);
+  }
+  .objs { max-width: 40rem; margin: 2rem auto 0; text-align: left; }
+  .obj { padding: 1.05rem 0; border-top: 1px solid var(--rule-c); }
+  .obj:first-child { border-top: 0; padding-top: 0; }
+  .obj-say {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic; font-size: 1.06rem; line-height: 1.4;
+    color: var(--ink); margin-bottom: 0.4rem;
+  }
+  .obj-ans { font-size: 0.94rem; line-height: 1.65; color: var(--body-c); }
   .prose {
     max-width: 42rem;
     margin: 1.9rem auto 0;
@@ -402,36 +420,67 @@
     <p class="thesis">The hard part is not proving what happened. It is proving nothing else
     did.</p>
     <div class="prose">
-      <p>Sooner or later somebody asks you to prove something. A customer wants to know you
-      patched what you said you patched. An auditor wants to know who changed production on the
-      day it went down, and whether the record was touched afterward. So you go and pull the
-      logs, and somewhere on the way to the meeting it lands on you that your logs are a table
-      in a database you control. You know you did not edit them. You have no way to show it.</p>
-      <p>That is the gap LoomSeal closes, and it closes it by answering the three things a
-      skeptic gets to say. <em>You made this up.</em> The file is signed by the machine that
-      produced it, so it could not have come from anywhere else. <em>You deleted the parts you
-      did not like.</em> Every entry is linked to the one before it, so a removed or reordered
-      line breaks the chain and the verifier names the exact spot. <em>You wrote this last
-      night.</em> The chain is anchored somewhere outside your control, so the entries have to
-      have existed before that anchor did. None of this is new cryptography. It is three
-      ordinary ideas arranged so the person holding the file does not have to trust you for any
-      of it.</p>
-      <p>This is also where a timestamp stops being enough. A timestamp proves one document
-      existed at one moment, which is worth something, but it says nothing about the documents
-      you chose not to stamp. Nobody can tell from a stamped file whether it was the only
-      record or the flattering one out of nine. A chain closes that gap: the entries are linked
-      to each other, so the set is either whole or visibly broken. Proving what happened is the
-      easy half. Proving nothing was left out is the half that is worth paying for.</p>
+      <p>Sooner or later somebody asks you to prove something.</p>
+    </div>
+
+    <div class="asks">
+      <p class="ask">A customer asks whether you patched what you said you patched, on the day
+      you said you patched it.</p>
+      <p class="ask">An auditor asks who changed production the day it went down, and whether
+      the record was touched afterward.</p>
+      <p class="ask">A regulator asks for evidence of a control you have supposedly been running
+      for two years.</p>
+      <p class="ask">A buyer's security team asks you to prove your change process, not describe
+      it.</p>
+    </div>
+
+    <div class="prose">
+      <p>So you go and pull the logs, and somewhere on the way to the meeting it lands on you
+      that your logs are a table in a database you control. You know you did not edit them. You
+      have no way to show it.</p>
+      <p>That is the gap LoomSeal closes, and it closes it by answering the only three things a
+      skeptic gets to say.</p>
+    </div>
+
+    <div class="objs">
+      <div class="obj">
+        <p class="obj-say">&ldquo;You made this up.&rdquo;</p>
+        <p class="obj-ans">The file is signed by the machine that produced it. Change one byte
+        anywhere in it and the signature fails.</p>
+      </div>
+      <div class="obj">
+        <p class="obj-say">&ldquo;You deleted the parts that made you look bad.&rdquo;</p>
+        <p class="obj-ans">Every entry carries the hash of the one before it. Remove or reorder
+        a single line and every link after it stops recomputing, and the verifier tells you
+        exactly which one broke.</p>
+      </div>
+      <div class="obj">
+        <p class="obj-say">&ldquo;You wrote this last night.&rdquo;</p>
+        <p class="obj-ans">The head of the chain was published outside your reach long before
+        anyone asked. Those entries existed before that anchor did, or the anchor would not
+        match.</p>
+      </div>
+    </div>
+
+    <div class="prose">
+      <p>None of that is new cryptography. It is three ordinary ideas stacked so that the person
+      holding the file never has to take your word for anything.</p>
+      <p>A timestamp gets you part of the way and then stops. It proves one document existed at
+      one moment, which is worth having, but it says nothing about the documents you chose not to
+      stamp. Stamp the clean deploys, skip the incident, and every stamp you hand over is
+      individually true and collectively a lie. A chain has no such seam. The entries hold each
+      other, so the set is whole or it is visibly broken. Proving what happened is the easy half.
+      Proving nothing was left out is the half worth paying for.</p>
       <p>Sending it is the dull part, which is the point. One JSON file, small enough to email.
       The recipient runs a free, open-source verifier, offline, with no account and nothing
       installed from you, and a few seconds later they have a yes or a no.</p>
       <p>We use it on our own products for a reason that is a little uncomfortable.
-      SwitchTender's promise is that it proves every change. Without a bundle, that promise is a
+      SwitchTender's promise is that it proves every change. Without a bundle that promise is a
       sentence on a website, and you would simply have to believe us that the audit trail behind
-      it is honest. Building a company on <em>do not take our word for it</em> and then asking
-      you to take our word for it is not a position we can defend. So SwitchTender's audit export
-      is being rebuilt as a LoomSeal bundle, and when it lands you will be able to check the
-      claim on the box without asking us anything.</p>
+      it is honest. Building a company on <em>do not take our word for it</em> and then asking you
+      to take our word for it is not a position we can defend. So SwitchTender's audit export is
+      being rebuilt as a LoomSeal bundle, and when it lands you will be able to check the claim on
+      the box without asking us anything.</p>
       <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
       A bundle is worth the same to a stranger as it is to your oldest customer, because checking
       it never involves you at all.</p>

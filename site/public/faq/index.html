@@ -333,6 +333,10 @@
         digests of the evidence behind it, its position in an append-only chain, the external
         anchors that fix that chain in time, and a signature. The verifier checks all of it
         offline, with no account and no trust in the producer or in KordLoom.</p>
+        <p>The claim that makes it worth having is narrower than tamper evidence, which is table
+        stakes and which a timestamp already gives you. It is completeness. The entries are
+        linked to one another, so you are not only shown what happened, you are shown that
+        nothing was removed.</p>
       </div>
     </details>
 
@@ -424,10 +428,13 @@
     <details class="qa">
       <summary>What does verification prove, exactly?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
-        <p>Three things: the producer holding the signing key assembled these exact claims;
-        the claims sit in an append-only order that has not been reordered, rewritten, or
-        trimmed since its heads were anchored; and any artifacts supplied match their recorded
-        digests. The conformance wording is exactly three words: signed, chained, anchored.</p>
+        <p>Three things. The producer holding the signing key assembled these exact claims. Any
+        artifacts supplied match their recorded digests. And the one that is hard to get any
+        other way: the claims sit in an append-only order that has not been reordered,
+        rewritten, or trimmed since its heads were anchored.</p>
+        <p>That third one is completeness, and it is the point. Not merely that these entries
+        are genuine, but that they are all of them. The conformance wording is exactly three
+        words: signed, chained, anchored.</p>
       </div>
     </details>
 
@@ -442,6 +449,23 @@
         and in the current verifier anchor proofs are carried but not validated, so relying
         parties confirm anchor references out of band. Stating this boundary plainly is a
         feature: proof that overclaims is just marketing.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>How is this different from a timestamp?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>A trusted timestamp proves one document existed at one moment. That is genuinely
+        useful, and LoomSeal uses timestamps as one kind of anchor rather than competing with
+        them. But a timestamp says nothing about the documents you chose not to stamp.</p>
+        <p>Nobody can tell from a stamped file whether it was the only record or the flattering
+        one out of nine. Stamp the clean deploys and skip the incident, and every stamp you hand
+        over is individually valid and collectively a lie by omission.</p>
+        <p>A chain closes that gap, because the entries are linked to each other rather than
+        each standing alone. Remove one and every link after it fails to recompute, and the
+        verifier names where. So the set is either whole or visibly broken. A timestamp answers
+        <em>did this happen</em>. A chain answers <em>is this all of it</em>, and that is the
+        question an auditor is really asking.</p>
       </div>
     </details>
 

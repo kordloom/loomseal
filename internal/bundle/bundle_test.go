@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -181,5 +182,75 @@ func TestCanonicalUnsigned(t *testing.T) {
 	}
 	if want := `{"a":2,"b":1,"signatures":[]}`; string(gotA) != want {
 		t.Errorf("canonical form mismatch: got %s, want %s", gotA, want)
+	}
+}
+
+// TestAnchorValidate pins every rule an anchor record has to satisfy.
+//
+// An anchor is the part of a bundle that says the chain existed at a point in time. A malformed one
+// that parsed anyway would let a producer attach something that looks like external corroboration
+// and is not, which is worse than carrying no anchor at all.
+func TestAnchorValidate(t *testing.T) {
+	t.Parallel()
+	good := Anchor{
+		Type: "rfc3161", Seq: 1, Link: strings.Repeat("ab", 32),
+		At: "2026-07-27T15:00:00Z", Ref: "https://freetsa.org/tsr",
+	}
+	if err := good.validate(0); err != nil {
+		t.Fatalf("a well-formed anchor was rejected: %v", err)
+	}
+	withProof := good
+	withProof.Proof = base64.StdEncoding.EncodeToString([]byte("token bytes"))
+	if err := withProof.validate(0); err != nil {
+		t.Errorf("an anchor carrying a valid proof was rejected: %v", err)
+	}
+
+	tests := []struct {
+		Name   string
+		Mutate func(a *Anchor)
+	}{
+		{Name: "unknown type", Mutate: func(a *Anchor) { a.Type = "carrier-pigeon" }},
+		{Name: "empty type", Mutate: func(a *Anchor) { a.Type = "" }},
+		{Name: "sequence below one", Mutate: func(a *Anchor) { a.Seq = 0 }},
+		{Name: "negative sequence", Mutate: func(a *Anchor) { a.Seq = -5 }},
+		{Name: "link is not a hash", Mutate: func(a *Anchor) { a.Link = "nope" }},
+		{Name: "empty link", Mutate: func(a *Anchor) { a.Link = "" }},
+		{Name: "no reference to check", Mutate: func(a *Anchor) { a.Ref = "" }},
+		{Name: "proof is not base64", Mutate: func(a *Anchor) { a.Proof = "!!! not base64 !!!" }},
+		{Name: "time is not RFC 3339", Mutate: func(a *Anchor) { a.At = "last Tuesday" }},
+	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			bad := good
+			test.Mutate(&bad)
+			if err := bad.validate(3); err == nil {
+				t.Error("an invalid anchor validated")
+			} else if !errors.Is(err, ErrSchema) {
+				t.Errorf("error = %v, want ErrSchema so the caller can tell a schema fault apart", err)
+			}
+		})
+	}
+}
+
+// TestKeyIDShape pins the producer fingerprint an operator publishes and a relying party pins.
+func TestKeyIDShape(t *testing.T) {
+	t.Parallel()
+	pub := make(ed25519.PublicKey, ed25519.PublicKeySize)
+	for i := range pub {
+		pub[i] = byte(i)
+	}
+	id := KeyID(pub)
+	if !strings.HasPrefix(id, "sha256:") || len(id) != len("sha256:")+64 {
+		t.Errorf("KeyID = %q, want sha256: followed by 64 hex characters", id)
+	}
+	if KeyID(pub) != id {
+		t.Error("KeyID is not stable, so a published fingerprint would stop matching")
+	}
+	other := make(ed25519.PublicKey, len(pub))
+	copy(other, pub)
+	other[31] ^= 0xff
+	if KeyID(other) == id {
+		t.Error("two different keys share a fingerprint, so pinning one accepts the other")
 	}
 }

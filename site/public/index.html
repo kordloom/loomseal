@@ -434,8 +434,7 @@
       <p>So you go and pull the logs, and somewhere on the way to the meeting it lands on you
       that your logs are a table in a database you control. You know you did not edit them. You
       have no way to show it.</p>
-      <p>That is the gap LoomSeal closes, and it closes it by answering the only three things a
-      skeptic gets to say.</p>
+      <p>That is the gap LoomSeal closes, and it closes it by answering the three things a skeptic always says.</p>
     </div>
 
     <div class="objs">
@@ -485,7 +484,7 @@
 
   <section id="how" class="section reveal" aria-label="How it works">
     <p class="eyebrow">How it works</p>
-    <p class="thesis">The chain is built as you go. That is the entire trick.</p>
+    <p class="thesis">The chain is built as you go, not assembled when somebody asks.</p>
     <div class="prose">
       <p>Three things happen while your software runs, and one happens when somebody asks. Your
       software records what it did, which it already does. Each entry is hashed together with the
@@ -508,10 +507,10 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
       matches the anchors against links in the chain. A removed or reordered entry is not merely
       detected. The verifier names where the break is.</p>
       <p>Notice what the anchor changes. A hash chain on its own only proves internal
-      consistency, and anyone could sit down and build a perfectly consistent one this afternoon.
+      consistency, and anyone could sit down and build a consistent one this afternoon.
       Publishing the head as you go is what makes that worthless to a forger: a convincing fake
-      would have required lying from the very first entry and publishing the false heads to a
-      third party the entire time. The security here is not really the cryptography. It is that
+      would have required lying from the first entry and publishing the false heads to a
+      third party the entire time. The security is not the cryptography. It is that
       history cannot be backfilled.</p>
     </div>
   </section>
@@ -552,7 +551,7 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
         <p class="tenet-name">Chained</p>
         <p class="tenet-text">The claims sit in an append-only chain that has not been
         reordered, rewritten, or trimmed. Anchored history cannot be manufactured after the
-        fact. Whoever has been recording, wins.</p>
+        fact.</p>
       </div>
       <div class="tenet">
         <span class="tenet-num" aria-hidden="true">03</span>
@@ -563,9 +562,9 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
       </div>
     </div>
     <div class="prose">
-      <p>And the boundary, stated plainly, because proof that overclaims is just marketing: a
-      chain fixes the record, not the character of the recorder. What verification cannot prove
-      is spelled out in the <a href="/spec">spec</a> right next to what it can.</p>
+      <p>The boundary is stated just as plainly, because proof that overclaims is only
+      marketing. A chain fixes the record, not the character of the recorder. What verification
+      cannot prove sits in the <a href="/spec">spec</a> next to what it can.</p>
     </div>
     <div class="spine">
       <div class="rule spine-rule" aria-hidden="true"></div>
@@ -579,12 +578,12 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
     <div class="prose">
       <p>SwitchTender is the first shipping producer. The example bundle and the
       <code>seal</code> package are the reference implementations. The chain profiles in the spec were derived from software KordLoom already
-      ships, so the format describes real constructions rather than hypothetical ones. If
-      you build software that should prove what it did, import
+      ships, so the format describes real constructions rather than hypothetical ones.</p>
+      <p>If you build software that should prove what it did, import
       <code>github.com/kordloom/loomseal/seal</code> to sign bundles and compute chain links,
-      follow the bundle shape in the spec, and register your claim types through the registry.
-      The envelope, chain profiles, and verification stay common, so one verifier checks
-      everyone, and the format is Apache-2.0, so adopting it requires no negotiation and no
+      follow the bundle shape in the spec, and register your claim types through the registry.</p>
+      <p>The envelope, chain profiles, and verification stay common, so one verifier checks every
+      producer. The format is Apache-2.0, so adopting it needs no negotiation and no
       permission.</p>
     </div>
   </section>

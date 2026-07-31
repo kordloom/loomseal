@@ -374,7 +374,7 @@
         <p>The anchor is the part doing the real work. A chain on its own only proves internal
         consistency, and anyone could sit down and build a consistent one this afternoon.
         Publishing the head as you go is what makes that worthless to a forger, because a
-        convincing fake would have required lying from the very first entry and publishing the
+        convincing fake would have required lying from the first entry and publishing the
         false heads the entire time. Worked through at length on the
         <a href="/#how">home page</a>.</p>
       </div>
@@ -469,7 +469,7 @@
         <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">repository</a>
         to sign bundles and compute generic chain links, follow the bundle shape in
         <a href="/spec">the spec</a> and the schema, and register new claim types through the
-        registry. Producers own their payloads; the envelope, chain profiles, and verification
+        registry. Producers own their payloads. The envelope, chain profiles, and verification
         procedure stay common so one verifier checks everyone.</p>
       </div>
     </details>
@@ -482,7 +482,7 @@
         built on the Go standard library alone, so every line that touches a verification
         decision is in the repository and readable in an afternoon.</p>
         <p>If you would rather not run our binary, build it from source, or implement your own
-        verifier from <a href="/spec">the spec</a> and the schema; the format belongs to anyone
+        verifier from <a href="/spec">the spec</a> and the schema. The format belongs to anyone
         who implements it.</p>
       </div>
     </details>
@@ -490,7 +490,7 @@
       <summary>Why is the format open if KordLoom is a business?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>A sealed format cannot be a standard, and proof that only its vendor can check is
-        not proof. KordLoom's products are the business; the proof language they speak is
+        not proof. KordLoom's products are the business. The proof language they speak is
         public on purpose.</p>
         <p>The license tiers are deliberate: the products carry their own licenses, while the
         format, schema, and verifier are Apache-2.0 so adopting them requires no negotiation
@@ -513,7 +513,7 @@
       <div class="qa-body">
         <p>The chain key is the secret that prevents forgery, it is generated on the producing
         install, and it never travels: not in bundles, not to KordLoom, not anywhere. Signing
-        keys likewise stay on the install; only the public key travels, and relying parties
+        keys likewise stay on the install. Only the public key travels, and relying parties
         can pin its fingerprint from the operator's trust page.</p>
         <p>Verification is offline by design, so there is no service to compromise between the
         evidence and the person checking it.</p>

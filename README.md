@@ -159,8 +159,9 @@ through the registry in the spec.
 ## Status
 
 Format v0.1 draft. The format, the schema, the verifier, and the seal package are complete,
-tested, and exercised by the example bundle in this repository. No product emits LoomSeal from a
-live system yet, so the example bundle and the seal package are the reference producers.
+tested, and exercised by the example bundle in this repository. SwitchTender emits LoomSeal
+bundles as of v1.35.0: `switchtender audit bundle` signs its audit chain into a bundle anyone can
+verify offline with the binary in this repo.
 
 ## License
 

@@ -478,9 +478,9 @@
       SwitchTender's promise is that it proves every change. Without a bundle that promise is a
       sentence on a website, and you would simply have to believe us that the audit trail behind
       it is honest. Building a company on <em>do not take our word for it</em> and then asking you
-      to take our word for it is not a position we can defend. So SwitchTender's audit export is
-      being rebuilt as a LoomSeal bundle, and when it lands you will be able to check the claim on
-      the box without asking us anything.</p>
+      to take our word for it is not a position we can defend. So SwitchTender emits them.
+      <code>switchtender audit bundle</code> turns its audit chain into a signed bundle, and you
+      can check the claim on the box without asking us anything.</p>
       <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
       A bundle is worth the same to a stranger as it is to your oldest customer, because checking
       it never involves you at all.</p>
@@ -581,8 +581,8 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
     <p class="eyebrow">For producers</p>
     <p class="thesis">One format across products, one verifier for everyone.</p>
     <div class="prose">
-      <p>The example bundle and the <code>seal</code> package are the reference producers
-      today. The chain profiles in the spec were derived from software KordLoom already
+      <p>SwitchTender is the first shipping producer. The example bundle and the
+      <code>seal</code> package are the reference implementations. The chain profiles in the spec were derived from software KordLoom already
       ships, so the format describes real constructions rather than hypothetical ones. If
       you build software that should prove what it did, import
       <code>github.com/kordloom/loomseal/seal</code> to sign bundles and compute chain links,

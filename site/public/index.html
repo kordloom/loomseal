@@ -360,6 +360,7 @@
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
       <a class="menu-item" href="#how"><span class="m-name">How it works</span></a>
       <a class="menu-item" href="#proves"><span class="m-name">What a bundle proves</span></a>
+      <a class="menu-item" href="#checked"><span class="m-name">Who checks the checker</span></a>
       <a class="menu-item" href="#producers"><span class="m-name">For producers</span></a>
       <a class="menu-item" href="#ourselves"><span class="m-name">Why we use it ourselves</span></a>
       <div class="menu-div"></div>
@@ -504,7 +505,7 @@ signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea9
 chain      loomseal-chain-v1, full, 2 claims, head matched true
 anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
 evidence   1 verified, 0 missing, 0 referenced only
-VERIFIED   signed, chained (full), anchored by reference</code></pre>
+VERIFIED   signed, chained (full), anchored (proof verified)</code></pre>
     <p class="note">Real output, reproducible from the public repository. The verifier is built
     on the Go standard library alone, so every line that touches a verdict is readable in an
     afternoon.</p>
@@ -578,6 +579,28 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
     <div class="spine">
       <div class="rule spine-rule" aria-hidden="true"></div>
       <p class="spine-line">Signed. Chained. Anchored.</p>
+    </div>
+  </section>
+
+  <section id="checked" class="section reveal" aria-label="Who checks the checker">
+    <p class="eyebrow">Who checks the checker</p>
+    <p class="thesis">Two verifiers, written apart, kept honest against each other.</p>
+    <div class="uses">
+      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">A format that says
+      <em>do not take our word for it</em> and then ships one verifier is asking you to trust our
+      code in order to prove our code is trustworthy. So there are two. A Go verifier ships in the
+      binary. A separate Python one is written from the specification, in a different language, on
+      different libraries. Twenty-six conformance vectors run against both, and a disagreement is
+      treated as a defect in the format rather than a curiosity.</p>
+      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">That has already earned its
+      keep. A timestamp carrying nanoseconds verified in Go and failed in Python, which reads as
+      tampering when nothing has been tampered with; the spec now hashes the stored bytes and the
+      failure is impossible. A signature check that assumed one hash function silently verified
+      nothing against an authority that used another, and only surfaced because the other
+      implementation disagreed. One verifier would have shipped both.</p>
+      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">The vectors are the durable
+      part. They outlive whoever wrote either verifier, and a third party can run them against an
+      implementation of their own.</p>
     </div>
   </section>
 

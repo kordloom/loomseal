@@ -82,9 +82,9 @@ That the producer observed the world honestly at capture time. A chain fixes the
 the character of the recorder. A dishonest producer can record fiction; what it cannot do is
 rewrite that fiction later without breaking the chain, or backdate a history it never kept.
 Keyed chains verify structurally for third parties and fully for the key holder, and in the
-current verifier anchor proofs are carried but not validated, so relying parties confirm
-anchor references out of band. Stating this boundary plainly is a feature: proof that
-overclaims is just marketing.
+current verifier an rfc3161 anchor proof is opened and checked against the link it attests to,
+while anchors of other types are confirmed by fetching what they reference. Stating this boundary
+plainly is a feature: proof that overclaims is just marketing.
 
 ## Why not a blockchain?
 

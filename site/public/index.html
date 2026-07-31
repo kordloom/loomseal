@@ -135,7 +135,7 @@
     color: var(--deep);
     text-wrap: balance;
   }
-  .asks { max-width: 40rem; margin: 1.6rem auto 0; text-align: left; }
+  .asks { max-width: 46rem; margin: 1.6rem auto 0; text-align: left; }
   .ask {
     display: flex; gap: 0.85rem; align-items: baseline;
     padding: 0.5rem 0; font-size: 0.94rem; line-height: 1.6; color: var(--body-c);
@@ -144,7 +144,7 @@
     content: ""; flex: 0 0 auto; width: 5px; height: 5px; margin-top: 0.55rem;
     border-radius: 50%; background: var(--meta-c);
   }
-  .objs { max-width: 40rem; margin: 2rem auto 0; text-align: left; }
+  .objs { max-width: 46rem; margin: 2rem auto 0; text-align: left; }
   .obj { padding: 1.05rem 0; border-top: 1px solid var(--rule-c); }
   .obj:first-child { border-top: 0; padding-top: 0; }
   .obj-say {
@@ -154,11 +154,11 @@
   }
   .obj-ans { font-size: 0.94rem; line-height: 1.65; color: var(--body-c); }
   .prose {
-    max-width: 40rem;
+    max-width: 46rem;
     margin: 1.9rem auto 0;
     text-align: left;
   }
-  .prose p { font-size: 0.95rem; line-height: 1.7; color: var(--body-c); margin-bottom: 1rem; }
+  .prose p { text-wrap: pretty; font-size: 0.95rem; line-height: 1.7; color: var(--body-c); margin-bottom: 1rem; }
   .prose p:last-child { margin-bottom: 0; }
   .prose a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
   .prose a:hover { text-decoration-color: var(--ink); }
@@ -184,7 +184,7 @@
   }
   pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--deep); }
   .note {
-    max-width: 40rem;
+    max-width: 46rem;
     margin: 1rem auto 0;
     text-align: left;
     font-size: 0.82rem;
@@ -424,14 +424,10 @@
     </div>
 
     <div class="asks">
-      <p class="ask">A customer asks whether you patched what you said you patched, on the day
-      you said you patched it.</p>
-      <p class="ask">An auditor asks who changed production the day it went down, and whether
-      the record was touched afterward.</p>
-      <p class="ask">A regulator asks for evidence of a control you have supposedly been running
-      for two years.</p>
-      <p class="ask">A buyer's security team asks you to prove your change process, not describe
-      it.</p>
+      <p class="ask">A customer asks whether you patched what you said you patched, when you said you did.</p>
+      <p class="ask">An auditor asks who changed production the day it broke, and whether the log was edited.</p>
+      <p class="ask">A regulator asks for evidence of a control you have supposedly run for two years.</p>
+      <p class="ask">A buyer's security team asks you to prove your change process, not describe it.</p>
     </div>
 
     <div class="prose">

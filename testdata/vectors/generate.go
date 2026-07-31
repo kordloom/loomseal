@@ -152,6 +152,13 @@ func (s *state) positives() {
 	// Sub-microsecond claim time. A verifier that parses the time into its language's own type and
 	// formats it back loses digits wherever that type is not nanosecond-capable, and reports an
 	// intact bundle as a broken chain. Hashing the stored bytes is what makes this verify.
+	// A real timestamp token over this vector's own link. A verifier that carries proofs without
+	// opening them reports this at the weaker "by reference" level and fails the suite.
+	s.add("switchtender-audit-anchored-proof", true, "signed, chained (full), anchored (proof verified)", "",
+		"An rfc3161 anchor carrying a real timestamp token verifies offline against the link it "+
+			"attests to, with no network and no trust in the producer.",
+		s.sign(s.switchTenderProof()))
+
 	s.add("switchtender-audit-nanosecond-at", true, "signed, chained (full)", "",
 		"A claim time carrying sub-microsecond digits verifies, because the profile hashes the "+
 			"stored time bytes rather than parsing and re-serializing them.",
@@ -385,6 +392,35 @@ func (s *state) switchTender() map[string]any {
 		"profile": profileSwitchTender, "keyed": false,
 		"head": map[string]any{"seq": int64(1), "link": link},
 	}
+	return m
+}
+
+// anchoredLink is the link a real RFC 3161 token in testdata attests to. A timestamp is signed over
+// a specific value, so the vector is built around the token rather than the other way round.
+const anchoredLink = "77c95e0459eef7970de647dfd263004d23b2c9a44b7feb10a24940bd695a05d3"
+
+// switchTenderProof builds a bundle anchored by a real timestamp token, so a verifier that carries
+// proofs without opening them fails the suite.
+func (s *state) switchTenderProof() map[string]any {
+	m := s.base()
+	claim := m["claims"].([]any)[0].(map[string]any)
+	link := switchTenderLink(1, at, "release-token", "POST", "/api/runs", "")
+	if link != anchoredLink {
+		panic("the timestamp fixture no longer matches this vector's link: " + link)
+	}
+	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+	m["chain"] = map[string]any{
+		"profile": profileSwitchTender, "keyed": false,
+		"head": map[string]any{"seq": int64(1), "link": link},
+	}
+	raw, err := os.ReadFile(filepath.Join("testdata", "vectors", "rfc3161-token.b64"))
+	if err != nil {
+		panic(err)
+	}
+	m["anchors"] = []any{map[string]any{
+		"type": "rfc3161", "seq": int64(1), "link": link,
+		"at": at, "ref": "https://freetsa.org/tsr", "proof": strings.TrimSpace(string(raw)),
+	}}
 	return m
 }
 

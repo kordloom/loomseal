@@ -246,6 +246,17 @@ then a matched anchor reports as anchored by reference and the relying party con
 of band. Anchoring cadence bounds the window in which a compromised producer key could rewrite
 unanchored history; anchor often.
 
+A verifier checks an `rfc3161` proof rather than only carrying it. It confirms the token's message
+imprint is the SHA-256 of the anchored link, that the token's signed attributes commit to the
+payload, and that the signature verifies against the timestamping certificate the token carries. A
+bundle whose proof holds is reported at a higher level than one anchored only by reference, because
+the reader needed no network and no trust in the producer to check it.
+
+A verifier does not decide whether an authority is worth trusting, and does not carry a root list.
+It reports the signer, and the relying party decides. Baking a root set into a verifier would make a
+bundle's strength depend on which build read it, which is the opposite of what an offline proof is
+for.
+
 ## Conformance levels
 
 | Level | Name     | Meaning                                                            |

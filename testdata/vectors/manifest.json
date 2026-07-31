@@ -135,6 +135,13 @@
       "why": "The shipped SwitchTender profile recomputes every link."
     },
     {
+      "name": "switchtender-audit-anchored-proof",
+      "file": "switchtender-audit-anchored-proof.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "An rfc3161 anchor carrying a real timestamp token verifies offline against the link it attests to, with no network and no trust in the producer."
+    },
+    {
       "name": "switchtender-audit-nanosecond-at",
       "file": "switchtender-audit-nanosecond-at.loomseal.json",
       "must_verify": true,

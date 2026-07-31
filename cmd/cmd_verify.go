@@ -88,8 +88,13 @@ func renderReport(w io.Writer, r *verify.Report) {
 		fmt.Fprintln(w, "note       declared head is ahead of the bundled claims; its link is not verified here")
 	}
 	if r.AnchorsMatched > 0 || r.AnchorProofsCarried > 0 {
-		fmt.Fprintf(w, "anchors    %d matched by coordinates, %d proofs carried, not validated in this version\n",
-			r.AnchorsMatched, r.AnchorProofsCarried)
+		fmt.Fprintf(w, "anchors    %d matched by coordinates, %d proof(s) carried, %d verified\n",
+			r.AnchorsMatched, r.AnchorProofsCarried, r.AnchorProofsVerified)
+	}
+	// A verified proof names the moment the link provably existed and who attested to it. Whether
+	// that authority is worth trusting is the reader's call, so it is printed rather than judged.
+	for _, a := range r.AnchorAttestations {
+		fmt.Fprintf(w, "attested   %s\n", a)
 	}
 	if r.AnchorsToDeclaredHead > 0 {
 		fmt.Fprintf(w, "note       %d anchor(s) reference only the unverified declared head, not a claim in this bundle\n",

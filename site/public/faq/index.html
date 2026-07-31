@@ -99,6 +99,15 @@
   .page-head .lead { animation-delay: 0.4s; }
   .page-head .crumb { animation-delay: 0.52s; }
   .qa-wrap { width: 100%; max-width: 46rem; padding-bottom: 2rem; }
+  .qa-group {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 2.2rem 0 0.9rem 0.3rem;
+  }
+  .qa-wrap > .qa-group:first-child { margin-top: 0; }
   .qa {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -322,8 +331,9 @@
 
   <div class="qa-wrap">
 
+    <h2 class="qa-group">Start here</h2>
     <details class="qa">
-      <summary>Why does LoomSeal exist?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <summary>Why can't I just send my logs?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>Because generating convincing artifacts became free. Screenshots, logs, dashboards,
         and compliance documents can all be produced or edited in seconds, which means none of
@@ -339,94 +349,31 @@
         nothing was removed.</p>
       </div>
     </details>
-
     <details class="qa">
-      <summary>What is the value if I operate a system?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <summary>How does it actually work?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
-        <p>You stop asking people to believe you. When an auditor, a security reviewer, a
-        customer, or a regulator asks how you know your controls ran, you send a file they can
-        verify in seconds instead of a deck they have to take on faith.</p>
-        <p>And because chained history cannot be created retroactively, every quiet month you
-        record is evidence a competitor who starts later can never manufacture. The record
-        compounds.</p>
+        <p>Three things happen while your software runs, and one happens when somebody asks.</p>
+        <p>Your software records what it did, which it already does. Each entry is hashed
+        together with the one before it, so entry three's link covers entry three and entry
+        two's link. Alter or delete anything earlier and every link after it changes. And every
+        so often the current head of that chain, one 64-character string, is published somewhere
+        you do not control: a git commit, a timestamp authority, a transparency log.</p>
+        <p>When somebody asks for evidence, you export a bundle. The claims for the window they
+        care about, the digests of any files behind them, the chain coordinates, the anchors, and
+        one ed25519 signature over the whole document.</p>
+        <p>The verifier runs that backwards, offline. It checks the signature, recomputes every
+        link from the claim contents, confirms each entry points at the one before it, and
+        matches the anchors against links in the chain. A break is named, not merely detected.</p>
+        <p>The anchor is the part doing the real work. A chain on its own only proves internal
+        consistency, and anyone could sit down and build a consistent one this afternoon.
+        Publishing the head as you go is what makes that worthless to a forger, because a
+        convincing fake would have required lying from the very first entry and publishing the
+        false heads the entire time. Worked through at length on the
+        <a href="/#how">home page</a>.</p>
       </div>
     </details>
-
     <details class="qa">
-      <summary>What is the value if I am the one reviewing?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>You verify instead of trusting. No vendor portal, no screenshots, no phone calls to
-        confirm a PDF. One command, offline, and the math either holds or it does not. If the
-        bundle was altered, verification fails loudly and names the break.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>Why should I trust the verifier?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>You should not have to, which is the design. The verifier is small, Apache-2.0, and
-        built on the Go standard library alone, so every line that touches a verification
-        decision is in the repository and readable in an afternoon.</p>
-        <p>If you would rather not run our binary, build it from source, or implement your own
-        verifier from <a href="/spec">the spec</a> and the schema; the format belongs to anyone
-        who implements it.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>Why is the format open if KordLoom is a business?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>A sealed format cannot be a standard, and proof that only its vendor can check is
-        not proof. KordLoom's products are the business; the proof language they speak is
-        public on purpose.</p>
-        <p>The license tiers are deliberate: the products carry their own licenses, while the
-        format, schema, and verifier are Apache-2.0 so adopting them requires no negotiation
-        and carries an express patent grant. The LoomSeal name and mark are trademarks, not
-        part of the code license.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>What cryptography does it use, and why so plain?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>SHA-256 for content digests, HMAC-SHA256 for keyed chains, ed25519 for signatures.
-        Boring on purpose: every primitive is decades-tested, standardized, and available in
-        every mainstream language.</p>
-        <p>There is no blockchain, no token, no consensus, and no network dependency. The
-        security model is a private ledger with a maker's mark, not a coin.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>How is it kept secure?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>The chain key is the secret that prevents forgery, it is generated on the producing
-        install, and it never travels: not in bundles, not to KordLoom, not anywhere. Signing
-        keys likewise stay on the install; only the public key travels, and relying parties
-        can pin its fingerprint from the operator's trust page.</p>
-        <p>Verification is offline by design, so there is no service to compromise between the
-        evidence and the person checking it.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>What about quantum computers?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>The chains and digests rest on SHA-256, which known quantum algorithms do not
-        meaningfully weaken, so the part of LoomSeal that carries history is built on the
-        quantum-resilient half of cryptography.</p>
-        <p>The ed25519 signature is the component a large future quantum computer would break,
-        and the format is ready for that: signatures carry an algorithm field, so a
-        NIST-standardized post-quantum signature can be added beside ed25519 without a new
-        envelope.</p>
-        <p>Anchoring already bounds the damage, because a signature forged years from now
-        cannot rewrite history whose heads were published outside the producer's control
-        before such forgery was possible. A quantum computer does not un-publish a hash.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>What does verification prove, exactly?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <summary>What does a bundle actually prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>Three things. The producer holding the signing key assembled these exact claims. Any
         artifacts supplied match their recorded digests. And the one that is hard to get any
@@ -437,7 +384,6 @@
         words: signed, chained, anchored.</p>
       </div>
     </details>
-
     <details class="qa">
       <summary>What does it deliberately not prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -452,6 +398,7 @@
       </div>
     </details>
 
+    <h2 class="qa-group">Instead of what?</h2>
     <details class="qa">
       <summary>How is this different from a timestamp?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -468,7 +415,6 @@
         question an auditor is really asking.</p>
       </div>
     </details>
-
     <details class="qa">
       <summary>Why not a blockchain?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -482,18 +428,26 @@
       </div>
     </details>
 
+    <h2 class="qa-group">Using it</h2>
     <details class="qa">
-      <summary>What happens if KordLoom disappears?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <summary>I run a system. What do I actually get?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
-        <p>Nothing happens to your proof. Bundles verify offline forever, the spec and schema
-        and verifier are Apache-2.0 and forkable, and no verification step ever contacts
-        KordLoom. Records you anchored stay anchored, because the anchors live outside
-        KordLoom too.</p>
-        <p>A proof format you could lose in a vendor's shutdown would not be worth adopting,
-        so LoomSeal is built to outlive its author.</p>
+        <p>You stop asking people to believe you. When an auditor, a security reviewer, a
+        customer, or a regulator asks how you know your controls ran, you send a file they can
+        verify in seconds instead of a deck they have to take on faith.</p>
+        <p>And because chained history cannot be created retroactively, every quiet month you
+        record is evidence a competitor who starts later can never manufacture. The record
+        compounds.</p>
       </div>
     </details>
-
+    <details class="qa">
+      <summary>Someone sent me a bundle. Now what?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>You verify instead of trusting. No vendor portal, no screenshots, no phone calls to
+        confirm a PDF. One command, offline, and the math either holds or it does not. If the
+        bundle was altered, verification fails loudly and names the break.</p>
+      </div>
+    </details>
     <details class="qa">
       <summary>How do I emit bundles from my own software?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -503,6 +457,78 @@
         <a href="/spec">the spec</a> and the schema, and register new claim types through the
         registry. Producers own their payloads; the envelope, chain profiles, and verification
         procedure stay common so one verifier checks everyone.</p>
+      </div>
+    </details>
+
+    <h2 class="qa-group">Trusting it</h2>
+    <details class="qa">
+      <summary>Why should I trust the verifier?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>You should not have to, which is the design. The verifier is small, Apache-2.0, and
+        built on the Go standard library alone, so every line that touches a verification
+        decision is in the repository and readable in an afternoon.</p>
+        <p>If you would rather not run our binary, build it from source, or implement your own
+        verifier from <a href="/spec">the spec</a> and the schema; the format belongs to anyone
+        who implements it.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>Why is the format open if KordLoom is a business?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>A sealed format cannot be a standard, and proof that only its vendor can check is
+        not proof. KordLoom's products are the business; the proof language they speak is
+        public on purpose.</p>
+        <p>The license tiers are deliberate: the products carry their own licenses, while the
+        format, schema, and verifier are Apache-2.0 so adopting them requires no negotiation
+        and carries an express patent grant. The LoomSeal name and mark are trademarks, not
+        part of the code license.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What cryptography does it use, and why so plain?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>SHA-256 for content digests, HMAC-SHA256 for keyed chains, ed25519 for signatures.
+        Boring on purpose: every primitive is decades-tested, standardized, and available in
+        every mainstream language.</p>
+        <p>There is no blockchain, no token, no consensus, and no network dependency. The
+        security model is a private ledger with a maker's mark, not a coin.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>How is it kept secure?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>The chain key is the secret that prevents forgery, it is generated on the producing
+        install, and it never travels: not in bundles, not to KordLoom, not anywhere. Signing
+        keys likewise stay on the install; only the public key travels, and relying parties
+        can pin its fingerprint from the operator's trust page.</p>
+        <p>Verification is offline by design, so there is no service to compromise between the
+        evidence and the person checking it.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What about quantum computers?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>The chains and digests rest on SHA-256, which known quantum algorithms do not
+        meaningfully weaken, so the part of LoomSeal that carries history is built on the
+        quantum-resilient half of cryptography.</p>
+        <p>The ed25519 signature is the component a large future quantum computer would break,
+        and the format is ready for that: signatures carry an algorithm field, so a
+        NIST-standardized post-quantum signature can be added beside ed25519 without a new
+        envelope.</p>
+        <p>Anchoring already bounds the damage, because a signature forged years from now
+        cannot rewrite history whose heads were published outside the producer's control
+        before such forgery was possible. A quantum computer does not un-publish a hash.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What happens if KordLoom disappears?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Nothing happens to your proof. Bundles verify offline forever, the spec and schema
+        and verifier are Apache-2.0 and forkable, and no verification step ever contacts
+        KordLoom. Records you anchored stay anchored, because the anchors live outside
+        KordLoom too.</p>
+        <p>A proof format you could lose in a vendor's shutdown would not be worth adopting,
+        so LoomSeal is built to outlive its author.</p>
       </div>
     </details>
 

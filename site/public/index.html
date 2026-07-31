@@ -331,6 +331,7 @@
     <nav class="menu-panel" aria-label="LoomSeal menu">
       <p class="menu-label">LoomSeal</p>
       <a class="menu-item" href="#about"><span class="m-name">Why it exists</span></a>
+      <a class="menu-item" href="#how"><span class="m-name">How it works</span></a>
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
       <a class="menu-item" href="#proves"><span class="m-name">What a bundle proves</span></a>
       <a class="menu-item" href="#producers"><span class="m-name">For producers</span></a>
@@ -428,6 +429,39 @@
       <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
       A bundle is worth the same to a stranger as it is to your oldest customer, because checking
       it never involves you at all.</p>
+    </div>
+  </section>
+
+  <section id="how" class="section reveal" aria-label="How it works">
+    <p class="eyebrow">How it works</p>
+    <p class="thesis">Nobody can backfill a history that was published as it happened.</p>
+    <div class="prose">
+      <p>Three things happen while your software runs, and one happens when somebody asks. Your
+      software records what it did, which it already does. Each entry is hashed together with the
+      one before it, so the entries form a chain. And every so often the current head of that
+      chain, a single 64-character string, is published somewhere you do not control: a git
+      commit, a timestamp authority, a transparency log.</p>
+    </div>
+    <pre><code>entry 1    link1 = H(claim1, "")
+entry 2    link2 = H(claim2, link1)
+entry 3    link3 = H(claim3, link2)
+
+head       link3  --published-->  git commit, timestamp, transparency log</code></pre>
+    <div class="prose">
+      <p>Alter or delete anything earlier and every link after it changes. There is no way to edit
+      the middle of a chain and leave the end intact. So when somebody asks for evidence, you
+      export the claims for the window they care about, the digests of any files behind them, the
+      chain coordinates, the anchors, and one signature over the whole document.</p>
+      <p>The verifier runs that backwards, offline. It confirms the signature, recomputes every
+      link from the claim contents, checks that each entry points at the one before it, and
+      matches the anchors against links in the chain. A removed or reordered entry is not merely
+      detected. The verifier names where the break is.</p>
+      <p>Notice what the anchor changes. A hash chain on its own only proves internal
+      consistency, and anyone could sit down and build a perfectly consistent one this afternoon.
+      Publishing the head as you go is what makes that worthless to a forger: a convincing fake
+      would have required lying from the very first entry and publishing the false heads to a
+      third party the entire time. The security here is not really the cryptography. It is that
+      history cannot be backfilled.</p>
     </div>
   </section>
 

@@ -39,6 +39,47 @@ This is not a trial, an open-core tease, or a format with a paid tier waiting be
 
 One binary. One file. Provable.
 
+## How it works
+
+Three things happen while your software runs, and one happens when somebody asks.
+
+**1. Your software records what it did.** Nothing new here. You already keep audit entries.
+
+**2. Each entry is hashed together with the one before it.** An entry's link is a hash over its
+own contents plus the previous entry's link. It is cheap, it happens inline, and it needs no
+coordination with anyone.
+
+    entry 1    link1 = H(claim1, "")
+    entry 2    link2 = H(claim2, link1)
+    entry 3    link3 = H(claim3, link2)
+
+Alter or delete anything earlier and every link after it changes. There is no way to edit the
+middle of a chain and leave the end intact.
+
+**3. Every so often, the current head link is published where you do not control it.** A git
+commit, an RFC 3161 timestamp, a transparency log. It is one 64-character string, so it costs
+nothing to publish. This is the anchor, and it is the step that does the real work: it turns
+"I have a hash chain" into "I was already recording this before that date, and here is a third
+party who saw it."
+
+**4. When somebody asks for evidence, you export a bundle.** The claims for the window they care
+about, digests of any evidence files, the chain coordinates, the anchors, and one ed25519
+signature over the whole document.
+
+Verification runs that in reverse, offline:
+
+- The signature confirms the bundle came from the key holder and that not one byte moved since.
+- Every link is recomputed from the claim contents and compared to the link on record.
+- Every `prev` is checked against the actual previous link, so a removed or reordered entry
+  shows up immediately, and the verifier names where.
+- Anchor coordinates are matched against links in the chain.
+
+**Why this cannot be faked after the fact.** The chain is built as you go, not assembled at
+export time. To produce a forgery that survives, you would have had to be lying from the very
+first entry and publishing the fake heads to a third party the whole way. Nobody backfills an
+anchored history. That is the entire security argument, and it is why the moat here is time
+rather than cryptography.
+
 ## Install
 
     go install github.com/kordloom/loomseal@latest
@@ -70,11 +111,6 @@ operator's trust page, `--json` emits the report for machines, `--pretty` indent
 codes: 0 verified, 1 verification failed, 2 usage or read error.
 
 ## What verification proves
-
-Anyone can generate a convincing screenshot now. A log can be edited, a dashboard can lie, and
-a compliance PDF can be written five minutes before the meeting. When every artifact is cheap
-to fabricate, the only evidence worth sending is evidence a stranger can check without
-trusting the sender. That is what a bundle is.
 
 Run `loomseal verify` on one file and, seconds later, offline, with no account and no trust in
 KordLoom or the operator who sent it, you know three things:

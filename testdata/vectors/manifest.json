@@ -135,6 +135,13 @@
       "why": "The shipped SwitchTender profile recomputes every link."
     },
     {
+      "name": "switchtender-audit-nanosecond-at",
+      "file": "switchtender-audit-nanosecond-at.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A claim time carrying sub-microsecond digits verifies, because the profile hashes the stored time bytes rather than parsing and re-serializing them."
+    },
+    {
       "name": "tampered-payload",
       "file": "tampered-payload.loomseal.json",
       "must_verify": false,

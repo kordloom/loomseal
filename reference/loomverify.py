@@ -292,7 +292,8 @@ def _links_v1(b):
 def _links_switchtender(b):
     for i, c in enumerate(b["claims"]):
         p = c["payload"]
-        arr = canon([str(c["chain"]["seq"]), _rfc3339_utc(c["at"]), p.get("actor", ""),
+        _check_rfc3339(c["at"], i)
+        arr = canon([str(c["chain"]["seq"]), c["at"], p.get("actor", ""),
                      p.get("method", ""), p.get("path", ""), c["chain"].get("prev", "")])
         if hashlib.sha256(arr).hexdigest() != c["chain"]["link"]:
             raise VError("chain", f"claim {i} link does not recompute (switchtender)")
@@ -303,11 +304,28 @@ def _unix_nanos(ts):
     return int(dt.timestamp() * 1_000_000_000)
 
 
-def _rfc3339_utc(ts):
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
-    if dt.microsecond:
-        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f").rstrip("0") + "Z"
-    return dt.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+def _check_rfc3339(ts, i):
+    """Reject a claim time that is not RFC 3339 UTC. The time is hashed verbatim, so this only has
+    to establish that it is well formed, never to reformat it.
+
+    Normalizing it here is what this function used to do, and it was wrong. datetime carries
+    microseconds, so a nanosecond timestamp lost its last three digits and the link recomputed to a
+    different value. The Go verifier, whose time type carries nanoseconds, verified the same bundle
+    happily. Two conformant verifiers disagreed on valid input, and the failure surfaced as "link
+    does not recompute", which reads as tampering. Hashing the stored bytes ends that, and removes
+    the requirement that a verifier own a nanosecond-capable time type at all."""
+    if not isinstance(ts, str) or not ts.endswith("Z"):
+        raise VError("claim", f"claim {i} at must be RFC 3339 UTC ending in Z")
+    body = ts[:-1]
+    frac = ""
+    if "." in body:
+        body, frac = body.split(".", 1)
+        if not frac or not frac.isdigit():
+            raise VError("claim", f"claim {i} at has a malformed fractional second")
+    try:
+        datetime.strptime(body, "%Y-%m-%dT%H:%M:%S")
+    except ValueError as exc:
+        raise VError("claim", f"claim {i} at is not RFC 3339: {exc}") from exc
 
 
 def _check_anchors(b, report):

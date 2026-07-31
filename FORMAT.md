@@ -187,10 +187,24 @@ The shipped SwitchTender construction. Each audit entry's link is SHA-256 over t
 array, no insignificant whitespace, of six strings: its sequence as a decimal string, the time,
 actor, method, path, and previous link. Sequence starts at 1; the genesis previous link is the
 empty string. This profile is unkeyed: any verifier recomputes every link from the claim payloads
-alone. The time is the claim's `at` in UTC, RFC 3339 with nanosecond precision, trailing zeros in
-the fractional part trimmed and the fractional part and its dot omitted entirely when the fraction
-is zero, so an `at` of `2026-07-27T15:00:00Z` serializes back to `2026-07-27T15:00:00Z`. That
-round-trips the stored form exactly.
+alone.
+
+The time is the claim's `at` **exactly as it appears in the bundle**. A verifier hashes those bytes
+and must not parse the value and re-serialize it. A producer writes `at` in UTC, RFC 3339, ending in
+`Z`, with trailing zeros in the fractional part trimmed and the fractional part and its dot omitted
+entirely when the fraction is zero, so an `at` of `2026-07-27T15:00:00Z` is stored and hashed as
+`2026-07-27T15:00:00Z`. A verifier still rejects an `at` that is not well-formed RFC 3339 UTC; it
+simply never rewrites a well-formed one.
+
+Hashing the stored bytes is normative, not an optimization, and earlier wording that described the
+time as carrying nanosecond precision invited the opposite reading. A verifier that parsed the value
+into its language's time type and formatted it back was performing an identity only if that type
+could hold every digit written. Go's `time.Time` can. Python's `datetime` carries microseconds and
+JavaScript's `Date` carries milliseconds, so a nanosecond timestamp lost digits and recomputed a
+different link. The two reference verifiers shipped in this repository disagreed about the same
+valid bundle, and the failure surfaced as a broken chain, which reads as tampering when nothing has
+been tampered with. Hashing the stored bytes removes that class of failure and lets this profile be
+implemented in a language with no nanosecond-capable clock.
 
 ### loomseal-chain-v1
 

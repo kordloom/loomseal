@@ -149,6 +149,13 @@
       "why": "An rfc3161 anchor carrying a real timestamp token verifies offline against the link it attests to, with no network and no trust in the producer."
     },
     {
+      "name": "switchtender-audit-json-escapes",
+      "file": "switchtender-audit-json-escapes.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A recorded path carrying \u0026, \u003c, \u003e and U+2028 verifies, because the profile serializes with RFC 8785 rather than an encoder that escapes those characters for HTML."
+    },
+    {
       "name": "switchtender-audit-nanosecond-at",
       "file": "switchtender-audit-nanosecond-at.loomseal.json",
       "must_verify": true,

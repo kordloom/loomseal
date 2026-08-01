@@ -228,9 +228,16 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 		return
 	}
 	verified := map[int64]string{}
+	// claimAt records when each anchored position says it happened, so an attestation can be held
+	// against it. A timestamp authority signs a hash somebody hands it, and that hash cannot exist
+	// before the entry it covers.
+	claimAt := map[int64]time.Time{}
 	for _, c := range b.Claims {
 		if c.Chain != nil {
 			verified[c.Chain.Seq] = c.Chain.Link
+			if at, err := time.Parse(time.RFC3339, c.At); err == nil {
+				claimAt[c.Chain.Seq] = at
+			}
 		}
 	}
 	if r.HeadMatched {
@@ -267,6 +274,17 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 			r.problem("anchor %d proof does not verify: %v", i, verr)
 			continue
 		}
+		// An attestation earlier than the entry it covers is not evidence, it is a contradiction.
+		// The token commits to a link, and that link is the hash of a claim carrying its own time,
+		// so an authority cannot honestly have signed it first. Without this a producer running
+		// their own authority could sign any hash with any date and still reach the strongest
+		// verdict the format issues.
+		if at, ok := claimAt[a.Seq]; ok && res.Time.Before(at.Add(-anchorClockSkew)) {
+			r.problem("anchor %d attests %s over entry %d, which the bundle says happened at %s: "+
+				"a timestamp cannot precede the entry it covers", i,
+				res.Time.UTC().Format(time.RFC3339), a.Seq, at.UTC().Format(time.RFC3339))
+			continue
+		}
 		r.AnchorProofsVerified++
 		r.AnchorAttestations = append(r.AnchorAttestations,
 			res.Time.Format(time.RFC3339)+" by "+res.Signer)
@@ -277,6 +295,11 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 		r.AnchorProofsVerified == r.AnchorProofsCarried
 	r.measureUnanchored(b, verified)
 }
+
+// anchorClockSkew is how far an authority's clock may sit behind the producer's before an
+// attestation is read as predating the entry it covers. Both clocks are real and neither is
+// authoritative over the other, so a small allowance keeps honest installs from being called liars.
+const anchorClockSkew = 5 * time.Minute
 
 // measureUnanchored records how far the anchors reach and what they leave uncovered. An anchor
 // fixes history only up to the position it names, so the claims after the last anchored position

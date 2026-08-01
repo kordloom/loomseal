@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kordloom/loomseal/internal/jcs"
 	"github.com/kordloom/loomseal/seal"
 )
 
@@ -158,6 +159,11 @@ func (s *state) positives() {
 		"An rfc3161 anchor carrying a real timestamp token verifies offline against the link it "+
 			"attests to, with no network and no trust in the producer.",
 		s.sign(s.switchTenderProof()))
+
+	s.add("switchtender-audit-json-escapes", true, "signed, chained (full)", "",
+		"A recorded path carrying &, <, > and U+2028 verifies, because the profile serializes with "+
+			"RFC 8785 rather than an encoder that escapes those characters for HTML.",
+		s.sign(s.switchTenderEscapes()))
 
 	s.add("switchtender-audit-nanosecond-at", true, "signed, chained (full)", "",
 		"A claim time carrying sub-microsecond digits verifies, because the profile hashes the "+
@@ -426,6 +432,29 @@ func (s *state) switchTender() map[string]any {
 	return m
 }
 
+// switchTenderEscapes builds a chain whose recorded path carries the characters encoding/json
+// escapes for HTML and RFC 8785 does not.
+//
+// A verifier reaching for its language's default JSON encoder recomputes a different link for this
+// claim and reports an honest chain as broken. The entry is append-only, so every later bundle
+// covering it fails the same way and the only escape is to truncate the trail past it. No earlier
+// vector contained one of these characters, which is how the disagreement went unnoticed.
+func (s *state) switchTenderEscapes() map[string]any {
+	m := s.base()
+	const path = "/api/runs/prod&staging<x>\u2028y"
+	link := switchTenderLink(1, at, "release-token", "POST", path, "")
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+	if p, ok := claim["payload"].(map[string]any); ok {
+		p["path"] = path
+	}
+	m["chain"] = map[string]any{
+		"profile": profileSwitchTender, "keyed": false,
+		"head": map[string]any{"seq": int64(1), "link": link},
+	}
+	return m
+}
+
 // anchoredLink is the link a real RFC 3161 token in testdata attests to. A timestamp is signed over
 // a specific value, so the vector is built around the token rather than the other way round.
 const anchoredLink = "77c95e0459eef7970de647dfd263004d23b2c9a44b7feb10a24940bd695a05d3"
@@ -483,8 +512,11 @@ func stripChain(claim map[string]any) map[string]any {
 
 // switchTenderLink recomputes a switchtender-audit-v1 link.
 func switchTenderLink(seq int64, atStr, actor, method, path, prev string) string {
-	fields := []string{strconv.FormatInt(seq, 10), atStr, actor, method, path, prev}
-	b, err := json.Marshal(fields)
+	// Serialized with the JCS encoder, not encoding/json. encoding/json escapes &, <, >, U+2028,
+	// and U+2029 for embedding in HTML; RFC 8785 emits them raw. A vector built with the escaping
+	// encoder would have written the wrong answer into the file that defines what correct means.
+	fields := []any{strconv.FormatInt(seq, 10), atStr, actor, method, path, prev}
+	b, err := jcs.Serialize(fields)
 	if err != nil {
 		panic(err)
 	}

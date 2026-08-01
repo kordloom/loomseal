@@ -90,6 +90,16 @@ type Report struct {
 	AnchoredThroughSeq int64 `json:"anchored_through_seq,omitempty"`
 	// UnanchoredClaims is how many bundled claims sit past AnchoredThroughSeq.
 	UnanchoredClaims int `json:"unanchored_claims,omitempty"`
+	// AttestationAge is how long the bundle sat between its newest verified attestation and the
+	// moment it was assembled.
+	//
+	// It is reported whenever a proof verifies, including when nothing follows the anchor. The
+	// claim-to-claim span goes quiet in exactly the case worth catching: cut the entries above an
+	// anchor and delete the anchors that covered them, and the bundle comes out with no unanchored
+	// claims at all, reading cleaner than the honest one it replaced. This number does not go
+	// quiet. A trail anchored on a schedule shows minutes or hours here; one showing months was
+	// either not anchored for months or was cut back to an old anchor, and both deserve a question.
+	AttestationAge string `json:"attestation_age,omitempty"`
 	// UnanchoredWindow is the span from the last anchored claim to the newest bundled claim,
 	// which is how long a compromised producer key had to rewrite history undetected. A verified
 	// bundle with a wide window is weaker evidence than one with a narrow window.
@@ -244,6 +254,7 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 		verified[b.Chain.Head.Seq] = b.Chain.Head.Link
 	}
 	head := b.Chain.Head
+	var newestAttestation time.Time
 	for i, a := range b.Anchors {
 		switch {
 		case verified[a.Seq] == a.Link && a.Link != "":
@@ -286,6 +297,9 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 			continue
 		}
 		r.AnchorProofsVerified++
+		if res.Time.After(newestAttestation) {
+			newestAttestation = res.Time
+		}
 		r.AnchorAttestations = append(r.AnchorAttestations,
 			res.Time.Format(time.RFC3339)+" by "+res.Signer)
 	}
@@ -293,6 +307,7 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 	// this verifier cannot check must not be reported as validated.
 	r.AnchorProofsValidated = r.AnchorProofsCarried > 0 &&
 		r.AnchorProofsVerified == r.AnchorProofsCarried
+	r.measureAttestationAge(b, newestAttestation)
 	r.measureUnanchored(b, verified)
 }
 
@@ -300,6 +315,21 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 // attestation is read as predating the entry it covers. Both clocks are real and neither is
 // authoritative over the other, so a small allowance keeps honest installs from being called liars.
 const anchorClockSkew = 5 * time.Minute
+
+// measureAttestationAge records how long the bundle sat between its newest verified attestation and
+// the moment it was assembled.
+func (r *Report) measureAttestationAge(b *bundle.Bundle, newest time.Time) {
+	if newest.IsZero() {
+		return
+	}
+	created, err := time.Parse(time.RFC3339, b.CreatedAt)
+	if err != nil {
+		return
+	}
+	if gap := created.Sub(newest); gap > 0 {
+		r.AttestationAge = gap.Round(time.Second).String()
+	}
+}
 
 // measureUnanchored records how far the anchors reach and what they leave uncovered. An anchor
 // fixes history only up to the position it names, so the claims after the last anchored position

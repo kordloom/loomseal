@@ -112,6 +112,21 @@ func renderReport(w io.Writer, r *verify.Report) {
 			}
 		}
 		fmt.Fprintln(w, line)
+		// Printed even when nothing follows the anchor, because that is the case worth catching.
+		// Cutting the entries above an anchor and deleting the anchors that covered them leaves a
+		// bundle with no unanchored claims at all, reading cleaner than the honest one it replaced.
+		// This line still shows the gap, and a trail anchored on a schedule keeps it small.
+		if r.AttestationAge != "" {
+			fmt.Fprintf(w, "attested   %s before this bundle was assembled\n", r.AttestationAge)
+		}
+	}
+	// An anchor this verifier did not open is a claim, not a proof. The level says "by reference",
+	// which is accurate, but a reader skims the word "anchored" and stops. Saying plainly that
+	// nothing was checked is the difference between a relying party going and looking and one
+	// believing an anchor pointing at a commit that does not exist.
+	if unchecked := r.AnchorsMatched - r.AnchorProofsVerified; unchecked > 0 {
+		fmt.Fprintf(w, "note       %d anchor(s) name a location this verifier did not fetch; "+
+			"confirm them yourself before relying on them\n", unchecked)
 	}
 	fmt.Fprintf(w, "evidence   %d verified, %d missing, %d referenced only\n",
 		r.EvidenceVerified, r.EvidenceMissing, r.EvidenceReferenced)

@@ -6,3 +6,5 @@ loomseal
 dist/
 .DS_Store
 .wrangler/
+__pycache__/
+*.pyc

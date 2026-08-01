@@ -8,3 +8,7 @@ dist/
 .wrangler/
 __pycache__/
 *.pyc
+
+# Built at deploy time by .github/workflows/deploy-site.yml, never committed.
+site/public/verify/loomseal.wasm
+site/public/verify/wasm_exec.js

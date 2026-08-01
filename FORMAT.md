@@ -240,11 +240,11 @@ The verifier checks that each anchor's `seq` and `link` match a coordinate it ve
 in the bundle, or the head when the head tied to the newest claim. An anchor that matches only a
 declared head beyond the bundled claims is reported, but because that head link is unverified the
 anchor binds nothing the verifier confirmed and does not by itself earn the anchored level. An
-anchor that matches no verified coordinate fails the bundle. Verifier v0.1 reports embedded
-`rfc3161` tokens as carried without validating them; token validation lands in v0.2, and until
-then a matched anchor reports as anchored by reference and the relying party confirms the ref out
-of band. Anchoring cadence bounds the window in which a compromised producer key could rewrite
-unanchored history; anchor often.
+anchor that matches no verified coordinate fails the bundle. An anchor type the verifier cannot
+validate offline, such as `git`, `https`, or `rekor`, is matched by coordinates only and reports
+as anchored by reference, leaving the relying party to confirm the ref out of band. Anchoring
+cadence bounds the window in which a compromised producer key could rewrite unanchored history;
+anchor often.
 
 A verifier checks an `rfc3161` proof rather than only carrying it. It confirms the token's message
 imprint is the SHA-256 of the anchored link, that the token's signed attributes commit to the

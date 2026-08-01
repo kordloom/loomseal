@@ -101,9 +101,9 @@ The output, reproducible from this repository right now:
     subject    fleet demo-yard
     signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
     chain      loomseal-chain-v1, full, 2 claims, head matched true
-    anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
+    anchors    1 matched by coordinates, 0 proof(s) carried, 0 verified
     evidence   1 verified, 0 missing, 0 referenced only
-    VERIFIED   signed, chained (full), anchored (proof verified)
+    VERIFIED   signed, chained (full), anchored by reference
 
 Flags: `--evidence <dir>` checks artifact digests against files you were given,
 `--fingerprint sha256:<hex>` pins the producer key to the fingerprint published on the

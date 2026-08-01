@@ -503,9 +503,9 @@ loomseal verify examples/audit.loomseal.json --evidence examples/evidence</code>
 subject    fleet demo-yard
 signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
 chain      loomseal-chain-v1, full, 2 claims, head matched true
-anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
+anchors    1 matched by coordinates, 0 proof(s) carried, 0 verified
 evidence   1 verified, 0 missing, 0 referenced only
-VERIFIED   signed, chained (full), anchored (proof verified)</code></pre>
+VERIFIED   signed, chained (full), anchored by reference</code></pre>
     <p class="note">Real output, reproducible from the public repository. The verifier is built
     on the Go standard library alone, so every line that touches a verdict is readable in an
     afternoon.</p>
@@ -573,8 +573,10 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
     </div>
     <div class="prose">
       <p>The boundary is stated just as plainly, because proof that overclaims is only
-      marketing. A chain fixes the record, not the character of the recorder. What verification
-      cannot prove sits in the <a href="/spec">spec</a> next to what it can.</p>
+      marketing. A chain fixes the record, not the character of the recorder. It proves nothing
+      was removed after it was written. It cannot prove that everything which happened was
+      written down, because capture is a property of the producer and not of the format. What
+      verification cannot prove sits in the <a href="/spec">spec</a> next to what it can.</p>
     </div>
     <div class="spine">
       <div class="rule spine-rule" aria-hidden="true"></div>

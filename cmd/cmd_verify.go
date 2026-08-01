@@ -100,6 +100,19 @@ func renderReport(w io.Writer, r *verify.Report) {
 		fmt.Fprintf(w, "note       %d anchor(s) reference only the unverified declared head, not a claim in this bundle\n",
 			r.AnchorsToDeclaredHead)
 	}
+	// An anchor pins history only up to the position it names. What it leaves uncovered is the
+	// part a compromised producer key could still rewrite, so the reader is told the size of it
+	// rather than left to work it out from the claim list.
+	if r.AnchoredThroughSeq > 0 {
+		line := fmt.Sprintf("anchored   through seq %d", r.AnchoredThroughSeq)
+		if r.UnanchoredClaims > 0 {
+			line += fmt.Sprintf(", %d claim(s) after it", r.UnanchoredClaims)
+			if r.UnanchoredWindow != "" {
+				line += fmt.Sprintf(" spanning %s", r.UnanchoredWindow)
+			}
+		}
+		fmt.Fprintln(w, line)
+	}
 	fmt.Fprintf(w, "evidence   %d verified, %d missing, %d referenced only\n",
 		r.EvidenceVerified, r.EvidenceMissing, r.EvidenceReferenced)
 	for _, t := range r.UnknownClaimTypes {

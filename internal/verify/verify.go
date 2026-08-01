@@ -85,6 +85,15 @@ type Report struct {
 	// AnchorAttestations describes each verified proof: when the authority signed, and who it was.
 	// Whether that authority is worth trusting is the relying party's call, not this verifier's.
 	AnchorAttestations []string `json:"anchor_attestations,omitempty"`
+	// AnchoredThroughSeq is the highest chain position an anchor pinned outside the producer's
+	// reach. Claims past it rest on the producer's key alone.
+	AnchoredThroughSeq int64 `json:"anchored_through_seq,omitempty"`
+	// UnanchoredClaims is how many bundled claims sit past AnchoredThroughSeq.
+	UnanchoredClaims int `json:"unanchored_claims,omitempty"`
+	// UnanchoredWindow is the span from the last anchored claim to the newest bundled claim,
+	// which is how long a compromised producer key had to rewrite history undetected. A verified
+	// bundle with a wide window is weaker evidence than one with a narrow window.
+	UnanchoredWindow string `json:"unanchored_window,omitempty"`
 	// EvidenceVerified is how many evidence digests matched a supplied artifact.
 	EvidenceVerified int `json:"evidence_verified"`
 	// EvidenceMissing is how many digests had no artifact in the supplied directory.
@@ -266,6 +275,46 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 	// this verifier cannot check must not be reported as validated.
 	r.AnchorProofsValidated = r.AnchorProofsCarried > 0 &&
 		r.AnchorProofsVerified == r.AnchorProofsCarried
+	r.measureUnanchored(b, verified)
+}
+
+// measureUnanchored records how far the anchors reach and what they leave uncovered. An anchor
+// fixes history only up to the position it names, so the claims after the last anchored position
+// are the ones a compromised producer key could still rewrite. Reporting the span turns a verdict
+// that reads as a yes or no into one that says how much the yes is worth.
+func (r *Report) measureUnanchored(b *bundle.Bundle, verified map[int64]string) {
+	var through int64
+	for _, a := range b.Anchors {
+		if verified[a.Seq] == a.Link && a.Link != "" && a.Seq > through {
+			through = a.Seq
+		}
+	}
+	if through == 0 {
+		return
+	}
+	r.AnchoredThroughSeq = through
+	var anchoredAt, newestAt time.Time
+	for _, c := range b.Claims {
+		if c.Chain == nil {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, c.At)
+		if err != nil {
+			continue
+		}
+		if c.Chain.Seq == through {
+			anchoredAt = at
+		}
+		if c.Chain.Seq > through {
+			r.UnanchoredClaims++
+			if at.After(newestAt) {
+				newestAt = at
+			}
+		}
+	}
+	if !anchoredAt.IsZero() && !newestAt.IsZero() && newestAt.After(anchoredAt) {
+		r.UnanchoredWindow = newestAt.Sub(anchoredAt).Round(time.Second).String()
+	}
 }
 
 // checkEvidence hashes every regular file under dir and compares the bundle's evidence

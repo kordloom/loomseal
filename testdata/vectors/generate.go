@@ -288,6 +288,37 @@ func (s *state) negatives() {
 	m["producer"].(map[string]any)["key_id"] = "sha256:" + strings.Repeat("00", 32)
 	s.add("producer-keyid-mismatch", false, "", "signature",
 		"The producer key_id must be the digest of the embedded public key.", s.sign(m))
+
+	// Signature alg rewritten after signing. Emptying signatures before signing leaves alg
+	// outside the signed bytes, so this edit costs an attacker nothing and the ed25519
+	// signature still checks out. A verifier that picked its algorithm by reading alg would
+	// follow the attacker; one that treats alg as a label rejects the bundle.
+	s.add("signature-alg-rewritten", false, "", "signature",
+		"alg is outside the signed bytes, so a verifier rejects a foreign value rather than "+
+			"dispatching on it.", rewriteAlg(s.sign(s.v1(1, false)), "rsa-pss-sha256"))
+}
+
+// rewriteAlg edits the first signature entry's alg in an already-signed bundle, the way an
+// attacker in the middle would. The signature stays valid because alg is not covered by it.
+func rewriteAlg(signed []byte, alg string) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(signed, &m); err != nil {
+		panic(err)
+	}
+	sigs, ok := m["signatures"].([]any)
+	if !ok || len(sigs) == 0 {
+		panic("signed bundle carries no signatures")
+	}
+	first, ok := sigs[0].(map[string]any)
+	if !ok {
+		panic("signature entry is not an object")
+	}
+	first["alg"] = alg
+	out, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	return out
 }
 
 // base builds a minimal signed-ready bundle map with one generic claim and no chain.

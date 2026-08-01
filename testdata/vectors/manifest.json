@@ -107,6 +107,13 @@
       "why": "Invalid UTF-8 input is rejected, not coerced to the replacement character."
     },
     {
+      "name": "signature-alg-rewritten",
+      "file": "signature-alg-rewritten.loomseal.json",
+      "must_verify": false,
+      "failing_check": "signature",
+      "why": "alg is outside the signed bytes, so a verifier rejects a foreign value rather than dispatching on it."
+    },
+    {
       "name": "signed-chained-anchored",
       "file": "signed-chained-anchored.loomseal.json",
       "must_verify": true,

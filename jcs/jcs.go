@@ -1,6 +1,13 @@
 // Package jcs implements RFC 8785 JSON canonicalization restricted to the LoomSeal number
 // profile: numbers are integers with absolute value at most 2^53. Identical input always
 // serializes to identical bytes, which is what signatures and digests are computed over.
+//
+// It is exported so anything producing a LoomSeal bundle canonicalizes exactly the way a verifier
+// will. A producer reaching for its language's default JSON encoder gets something close but not
+// equal: Go's encoding/json escapes &, <, and > for embedding in HTML, and RFC 8785 does not. That
+// difference is invisible until a recorded value happens to contain one of them, at which point the
+// producer and the verifier disagree about a hash and an honest record is called broken. There is
+// no reason for two implementations of this on the producing side.
 package jcs
 
 import (

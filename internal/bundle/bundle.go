@@ -16,7 +16,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/kordloom/loomseal/internal/jcs"
+	"github.com/kordloom/loomseal/jcs"
 )
 
 // Version is the only bundle format version this verifier speaks.

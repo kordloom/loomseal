@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kordloom/loomseal/internal/jcs"
+	"github.com/kordloom/loomseal/jcs"
 	"github.com/kordloom/loomseal/seal"
 )
 

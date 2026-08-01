@@ -441,6 +441,34 @@
         you cannot take it back, and leaves the rest.</p>
       </div>
     </details>
+    <details class="qa">
+      <summary>Why not Sigstore or in-toto?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Use them where they fit. They answer a different question well, and if you are signing
+        container images or build provenance you should reach for cosign and SLSA rather than
+        this.</p>
+        <p>They attest to artifacts. Each attestation stands alone and says what one thing is.
+        That is the right model for a supply chain, where the unit of interest is a build or an
+        image.</p>
+        <p>An operational record is not a set of artifacts. It is an ordered stream, and the
+        question an auditor asks is not whether entry 40 is genuine but whether anything is
+        missing between 1 and 40. Independent attestations cannot answer that, because nothing in
+        the thirty-ninth says a fortieth should exist. LoomSeal entries carry sequence numbers and
+        each link is computed over the one before it, so a gap inside a declared range has nowhere
+        to hide.</p>
+        <p>The second difference is what verification costs. Checking a Sigstore signature usually
+        means reaching a certificate authority, a transparency log, or a trust root, and the
+        guarantee lasts as long as those services do. A LoomSeal bundle verifies from the file with
+        nothing running and no network. Evidence that has to satisfy an auditor on a segregated
+        network, or still verify in ten years, is a different requirement from evidence checked
+        during CI.</p>
+        <p>None of this makes them alternatives. A bundle can travel inside a DSSE envelope for
+        tooling that expects one, and <code>rekor</code> is a declared anchor type: publish a chain
+        head to a transparency log and the anchor is as strong as that log. This verifier confirms
+        a rekor anchor by reference rather than fetching it, so the relying party checks the log
+        itself.</p>
+      </div>
+    </details>
 
     <h2 class="qa-group">Using it</h2>
     <details class="qa">

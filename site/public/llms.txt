@@ -16,8 +16,9 @@ failed, 2 usage error.
 
 ## Pages
 
-- [Home](https://loomseal.com/): why the format exists, a reproducible verification you can
-  run in sixty seconds, and what a verified bundle does and does not prove.
+- [Home](https://loomseal.com/): a plain-language summary for non-engineers, why the format
+  exists, a reproducible verification you can run in sixty seconds, and what a verified bundle
+  does and does not prove.
 - [The spec](https://loomseal.com/spec): the format itself. Bundle shape, canonical form
   (RFC 8785), producer keys and signatures, the three chain profiles
   (switchtender-audit-v1, loomseal-chain-v1), anchors, conformance

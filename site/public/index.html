@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LoomSeal</title>
-<meta name="description" content="Proof, not promises. One file. Verified by anyone.">
+<meta name="description" content="LoomSeal is an open proof format. Hand someone one file that proves your records have not been altered, and let them check it offline, free, with no account.">
 <link rel="canonical" href="https://loomseal.com">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://loomseal.com">
 <meta property="og:title" content="LoomSeal">
-<meta property="og:description" content="Proof, not promises. One file. Verified by anyone.">
+<meta property="og:description" content="An open proof format. One file that proves your records have not been altered. Verified by anyone, offline and free.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
 <style>
   :root {
@@ -199,6 +199,17 @@
     font-size: 0.82rem;
     color: var(--faint);
   }
+  .gains {
+    max-width: 46rem;
+    margin: 2.1rem auto 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.45rem 2.2rem;
+    text-align: left;
+  }
+  .gain { border-top: 1px solid var(--rule-c); padding-top: 0.95rem; }
+  .gain-name { font-size: 0.95rem; font-weight: 600; letter-spacing: 0.01em; color: var(--ink); margin-bottom: 0.35rem; }
+  .gain-text { font-size: 0.9rem; line-height: 1.62; color: var(--body-c); }
   .tenets {
     margin: 2.75rem auto 0;
     display: grid;
@@ -326,6 +337,7 @@
 
   @media (max-width: 640px) {
     .tenets { grid-template-columns: 1fr; gap: 1.5rem; }
+    .gains { grid-template-columns: 1fr; gap: 1.2rem; }
     .section { padding: 3rem 0; }
     .frame .meta { display: none; }
   }
@@ -357,6 +369,7 @@
     </summary>
     <nav class="menu-panel" aria-label="LoomSeal menu">
       <p class="menu-label">LoomSeal</p>
+      <a class="menu-item" href="#plain"><span class="m-name">In plain terms</span></a>
       <a class="menu-item" href="#about"><span class="m-name">The problem</span></a>
       <a class="menu-item" href="#timestamp"><span class="m-name">Why not a timestamp</span></a>
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
@@ -429,9 +442,71 @@
     <h1>LoomSeal</h1>
     <div class="rule" aria-hidden="true"></div>
     <p class="lead">Proof, not promises.</p>
-    <p class="sub">One file. Verified by anyone. The KordLoom proof format: signed, chained,
-    anchored bundles that verify offline, free, with no account and no trust in the sender.</p>
+    <p class="sub">An open proof format. Hand someone a single file that proves your records
+    have not been altered, and let them check it themselves: offline, free, with no account and
+    no trust in you.</p>
   </main>
+
+  <section id="plain" class="section reveal" aria-label="LoomSeal in plain terms">
+    <p class="eyebrow">In plain terms</p>
+    <p class="thesis">Proof you can hand to someone who has no reason to believe you.</p>
+    <div class="prose">
+      <p>When somebody needs evidence out of your systems today, you export it. A spreadsheet, a
+      PDF, a folder of screenshots. All of it came out of a system you control and could have
+      edited before sending, so the person reading it has exactly one reason to believe it. They
+      trust you. Most days that is enough. The days it is not are the expensive ones.</p>
+      <p>A LoomSeal bundle is that same evidence with a tamper-evident seal around it, the way a
+      bottle of aspirin carries a seal you can check yourself before you buy it. It is one file,
+      small enough to email. Whoever receives it runs a free checker on their own laptop, offline,
+      without an account and without contacting you. Seconds later they have one of two answers:
+      the record is whole and unchanged, or here is the exact entry that was altered.</p>
+      <p>Nobody has to take anyone's word for it, so nobody has to argue about it.</p>
+    </div>
+
+    <div class="gains">
+      <div class="gain">
+        <p class="gain-name">Audits get shorter</p>
+        <p class="gain-text">Reviewers stop spending the first half of an engagement
+        establishing that your evidence is genuine. They check the file, then read it.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">Reviews get proof, not prose</p>
+        <p class="gain-text">Send the record instead of a narrative about the record. It gets
+        checked in place, without a walkthrough, a screen share, or a follow-up call.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">Disputes end early</p>
+        <p class="gain-text">When two sides disagree about what happened and when, the file
+        decides it in minutes. Nobody has to weigh whose word to take.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">The record builds itself</p>
+        <p class="gain-text">Nothing is assembled the day somebody asks. The seal forms while
+        your software runs, so there is no evidence project and no chance to curate it later.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">It costs the other side nothing</p>
+        <p class="gain-text">No account, no license, no vendor to onboard, nothing installed
+        from you. The checker is free and open source, and it never phones anyone.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">The evidence outlives us</p>
+        <p class="gain-text">A bundle sealed today still verifies if KordLoom is gone tomorrow,
+        because checking one never involved KordLoom in the first place.</p>
+      </div>
+    </div>
+
+    <div class="prose">
+      <p>Two limits, said up front rather than buried. It cannot
+      prove your systems wrote down everything that happened. It proves that nothing was changed
+      or removed after it was written. And LoomSeal is a format, not a product: it is free and
+      open, with nothing to buy and nothing to sign. What you buy is software that seals its own
+      history as it works, the way <a href="https://switchtender.com" target="_blank" rel="noopener">SwitchTender</a>
+      does for every change it makes to a fleet.</p>
+      <p>That is the whole of it. The rest of this page is why it survives somebody actively
+      trying to break it.</p>
+    </div>
+  </section>
 
   <section id="about" class="section reveal" aria-label="Why LoomSeal exists">
     <p class="eyebrow">The problem</p>

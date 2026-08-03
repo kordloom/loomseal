@@ -374,6 +374,30 @@
     .menu[open] .menu-panel { animation: none; }
     .menu > summary span { transition: none; }
   }
+  .signup { max-width: 34rem; margin: 0 auto; text-align: center; }
+  .signup-row { display: flex; gap: 0.6rem; justify-content: center; margin-top: 1.4rem; }
+  .signup-row input[type="email"] {
+    flex: 1 1 auto; min-width: 0; max-width: 20rem;
+    font: inherit; font-size: 0.92rem; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.6rem 0.85rem;
+  }
+  .signup-row input[type="email"]:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .signup-row button {
+    font: inherit; font-size: 0.92rem; font-weight: 600; cursor: pointer;
+    color: var(--paper); background: var(--ink); border: 1px solid var(--ink);
+    border-radius: 10px; padding: 0.6rem 1.1rem; transition: opacity 0.15s ease;
+  }
+  .signup-row button:hover { opacity: 0.85; }
+  .signup-row button:disabled { opacity: 0.55; cursor: default; }
+  .signup-row button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .signup-hide { position: absolute; left: -9999px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+  .signup-say { margin-top: 0.8rem; font-size: 0.88rem; line-height: 1.6; color: var(--body-c); min-height: 1.4em; }
+  .signup-note { margin-top: 0.9rem; font-size: 0.8rem; color: var(--faint); }
+  @media (max-width: 480px) {
+    .signup-row { flex-direction: column; align-items: stretch; }
+    .signup-row input[type="email"] { max-width: none; }
+  }
 </style>
 </head>
 <body>
@@ -827,6 +851,28 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
         </div>
   </section>
 
+  <section id="follow" class="section reveal" aria-label="Hear when things ship">
+    <p class="eyebrow">If you want to follow this</p>
+    <div class="signup">
+      <p class="thesis">The format is free and stays free. Leave an address, hear when
+      something real ships.</p>
+      <form id="signup-form" novalidate>
+        <div class="signup-hide" aria-hidden="true">
+          <label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <label class="signup-hide" for="signup-email">Email address</label>
+        <div class="signup-row">
+          <input id="signup-email" type="email" name="email" placeholder="you@example.com"
+            autocomplete="email" required>
+          <button type="submit">Keep me posted</button>
+        </div>
+      </form>
+      <p class="signup-say" id="signup-say" role="status" aria-live="polite"></p>
+      <p class="signup-note">Rare mail. The stored record is the address, this site's name, and
+      the time. Nothing else, which is what you would expect from a site about proof.</p>
+    </div>
+  </section>
+
 
   <footer>
     <div class="foot-links">
@@ -875,6 +921,44 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
       });
     }, { threshold: 0.14 });
     reveals.forEach(function (el) { obs.observe(el); });
+  })();
+  </script>
+  <script>
+  (function () {
+    var form = document.getElementById("signup-form");
+    if (!form) return;
+    var email = document.getElementById("signup-email");
+    var button = form.querySelector("button");
+    var honeypot = form.querySelector('input[name="company"]');
+    var status = document.getElementById("signup-say");
+    function say(text) { status.textContent = text; }
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var address = email.value.trim();
+      if (address === "" || address.indexOf("@") < 1) {
+        say("That does not look like an email address.");
+        return;
+      }
+      button.disabled = true;
+      say("Adding you.");
+      fetch("https://signup.kordloom.com/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: address,
+          source: window.location.hostname,
+          company: honeypot ? honeypot.value : ""
+        })
+      }).then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        // A repeat signup also succeeds, so nobody is told they are already on the list.
+        form.style.display = "none";
+        say("You are on the list. Thank you.");
+      }).catch(function () {
+        button.disabled = false;
+        say("That did not go through. Email hello@kordloom.com and we will add you.");
+      });
+    });
   })();
   </script>
 </body>

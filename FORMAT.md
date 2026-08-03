@@ -269,6 +269,64 @@ It reports the signer, and the relying party decides. Baking a root set into a v
 bundle's strength depend on which build read it, which is the opposite of what an offline proof is
 for.
 
+## Population attestation: LoomSpan
+
+A chain proves its entries were not edited. It does not prove entries were written. A producer
+that quietly declines to record an event emits a chain that is intact, fully verified, and
+misleading, and every signed-log design shares this hole. Auditors have a name for the gap:
+establishing that information produced by the entity is complete, not merely accurate.
+Completeness cannot be proven absolutely, because that would be a claim about events that left
+no trace. What a producer can do is commit, on a fixed cadence, to the exact population so far,
+which converts silent omission into an affirmative lie: a signed statement that was false when
+it was made.
+
+This is the LoomSpan profile. Status: draft, targeted at format 0.2. A verifier without span
+support ignores the claim type and says so, which the registry rule already guarantees.
+
+A span claim is an ordinary claim on the chain it attests, type `loomseal.span/1`, the first
+type in the spec-owned `loomseal` namespace. The population it counts is records: entries of
+this chain. Counting live resources or deployed components is a different job, deliberately not
+this one.
+
+```json
+{
+  "type": "loomseal.span/1",
+  "at": "2026-08-02T10:01:00Z",
+  "payload": { "stream": "chain", "cadence_s": 60, "beat": 1441, "count": 17 },
+  "chain": { "seq": 18227, "prev": "...", "link": "..." }
+}
+```
+
+The claim's `at` is the beat time. `cadence_s` is the interval, in whole seconds, the producer
+commits to. `beat` starts at 1 and increases by exactly 1 per span claim on the chain. `count`
+is the number of entries appended since the previous span claim. For beat 1, `count` covers
+every entry that precedes it, so a chain adopting the profile mid-life attests its entire
+prior population once, at adoption.
+
+Because a span claim sits in the chain it attests, its own `chain.prev` is the head it commits
+to, and `count` is redundant with the sequence numbers: the entries between two span claims
+number exactly the difference of their `seq` values minus one. The verifier recomputes that
+difference, and a mismatch fails the bundle. The redundancy is the point. At every beat the
+producer signs a number it cannot later shrink without contradicting either the links, which
+the chain checks catch, or its own counts, which this profile catches.
+
+Two failure shapes are deliberately distinct. A missing beat number is a deleted window, and it
+fails the bundle. Beat times further apart than the declared cadence are a gap: the collector
+went quiet, nothing was provably deleted, and the verifier reports the gap with its bounds and
+duration instead of failing. Coverage is always reported as measurement, never as a badge.
+"Attested every 60s, longest unattested window 74s" is worth more than a completeness stamp,
+and it is the only phrasing that survives a skeptical reader.
+
+One limit carries the architecture. A chain that stops emitting beats and stops anchoring
+simply ends, and a bundle cannot distinguish ending from having nothing more to say. Silence is
+only detectable where an outside party expects the next beat and can see it missing. Publish
+beat heads on the declared cadence through the `git` or `https` anchor types, to a feed where a
+missing entry is visible to anyone. The feed, not the bundle, is where going dark becomes loud.
+
+Conformance vectors ship with verifier support: a valid spanned bundle, a false count, a
+missing beat, a gap reported rather than failed, and a mid-life adoption. Until they enter the
+manifest, this profile is prose and its registry status stays draft.
+
 ## Conformance levels
 
 | Level | Name     | Meaning                                                            |
@@ -276,11 +334,12 @@ for.
 | 1     | Signed   | Valid producer signature over the canonical bundle                 |
 | 2     | Chained  | Claims linked in a declared profile, continuity verifies           |
 | 3     | Anchored | At least one verified anchor binds the chain outside the producer  |
+| 4     | Spanned  | Anchored, plus span claims present and every span check verifies   |
 
 Level 2 verification is full for unkeyed profiles (every link recomputed) and structural for
 keyed profiles (continuity of `prev` to `link`, with full verification reserved to the key
 holder). The verifier's report names which form it performed. Marketing language maps one to
-one: signed, chained, anchored. No other adjectives.
+one: signed, chained, anchored, spanned. No other adjectives.
 
 ## Verification
 
@@ -293,9 +352,13 @@ The verifier performs these steps in order and fails closed:
    link for unkeyed profiles; check continuity for keyed profiles.
 4. For each anchor: match its coordinates to the bundle, verify embedded proofs, report the
    anchor set with times and refs.
-5. For each evidence artifact supplied to the verifier: recompute its digest and compare.
+5. If span claims are present: require beat contiguity, recompute every count from the
+   sequence numbers, compare beat times against the declared cadence, and report coverage:
+   beats present, gaps with bounds, longest gap. A false count or a missing beat fails the
+   bundle; a gap is reported, never hidden.
+6. For each evidence artifact supplied to the verifier: recompute its digest and compare.
    Evidence not supplied is reported as referenced, not checked, never as verified.
-6. Report the conformance level achieved and an overall verdict. Any failed check fails the
+7. Report the conformance level achieved and an overall verdict. Any failed check fails the
    bundle.
 
 Who can verify what:
@@ -316,8 +379,11 @@ emitting product and documented there; this registry fixes the names and require
 |------------------------|--------------|----------|---------------------------------------|
 | `switchtender.audit/1` | SwitchTender | v0.1     | actor, method, path                   |
 | `switchtender.run/1`   | SwitchTender | draft    | run id, kind, hosts, approver         |
+| `loomseal.span/1`      | Any producer | draft    | stream, cadence_s, beat, count        |
 
-New types enter by change to this registry. Product namespaces belong to their products. A
+New types enter by change to this registry. Product namespaces belong to their products. The
+`loomseal` namespace is owned by this specification: its types are defined here, and any
+producer may emit them. A
 breaking payload change bumps the major suffix; verifiers ignore types they do not know and say
 so in the report.
 
@@ -332,6 +398,13 @@ A verified level 3 bundle proves: the producer holding the signing key assembled
 the claims sit in an append-only order that has not been reordered or rewritten since the
 anchored moments; the evidence digests match any artifacts presented; the anchored history
 predates the anchor times.
+
+A verified level 4 bundle adds: at every beat the producer committed to the exact entry
+population so far, so an entry removed after its beat contradicts either the links or the
+counts, and a deleted beat is itself visible. It still does not prove an event was recorded in
+the first place; a beat bounds when an omission had to begin, not whether one happened. And it
+says nothing about silence after the newest anchored beat, which only the published feed can
+show.
 
 It does not prove: that the producer observed the world honestly at capture time (a chain fixes
 the record, not the honesty of the recorder); that a keyed chain is internally valid without the

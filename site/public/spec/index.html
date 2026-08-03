@@ -265,6 +265,12 @@
           <span class="m-desc">The format, typeset and readable.</span>
         </span>
       </a>
+      <a class="menu-item" href="/span">
+        <span class="mi-text">
+          <span class="m-name">LoomSpan</span>
+          <span class="m-desc">The completeness profile. Proves the span is whole.</span>
+        </span>
+      </a>
       <a class="menu-item" href="/faq">
         <span class="mi-text">
           <span class="m-name">FAQ</span>
@@ -552,6 +558,58 @@
     bounds the window in which a compromised producer key could rewrite unanchored history;
     anchor often.</p>
 
+    <h2 id="loomspan">Population attestation: LoomSpan</h2>
+    <p>A chain proves its entries were not edited. It does not prove entries were written. A
+    producer that quietly declines to record an event emits a chain that is intact, fully
+    verified, and misleading, and every signed-log design shares this hole. Auditors have a
+    name for the gap: establishing that information produced by the entity is complete, not
+    merely accurate. Completeness cannot be proven absolutely, because that would be a claim
+    about events that left no trace. What a producer can do is commit, on a fixed cadence, to
+    the exact population so far, which converts silent omission into an affirmative lie: a
+    signed statement that was false when it was made.</p>
+    <p>This is the LoomSpan profile. Status: draft, targeted at format 0.2. A verifier without
+    span support ignores the claim type and says so, which the registry rule already
+    guarantees.</p>
+    <p>A span claim is an ordinary claim on the chain it attests, type
+    <code>loomseal.span/1</code>, the first type in the spec-owned <code>loomseal</code>
+    namespace. The population it counts is records: entries of this chain. Counting live
+    resources or deployed components is a different job, deliberately not this one.</p>
+    <pre><code>{
+  "type": "loomseal.span/1",
+  "at": "2026-08-02T10:01:00Z",
+  "payload": { "stream": "chain", "cadence_s": 60, "beat": 1441, "count": 17 },
+  "chain": { "seq": 18227, "prev": "...", "link": "..." }
+}</code></pre>
+    <p>The claim's <code>at</code> is the beat time. <code>cadence_s</code> is the interval, in
+    whole seconds, the producer commits to. <code>beat</code> starts at 1 and increases by
+    exactly 1 per span claim on the chain. <code>count</code> is the number of entries appended
+    since the previous span claim. For beat 1, <code>count</code> covers every entry that
+    precedes it, so a chain adopting the profile mid-life attests its entire prior population
+    once, at adoption.</p>
+    <p>Because a span claim sits in the chain it attests, its own <code>chain.prev</code> is
+    the head it commits to, and <code>count</code> is redundant with the sequence numbers: the
+    entries between two span claims number exactly the difference of their <code>seq</code>
+    values minus one. The verifier recomputes that difference, and a mismatch fails the bundle.
+    The redundancy is the point. At every beat the producer signs a number it cannot later
+    shrink without contradicting either the links, which the chain checks catch, or its own
+    counts, which this profile catches.</p>
+    <p>Two failure shapes are deliberately distinct. A missing beat number is a deleted window,
+    and it fails the bundle. Beat times further apart than the declared cadence are a gap: the
+    collector went quiet, nothing was provably deleted, and the verifier reports the gap with
+    its bounds and duration instead of failing. Coverage is always reported as measurement,
+    never as a badge. Attested every 60s with a longest unattested window of 74s is worth more
+    than a completeness stamp, and it is the only phrasing that survives a skeptical
+    reader.</p>
+    <p>One limit carries the architecture. A chain that stops emitting beats and stops
+    anchoring simply ends, and a bundle cannot distinguish ending from having nothing more to
+    say. Silence is only detectable where an outside party expects the next beat and can see it
+    missing. Publish beat heads on the declared cadence through the <code>git</code> or
+    <code>https</code> anchor types, to a feed where a missing entry is visible to anyone. The
+    feed, not the bundle, is where going dark becomes loud.</p>
+    <p>Conformance vectors ship with verifier support: a valid spanned bundle, a false count, a
+    missing beat, a gap reported rather than failed, and a mid-life adoption. Until they enter
+    the manifest, this profile is prose and its registry status stays draft.</p>
+
     <h2>Conformance levels</h2>
     <div class="table-wrap">
       <table>
@@ -559,12 +617,13 @@
         <tr><td>1</td><td>Signed</td><td>Valid producer signature over the canonical bundle</td></tr>
         <tr><td>2</td><td>Chained</td><td>Claims linked in a declared profile, continuity verifies</td></tr>
         <tr><td>3</td><td>Anchored</td><td>At least one verified anchor binds the chain outside the producer</td></tr>
+        <tr><td>4</td><td>Spanned</td><td>Anchored, plus span claims present and every span check verifies</td></tr>
       </table>
     </div>
     <p>Level 2 verification is full for unkeyed profiles (every link recomputed) and
     structural for keyed profiles (continuity of <code>prev</code> to <code>link</code>, with
     full verification reserved to the key holder). The verifier's report names which form it
-    performed. Marketing language maps one to one: signed, chained, anchored. No other
+    performed. Marketing language maps one to one: signed, chained, anchored, spanned. No other
     adjectives.</p>
 
     <h2>Verification</h2>
@@ -580,6 +639,10 @@
       profiles.</li>
       <li>For each anchor: match its coordinates to the bundle, verify embedded proofs,
       report the anchor set with times and refs.</li>
+      <li>If span claims are present: require beat contiguity, recompute every count from the
+      sequence numbers, compare beat times against the declared cadence, and report coverage:
+      beats present, gaps with bounds, longest gap. A false count or a missing beat fails the
+      bundle; a gap is reported, never hidden.</li>
       <li>For each evidence artifact supplied to the verifier: recompute its digest and
       compare. Evidence not supplied is reported as referenced, not checked, never as
       verified.</li>
@@ -607,11 +670,13 @@
 
         <tr><td><code>switchtender.audit/1</code></td><td>SwitchTender</td><td>v0.1</td><td>actor, method, path</td></tr>
         <tr><td><code>switchtender.run/1</code></td><td>SwitchTender</td><td>draft</td><td>run id, kind, hosts, approver</td></tr>
+        <tr><td><code>loomseal.span/1</code></td><td>Any producer</td><td>draft</td><td>stream, cadence_s, beat, count</td></tr>
       </table>
     </div>
     <p>New types enter by change to this registry. Product namespaces belong to their
-    products. A breaking payload change bumps the major suffix; verifiers ignore types they
-    do not know and say so in the report.</p>
+    products. The <code>loomseal</code> namespace is owned by this specification: its types
+    are defined here, and any producer may emit them. A breaking payload change bumps the
+    major suffix; verifiers ignore types they do not know and say so in the report.</p>
     <p>A claim may carry a <code>verdict</code>: the deterministic policy judgment recorded
     at detection time, with the policy name, the policy definition digest, and the decision.
     In v0.1 the verifier attests the verdict fields and digests; recomputing verdicts from
@@ -622,6 +687,12 @@
     claims; the claims sit in an append-only order that has not been reordered or rewritten
     since the anchored moments; the evidence digests match any artifacts presented; the
     anchored history predates the anchor times.</p>
+    <p>A verified level 4 bundle adds: at every beat the producer committed to the exact entry
+    population so far, so an entry removed after its beat contradicts either the links or the
+    counts, and a deleted beat is itself visible. It still does not prove an event was recorded
+    in the first place; a beat bounds when an omission had to begin, not whether one happened.
+    And it says nothing about silence after the newest anchored beat, which only the published
+    feed can show.</p>
     <p>It does not prove: that the producer observed the world honestly at capture time (a
     chain fixes the record, not the honesty of the recorder); that a keyed chain is
     internally valid without the key (that verification belongs to the key holder); anything

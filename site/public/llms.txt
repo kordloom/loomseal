@@ -30,6 +30,21 @@ failed, 2 usage error.
   the cryptography, how keys are kept, quantum computers, why not a blockchain, and what
   happens to your proof if KordLoom disappears.
 
+## Reading
+
+- [Tamper-evident logs, explained](https://loomseal.com/tamper-evident-logs): what
+  tamper-evident means, how hash chains work, why anchoring is the missing half, how to
+  prove a log was not altered, and what no log can prove.
+- [IPE and the completeness problem](https://loomseal.com/ipe-completeness): what auditors
+  mean by Information Produced by the Entity, why completeness is the expensive half, and
+  what continuous population attestation changes.
+- [Hash chains vs blockchains](https://loomseal.com/hash-chains-vs-blockchain): the shared
+  core, what consensus adds and costs, and why anchoring answers what most projects
+  actually need.
+- [Verifiable evidence formats, compared](https://loomseal.com/evidence-formats): LoomSeal
+  beside in-toto, SLSA, Sigstore, Certificate Transparency, RFC 3161, and WORM storage,
+  honestly, including when the alternatives are the better choice.
+
 ## What it proves
 
 A verified bundle proves the producer holding the signing key assembled those exact claims,

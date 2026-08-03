@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tamper-Evident Logs &middot; LoomSeal</title>
+<meta name="description" content="What a tamper-evident log is, how hash chains make every edit detectable, how to prove a log was not altered, and what no log can prove.">
+<link rel="canonical" href="https://loomseal.com/tamper-evident-logs">
+<link rel="icon" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://loomseal.com/tamper-evident-logs">
+<meta property="og:title" content="Tamper-evident logs, explained">
+<meta property="og:description" content="What a tamper-evident log is, how hash chains make every edit detectable, how to prove a log was not altered, and what no log can prove.">
+<meta property="og:image" content="https://loomseal.com/loomseal-og.png">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "TechArticle",
+ "headline": "Tamper-evident logs, explained",
+ "description": "What a tamper-evident log is, how hash chains make every edit detectable, how to prove a log was not altered, and what no log can prove.",
+ "url": "https://loomseal.com/tamper-evident-logs",
+ "publisher": {
+  "@type": "Organization",
+  "name": "KordLoom",
+  "url": "https://kordloom.com"
+ }
+}
+</script>
+<style>
+  :root {
+    --paper: #f8f2e4;
+    --ink: #111111;
+    --body-c: #555550;
+    --deep: #33332f;
+    --faint: #96917f;
+    --meta-c: #c2bca9;
+    --rule-c: #e7e0cd;
+    --border: #e2dbc7;
+    --grid: rgba(17, 17, 17, 0.055);
+    --glow: rgba(255, 253, 244, 0.85);
+    --panel: #fffdf6;
+    --hover: #f3ecdb;
+    --code-bg: #f1ead7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0d0c0b;
+      --ink: #ece8dc;
+      --body-c: #aaa496;
+      --deep: #cfc9ba;
+      --faint: #7d786c;
+      --meta-c: #4a463e;
+      --rule-c: #26231f;
+      --border: #2b2823;
+      --grid: rgba(236, 232, 220, 0.05);
+      --glow: rgba(236, 232, 220, 0.045);
+      --panel: #161412;
+      --hover: #211e1a;
+      --code-bg: #171512;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  html { scroll-behavior: smooth; }
+  body {
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse 64% 50% at 50% 46%, var(--glow) 20%, rgba(255,255,255,0) 100%),
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+    background-position: center center;
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100%;
+    padding: 2rem 1.5rem;
+  }
+  .page-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+    max-width: 34rem;
+    padding: 5.5rem 0 3rem;
+  }
+  .mark-sm { width: 84px; height: auto; margin-bottom: 1.6rem; }
+  h1 { font-size: clamp(1.6rem, 4.5vw, 2.1rem); font-weight: 600; letter-spacing: 0.02em; color: var(--ink); }
+  .rule { width: 40px; height: 1px; background: var(--rule-c); margin: 1rem 0; }
+  .lead {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: clamp(0.95rem, 3vw, 1.2rem);
+    line-height: 1.5;
+    color: var(--deep);
+  }
+  .crumb { margin-top: 1rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--faint); }
+  .crumb a { color: var(--faint); text-decoration: none; }
+  .crumb a:hover { color: var(--ink); }
+  .page-head .mark-sm, .page-head h1, .page-head .rule, .page-head .lead, .page-head .crumb {
+    animation: riseIn 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .page-head h1 { animation-delay: 0.16s; }
+  .page-head .rule { animation-delay: 0.28s; }
+  .page-head .lead { animation-delay: 0.4s; }
+  .page-head .crumb { animation-delay: 0.52s; }
+  .doc { width: 100%; max-width: 50rem; text-align: left; padding-bottom: 2rem; }
+  .doc .canon {
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--faint);
+    margin-bottom: 2.4rem;
+  }
+  .doc .canon a { color: var(--faint); }
+  .doc .canon a:hover { color: var(--ink); }
+  .doc h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--ink);
+    border-top: 1px solid var(--rule-c);
+    padding-top: 2rem;
+    margin: 2.6rem 0 0.9rem;
+  }
+  .doc p { font-size: 0.93rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.9rem; }
+  .doc a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
+  .doc a:hover { text-decoration-color: var(--ink); }
+  .doc code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.1em 0.35em;
+  }
+  .doc ul, .doc ol { margin: 0 0 1rem 1.3rem; }
+  .doc li { font-size: 0.93rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.45rem; }
+  .doc h3 { font-size: 0.98rem; font-weight: 600; color: var(--ink); margin: 1.7rem 0 0.5rem; }
+  .table-wrap { overflow-x: auto; margin: 0 0 1rem; }
+  .doc table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+  .doc th, .doc td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; color: var(--body-c); line-height: 1.55; }
+  .doc th { background: var(--code-bg); color: var(--ink); font-weight: 600; }
+  footer {
+    width: 100%;
+    max-width: 60rem;
+    text-align: center;
+    padding: 2.75rem 0 1rem;
+    border-top: 1px solid var(--rule-c);
+    margin-top: 2rem;
+  }
+  .foot-links {
+    display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+    gap: 0.9rem; margin-bottom: 0.4rem; font-size: 0.82rem;
+  }
+  .foot-links a { color: var(--body-c); text-decoration: none; transition: color 0.15s ease; }
+  .foot-links a:hover { color: var(--ink); }
+  .foot-sep { color: var(--meta-c); }
+  .dom { margin-top: 0.9rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--faint); }
+  .frame {
+    position: fixed; inset: clamp(12px, 2.2vw, 22px);
+    border: 1px solid var(--rule-c);
+    pointer-events: none; z-index: 2;
+    animation: fadeIn 1.1s ease 0.15s both;
+  }
+  .frame .corner { position: absolute; width: 15px; height: 15px; border: 0 solid var(--ink); }
+  .frame .tl { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; }
+  .frame .tr { top: -1px; right: -1px; border-top-width: 2px; border-right-width: 2px; }
+  .frame .bl { bottom: -1px; left: -1px; border-bottom-width: 2px; border-left-width: 2px; }
+  .frame .br { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
+  .frame .meta {
+    position: absolute; font-size: 0.62rem; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--meta-c); white-space: nowrap;
+  }
+  .frame .m-tl { top: 13px; left: 22px; }
+  .frame .m-tr { top: 13px; right: 22px; }
+  .frame .m-bl { bottom: 13px; left: 22px; }
+  .frame .m-br { bottom: 13px; right: 22px; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .menu { position: fixed; top: clamp(40px, 5vh, 54px); left: clamp(20px, 2.6vw, 38px); z-index: 6; animation: fadeIn 1.05s ease 0.7s both; }
+  .menu > summary {
+    list-style: none; cursor: pointer;
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    width: 40px; height: 40px; padding: 0 9px; border-radius: 8px;
+    transition: background 0.18s ease;
+  }
+  .menu > summary::-webkit-details-marker { display: none; }
+  .menu > summary:hover { background: var(--hover); }
+  .menu > summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .menu > summary span { display: block; height: 1.5px; width: 100%; background: var(--ink); transition: transform 0.24s ease, opacity 0.2s ease; }
+  .menu[open] > summary span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+  .menu[open] > summary span:nth-child(2) { opacity: 0; }
+  .menu[open] > summary span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+  .menu-panel {
+    position: absolute; top: 48px; left: 0; width: 360px; max-width: calc(100vw - 32px); transform-origin: top left;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18); padding: 0.7rem;
+  }
+  .menu[open] .menu-panel { animation: menuIn 0.16s ease both; }
+  @keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
+  .menu-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--faint); padding: 0.75rem 0.7rem 0.5rem; }
+  .menu-item {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 0.9rem;
+    padding: 0.68rem 0.7rem; border-radius: 10px; text-decoration: none; color: var(--ink); font-size: 0.95rem;
+    transition: background 0.15s ease;
+  }
+  .mi-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .m-name { font-weight: 500; }
+  .m-desc { font-size: 0.77rem; line-height: 1.4; font-weight: 400; color: var(--faint); }
+  a.menu-item:hover { background: var(--hover); }
+  .menu-div { height: 1px; background: var(--rule-c); margin: 0.5rem 0.55rem; }
+  .menu-contact .m-name { font-weight: 500; font-size: 0.86rem; color: var(--deep); }
+  .menu-tagline { padding: 0.75rem 0.7rem 0.3rem; font-family: ui-serif, Georgia, "Times New Roman", serif; font-style: italic; font-size: 0.8rem; line-height: 1.5; color: var(--body-c); white-space: nowrap; }
+  .menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.7rem 0.7rem 0.35rem; margin-top: 0.5rem; border-top: 1px solid var(--rule-c); font-size: 0.64rem; letter-spacing: 0.03em; color: var(--faint); }
+  .menu-ext { color: var(--meta-c); font-size: 0.82rem; margin-top: 2px; flex-shrink: 0; }
+  .menu-gh { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--faint); transition: color 0.15s ease; }
+  .menu-gh:hover { color: var(--ink); }
+  .menu-gh svg { display: block; width: 15px; height: 15px; }
+  @media (max-width: 640px) {
+    .frame .meta { display: none; }
+    .page-head { padding-top: 4.5rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .page-head .mark-sm, .page-head h1, .page-head .rule, .page-head .lead, .page-head .crumb,
+    .frame, .menu { animation: none; }
+    .menu[open] .menu-panel { animation: none; }
+    .menu > summary span { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="frame" aria-hidden="true">
+    <span class="corner tl"></span>
+    <span class="corner tr"></span>
+    <span class="corner bl"></span>
+    <span class="corner br"></span>
+    <span class="meta m-tl">No Trust Required</span>
+    <span class="meta m-tr">Est. 2026</span>
+    <span class="meta m-bl">Open Spec</span>
+    <span class="meta m-br">Offline Verified</span>
+  </div>
+
+  <details class="menu" id="menu">
+    <summary class="menu-btn" aria-label="Open menu" title="Menu">
+      <span></span><span></span><span></span>
+    </summary>
+    <nav class="menu-panel" aria-label="LoomSeal menu">
+      <p class="menu-label">LoomSeal</p>
+      <a class="menu-item" href="/"><span class="m-name">Home</span></a>
+      <a class="menu-item" href="/#verify"><span class="m-name">Verify one right now</span></a>
+      <a class="menu-item" href="/#proves"><span class="m-name">What a bundle proves</span></a>
+      <a class="menu-item" href="/#producers"><span class="m-name">For producers</span></a>
+      <div class="menu-div"></div>
+      <p class="menu-label">Documentation</p>
+      <a class="menu-item" href="/spec">
+        <span class="mi-text">
+          <span class="m-name">The spec</span>
+          <span class="m-desc">The format, typeset and readable.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/span">
+        <span class="mi-text">
+          <span class="m-name">LoomSpan</span>
+          <span class="m-desc">The completeness profile. Proves the span is whole.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/faq">
+        <span class="mi-text">
+          <span class="m-name">FAQ</span>
+          <span class="m-desc">Why, value, security, quantum, and the limits.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">GitHub</span>
+          <span class="m-desc">Source of truth: spec, schema, verifier, example.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-label">KordLoom</p>
+      <a class="menu-item" href="https://kordloom.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">kordloom.com</span>
+          <span class="m-desc">Software that proves itself.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="menu-item" href="https://switchtender.com" target="_blank" rel="noopener">
+        <span class="mi-text">
+          <span class="m-name">SwitchTender</span>
+          <span class="m-desc">Runs every host. Proves every change.</span>
+        </span>
+        <span class="menu-ext" aria-hidden="true">&#8599;</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-label">Contact</p>
+      <a class="menu-item menu-contact" href="mailto:hello@kordloom.com">
+        <span class="m-name">hello@kordloom.com</span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-tagline">Proof, not promises.</p>
+      <div class="menu-foot">
+        <span>&copy; 2026 KordLoom LLC</span>
+        <a class="menu-gh" href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener" aria-label="LoomSeal on GitHub" title="GitHub">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+    </nav>
+  </details>
+
+  <div class="page-head">
+    <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
+    <h1>Tamper-evident logs, explained</h1>
+    <div class="rule" aria-hidden="true"></div>
+    <p class="lead">A seal does not prevent tampering. It reveals it.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; Reading</p>
+  </div>
+
+  <div class="doc">
+
+    <h2>What tamper-evident actually means</h2>
+    <p>A tamper-evident log is a record designed so that any alteration becomes detectable.
+    Not prevented: detectable. Nobody can stop a person with write access from opening a file
+    and editing it, and any design that claims otherwise is describing hardware, not software.
+    What a log can do is make every edit leave a mark that arithmetic finds. The seal on a
+    medicine bottle works the same way. It does not stop the tampering, it makes the tampering
+    impossible to hide.</p>
+
+    <h2>How hash chains make edits visible</h2>
+    <p>The standard construction is a hash chain. Every entry carries a digest of the entry
+    before it, so entry three's link covers entry three's content and entry two's link, which
+    covers entry two's content and entry one's link, all the way back to the first record.
+    Change a single character anywhere, delete an entry, or reorder two of them, and every
+    link after that point recomputes to a different value. A verifier walking the chain does
+    not merely notice something is wrong. It names the exact entry where history stops being
+    intact.</p>
+
+    <h2>The missing half: anchoring</h2>
+    <p>A chain alone proves internal consistency, and internal consistency is cheap. Anyone
+    can sit down this afternoon and fabricate a perfectly consistent chain that says whatever
+    they like. What makes a chain evidence is publishing its head, one short hash, somewhere
+    the log's operator cannot rewrite: a timestamp authority under RFC 3161, a commit in a
+    public git repository, a transparency log. Once heads are anchored on a schedule, a
+    convincing fake requires having lied from the very first entry and having published the
+    false heads the entire time. Rewriting the past now needs a time machine, not a text
+    editor.</p>
+
+    <h2>How to prove a log was not altered</h2>
+    <p>Put together, proving a log's integrity to a skeptical reader takes four things:</p>
+    <ul>
+      <li>Append-only linking, so any edit breaks the arithmetic downstream of it.</li>
+      <li>A signature over the records, so the producer is committed to exactly these bytes.</li>
+      <li>External anchors, so the history provably predates the moment anyone had a reason
+      to fake it.</li>
+      <li>An independent verifier the recipient runs themselves, because a check only the
+      producer can perform is a promise, not a proof.</li>
+    </ul>
+    <p>The delivery matters as much as the mechanism. Hand the reader a file and a free
+    verifier, not credentials to your dashboard. Evidence that requires trusting your
+    infrastructure to check is not evidence to a stranger.</p>
+
+    <h2>What no tamper-evident log can prove</h2>
+    <p>Two limits, stated plainly. First, a chain fixes the record, not the honesty of the
+    recorder. A producer that writes fiction produces an intact chain of fiction. Second, and
+    less obvious: an entry that was never written leaves no break to find. Deletion is
+    detectable. Silent omission is not, unless the log also commits to its own population.
+    That is a separate mechanism, continuous population attestation, where the producer signs
+    a running count on a fixed cadence so that a quietly dropped record contradicts either
+    the chain or the producer's own signed arithmetic. The
+    <a href="/span">LoomSpan profile</a> exists for exactly this.</p>
+
+    <h2>Tamper-evident versus tamper-proof</h2>
+    <p>Tamper-proof is a claim about preventing modification, and in software it is almost
+    always marketing. Storage can be overwritten, databases can be edited by their
+    administrators, and append-only APIs sit on mutable disks. Tamper-evident is the honest,
+    achievable property, and it is sufficient: when any alteration is certain to be caught by
+    a free check, altering the record stops being useful.</p>
+
+    <h2>Where LoomSeal fits</h2>
+    <p>LoomSeal is an open format that packages all of the above into one portable JSON file:
+    the records, the chain coordinates, the external anchors, and an ed25519 signature, with
+    a free Apache-2.0 verifier anyone can run offline. The format's rules are public in
+    <a href="/spec">the spec</a>, and you can drop any bundle into
+    <a href="/verify">the browser verifier</a> and watch the arithmetic settle it.</p>
+
+    <h2>Related reading</h2>
+    <ul>
+      <li><a href="/hash-chains-vs-blockchain">Hash chains vs blockchains</a></li>
+      <li><a href="/ipe-completeness">IPE and the completeness problem</a></li>
+      <li><a href="/evidence-formats">Verifiable evidence formats, compared</a></li>
+    </ul>
+
+  </div>
+
+  <footer>
+    <div class="foot-links">
+      <a href="/">Home</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="/spec">The spec</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="/faq">FAQ</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">GitHub</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="https://kordloom.com" target="_blank" rel="noopener">kordloom.com</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="mailto:hello@kordloom.com">Contact</a>
+    </div>
+    <div class="dom">&copy; 2026 KordLoom LLC &middot; loomseal.com</div>
+  </footer>
+
+  <script>
+  (function () {
+    var menu = document.getElementById("menu");
+    if (!menu) return;
+    document.addEventListener("click", function (e) {
+      if (menu.open && !menu.contains(e.target)) menu.open = false;
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && menu.open) { menu.open = false; var s = menu.querySelector("summary"); if (s) s.focus(); }
+    });
+    menu.querySelectorAll("a").forEach(function (a) {
+      a.addEventListener("click", function () { menu.open = false; });
+    });
+  })();
+  </script>
+</body>
+</html>

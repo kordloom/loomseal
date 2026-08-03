@@ -280,8 +280,9 @@ no trace. What a producer can do is commit, on a fixed cadence, to the exact pop
 which converts silent omission into an affirmative lie: a signed statement that was false when
 it was made.
 
-This is the LoomSpan profile. Status: draft, targeted at format 0.2. A verifier without span
-support ignores the claim type and says so, which the registry rule already guarantees.
+This is the LoomSpan profile. Status: shipped in format 0.1; span claims are ordinary claims,
+so no envelope change was needed. A verifier without span support ignores the claim type and
+says so, which the registry rule already guarantees.
 
 A span claim is an ordinary claim on the chain it attests, type `loomseal.span/1`, the first
 type in the spec-owned `loomseal` namespace. The population it counts is records: entries of
@@ -323,9 +324,9 @@ only detectable where an outside party expects the next beat and can see it miss
 beat heads on the declared cadence through the `git` or `https` anchor types, to a feed where a
 missing entry is visible to anyone. The feed, not the bundle, is where going dark becomes loud.
 
-Conformance vectors ship with verifier support: a valid spanned bundle, a false count, a
-missing beat, a gap reported rather than failed, and a mid-life adoption. Until they enter the
-manifest, this profile is prose and its registry status stays draft.
+Five conformance vectors cover the profile: a valid spanned bundle, a false count, a missing
+beat, a gap reported rather than failed, and a mid-life adoption. All three shipped verifiers,
+Go, Python, and the browser build, agree on every one.
 
 ## Conformance levels
 
@@ -379,7 +380,7 @@ emitting product and documented there; this registry fixes the names and require
 |------------------------|--------------|----------|---------------------------------------|
 | `switchtender.audit/1` | SwitchTender | v0.1     | actor, method, path                   |
 | `switchtender.run/1`   | SwitchTender | draft    | run id, kind, hosts, approver         |
-| `loomseal.span/1`      | Any producer | draft    | stream, cadence_s, beat, count        |
+| `loomseal.span/1`      | Any producer | v0.1     | stream, cadence_s, beat, count        |
 
 New types enter by change to this registry. Product namespaces belong to their products. The
 `loomseal` namespace is owned by this specification: its types are defined here, and any

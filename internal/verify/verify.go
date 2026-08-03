@@ -25,6 +25,7 @@ import (
 var knownClaimTypes = map[string]bool{
 	"switchtender.audit/1": true,
 	"switchtender.run/1":   true,
+	"loomseal.span/1":      true,
 }
 
 // Options carries the caller's verification inputs.
@@ -113,6 +114,23 @@ type Report struct {
 	EvidenceReferenced int `json:"evidence_referenced"`
 	// UnknownClaimTypes lists claim types outside this verifier's registry.
 	UnknownClaimTypes []string `json:"unknown_claim_types,omitempty"`
+	// SpanPresent reports whether the bundle carries loomseal.span/1 population attestations.
+	SpanPresent bool `json:"span_present"`
+	// SpanOK reports whether every span check passed. Meaningful only when SpanPresent.
+	SpanOK bool `json:"span_ok"`
+	// SpanBeats is how many span claims the bundle carries.
+	SpanBeats int `json:"span_beats,omitempty"`
+	// SpanCountsVerified is how many span counts were recomputed from sequence numbers and held.
+	SpanCountsVerified int `json:"span_counts_verified,omitempty"`
+	// SpanCountsCarried is how many span counts could not be recomputed because the previous beat
+	// sits outside the bundle's window. A carried count is reported, never trusted.
+	SpanCountsCarried int `json:"span_counts_carried,omitempty"`
+	// SpanCoverage words the population coverage, such as "2/4 windows attested".
+	SpanCoverage string `json:"span_coverage,omitempty"`
+	// SpanGaps describes each unattested window wider than the declared cadence.
+	SpanGaps []string `json:"span_gaps,omitempty"`
+	// SpanLongestGap is the widest unattested window between consecutive beats.
+	SpanLongestGap string `json:"span_longest_gap,omitempty"`
 	// Problems lists every failed check. Empty means verified.
 	Problems []string `json:"problems,omitempty"`
 }
@@ -140,6 +158,7 @@ func Run(raw []byte, opts Options) *Report {
 	r.checkClaimTypes(b)
 	r.checkChain(raw, b)
 	r.checkAnchors(b)
+	r.checkSpan(b)
 	r.checkEvidence(b, opts.EvidenceDir)
 
 	r.OK = len(r.Problems) == 0
@@ -416,6 +435,7 @@ func (r *Report) level() string {
 	if r.ChainPresent && r.ChainOK {
 		level += ", chained (" + r.ChainMode + ")"
 	}
+	anchored := r.AnchorProofsVerified > 0 || r.AnchorsMatched > 0
 	switch {
 	case r.AnchorProofsVerified > 0:
 		// A proof checked here needed no network and no trust in the producer, which is a stronger
@@ -423,6 +443,10 @@ func (r *Report) level() string {
 		level += ", anchored (proof verified)"
 	case r.AnchorsMatched > 0:
 		level += ", anchored by reference"
+	}
+	// Spanned sits above anchored: a population commitment is only worth the anchoring under it.
+	if anchored && r.SpanPresent && r.SpanOK {
+		level += ", spanned"
 	}
 	return level
 }

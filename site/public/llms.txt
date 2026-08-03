@@ -7,8 +7,8 @@
 > the `loomseal` binary: no account, no server, and no trust in KordLoom or in the operator
 > who sent the file. Two verifiers, one in Go and one written separately from the spec in
 > Python, are cross-checked against the same conformance vectors, so the format is not held
-> honest by a single implementation. The conformance wording: signed, chained, anchored, and,
-> in draft, spanned. Apache-2.0.
+> honest by a single implementation. The conformance wording is exactly four words: signed,
+> chained, anchored, spanned. Apache-2.0.
 
 Install: `go install github.com/kordloom/loomseal@latest`, then
 `loomseal verify bundle.loomseal.json --evidence ./evidence`. Exit 0 verified, 1 verification
@@ -23,7 +23,7 @@ failed, 2 usage error.
   (RFC 8785), producer keys and signatures, the three chain profiles
   (switchtender-audit-v1, loomseal-chain-v1), anchors, conformance
   levels, the verification procedure, and the claim-type registry.
-- [LoomSpan](https://loomseal.com/span): the draft population attestation profile. Continuous
+- [LoomSpan](https://loomseal.com/span): the population attestation profile. Continuous
   signed counts on a fixed cadence turn silent omission into an affirmative lie. Coverage is
   reported as measurement, never as a badge.
 - [FAQ](https://loomseal.com/faq): why it exists, the value to operators and to reviewers,

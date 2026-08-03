@@ -128,6 +128,26 @@ func renderReport(w io.Writer, r *verify.Report) {
 		fmt.Fprintf(w, "note       %d anchor(s) name a location this verifier did not fetch; "+
 			"confirm them yourself before relying on them\n", unchecked)
 	}
+	// The coverage line is the population claim: how many windows the producer attested against
+	// how many the cadence says there should have been. A gap is printed, never summarized away.
+	if r.SpanPresent {
+		if r.SpanOK {
+			line := fmt.Sprintf("span       %s, %d count(s) recomputed", r.SpanCoverage,
+				r.SpanCountsVerified)
+			if r.SpanCountsCarried > 0 {
+				line += fmt.Sprintf(", %d carried", r.SpanCountsCarried)
+			}
+			if r.SpanLongestGap != "" {
+				line += fmt.Sprintf(", longest gap %s", r.SpanLongestGap)
+			}
+			fmt.Fprintln(w, line)
+		} else {
+			fmt.Fprintln(w, "span       FAILED")
+		}
+		for _, g := range r.SpanGaps {
+			fmt.Fprintf(w, "gap        %s\n", g)
+		}
+	}
 	fmt.Fprintf(w, "evidence   %d verified, %d missing, %d referenced only\n",
 		r.EvidenceVerified, r.EvidenceMissing, r.EvidenceReferenced)
 	for _, t := range r.UnknownClaimTypes {

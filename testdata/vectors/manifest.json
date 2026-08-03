@@ -135,6 +135,41 @@
       "why": "A bundle with no chain reaches the signed level and no further."
     },
     {
+      "name": "span-false-count",
+      "file": "span-false-count.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "A count that does not match the sequence numbers is a signed false statement and fails."
+    },
+    {
+      "name": "span-gap",
+      "file": "span-gap.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "Beats further apart than the declared cadence are a reported gap, never a hidden one and never a failure."
+    },
+    {
+      "name": "span-mid-adoption",
+      "file": "span-mid-adoption.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A chain adopting the profile mid-life attests its entire prior population at beat 1."
+    },
+    {
+      "name": "span-missing-beat",
+      "file": "span-missing-beat.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "A beat number that skips is a deleted window and fails."
+    },
+    {
+      "name": "span-valid",
+      "file": "span-valid.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "Two beats whose counts recompute from the sequence numbers earn the spanned level."
+    },
+    {
       "name": "switchtender-audit",
       "file": "switchtender-audit.loomseal.json",
       "must_verify": true,

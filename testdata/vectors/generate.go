@@ -65,7 +65,7 @@ type vector struct {
 	// Level is the expected conformance wording when MustVerify is true.
 	Level string `json:"level,omitempty"`
 	// FailingCheck names the verification step that must fail when MustVerify is false: one of
-	// parse, signature, chain, or anchor.
+	// parse, signature, chain, anchor, or span.
 	FailingCheck string `json:"failing_check,omitempty"`
 	// Why explains the case in one sentence.
 	Why string `json:"why"`
@@ -92,6 +92,7 @@ func main() {
 
 	s.positives()
 	s.negatives()
+	s.spans()
 
 	if err := s.write(); err != nil {
 		fmt.Fprintln(os.Stderr, "generate:", err)
@@ -302,6 +303,98 @@ func (s *state) negatives() {
 	s.add("signature-alg-rewritten", false, "", "signature",
 		"alg is outside the signed bytes, so a verifier rejects a foreign value rather than "+
 			"dispatching on it.", rewriteAlg(s.sign(s.v1(1, false)), "rsa-pss-sha256"))
+}
+
+// spanEntry describes one claim in a span vector chain.
+type spanEntry struct {
+	// kind is "audit" or "span".
+	kind string
+	// at is the claim time.
+	at string
+	// beat is the span claim's beat number.
+	beat int64
+	// count is the span claim's declared entry count.
+	count int64
+}
+
+// spanBundle builds an unkeyed loomseal-chain-v1 bundle from entries and anchors its head, so
+// the spanned conformance word is reachable.
+func (s *state) spanBundle(entries []spanEntry) map[string]any {
+	m := s.base()
+	claims := make([]any, len(entries))
+	for i, e := range entries {
+		var c map[string]any
+		if e.kind == "span" {
+			c = map[string]any{
+				"type": "loomseal.span/1", "at": e.at,
+				"payload": map[string]any{
+					"stream": "chain", "cadence_s": int64(60), "beat": e.beat, "count": e.count,
+				},
+			}
+		} else {
+			c = map[string]any{
+				"type": "switchtender.audit/1", "at": e.at,
+				"payload": map[string]any{
+					"actor": "release-token", "method": "POST", "path": "/api/runs",
+				},
+			}
+		}
+		claims[i] = c
+	}
+	m["claims"] = claims
+	s.relinkV1(m, false)
+	head := m["chain"].(map[string]any)["head"].(map[string]any)
+	m["anchors"] = []any{gitAnchor(head["seq"].(int64), head["link"].(string))}
+	return m
+}
+
+// spans emits the population attestation vectors: valid, gapped, adopted mid-life, and the two
+// contradictions the profile must fail.
+func (s *state) spans() {
+	valid := []spanEntry{
+		{kind: "audit", at: "2026-07-27T15:00:10Z"},
+		{kind: "span", at: "2026-07-27T15:01:00Z", beat: 1, count: 1},
+		{kind: "audit", at: "2026-07-27T15:01:30Z"},
+		{kind: "audit", at: "2026-07-27T15:01:40Z"},
+		{kind: "span", at: "2026-07-27T15:02:00Z", beat: 2, count: 2},
+	}
+	s.add("span-valid", true,
+		"signed, chained (full), anchored by reference, spanned", "",
+		"Two beats whose counts recompute from the sequence numbers earn the spanned level.",
+		s.sign(s.spanBundle(valid)))
+
+	gapped := make([]spanEntry, len(valid))
+	copy(gapped, valid)
+	gapped[4].at = "2026-07-27T15:04:00Z"
+	s.add("span-gap", true,
+		"signed, chained (full), anchored by reference, spanned", "",
+		"Beats further apart than the declared cadence are a reported gap, never a hidden one "+
+			"and never a failure.",
+		s.sign(s.spanBundle(gapped)))
+
+	s.add("span-mid-adoption", true,
+		"signed, chained (full), anchored by reference, spanned", "",
+		"A chain adopting the profile mid-life attests its entire prior population at beat 1.",
+		s.sign(s.spanBundle([]spanEntry{
+			{kind: "audit", at: "2026-07-27T15:00:10Z"},
+			{kind: "audit", at: "2026-07-27T15:00:20Z"},
+			{kind: "audit", at: "2026-07-27T15:00:30Z"},
+			{kind: "span", at: "2026-07-27T15:01:00Z", beat: 1, count: 3},
+		})))
+
+	falseCount := make([]spanEntry, len(valid))
+	copy(falseCount, valid)
+	falseCount[4].count = 1
+	s.add("span-false-count", false, "", "span",
+		"A count that does not match the sequence numbers is a signed false statement and fails.",
+		s.sign(s.spanBundle(falseCount)))
+
+	missingBeat := make([]spanEntry, len(valid))
+	copy(missingBeat, valid)
+	missingBeat[4].beat = 3
+	s.add("span-missing-beat", false, "", "span",
+		"A beat number that skips is a deleted window and fails.",
+		s.sign(s.spanBundle(missingBeat)))
 }
 
 // rewriteAlg edits the first signature entry's alg in an already-signed bundle, the way an

@@ -567,9 +567,9 @@
     about events that left no trace. What a producer can do is commit, on a fixed cadence, to
     the exact population so far, which converts silent omission into an affirmative lie: a
     signed statement that was false when it was made.</p>
-    <p>This is the LoomSpan profile. Status: draft, targeted at format 0.2. A verifier without
-    span support ignores the claim type and says so, which the registry rule already
-    guarantees.</p>
+    <p>This is the LoomSpan profile. Status: shipped in format 0.1; span claims are ordinary
+    claims, so no envelope change was needed. A verifier without span support ignores the claim
+    type and says so, which the registry rule already guarantees.</p>
     <p>A span claim is an ordinary claim on the chain it attests, type
     <code>loomseal.span/1</code>, the first type in the spec-owned <code>loomseal</code>
     namespace. The population it counts is records: entries of this chain. Counting live
@@ -606,9 +606,9 @@
     missing. Publish beat heads on the declared cadence through the <code>git</code> or
     <code>https</code> anchor types, to a feed where a missing entry is visible to anyone. The
     feed, not the bundle, is where going dark becomes loud.</p>
-    <p>Conformance vectors ship with verifier support: a valid spanned bundle, a false count, a
-    missing beat, a gap reported rather than failed, and a mid-life adoption. Until they enter
-    the manifest, this profile is prose and its registry status stays draft.</p>
+    <p>Five conformance vectors cover the profile: a valid spanned bundle, a false count, a
+    missing beat, a gap reported rather than failed, and a mid-life adoption. All three shipped
+    verifiers, Go, Python, and the browser build, agree on every one.</p>
 
     <h2>Conformance levels</h2>
     <div class="table-wrap">
@@ -670,7 +670,7 @@
 
         <tr><td><code>switchtender.audit/1</code></td><td>SwitchTender</td><td>v0.1</td><td>actor, method, path</td></tr>
         <tr><td><code>switchtender.run/1</code></td><td>SwitchTender</td><td>draft</td><td>run id, kind, hosts, approver</td></tr>
-        <tr><td><code>loomseal.span/1</code></td><td>Any producer</td><td>draft</td><td>stream, cadence_s, beat, count</td></tr>
+        <tr><td><code>loomseal.span/1</code></td><td>Any producer</td><td>v0.1</td><td>stream, cadence_s, beat, count</td></tr>
       </table>
     </div>
     <p>New types enter by change to this registry. Product namespaces belong to their

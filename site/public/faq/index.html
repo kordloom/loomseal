@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FAQ &middot; LoomSeal</title>
-<meta name="description" content="LoomSeal, answered: why it exists, what it is worth, the cryptography, quantum computers, and the limits.">
+<meta name="description" content="LoomSeal, answered: what it is, what a bundle is, who can verify one, the cryptography, and the limits.">
 <link rel="canonical" href="https://loomseal.com/faq">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://loomseal.com/faq">
 <meta property="og:title" content="LoomSeal FAQ">
-<meta property="og:description" content="Why it exists, what it is worth, the cryptography, quantum computers, and the limits.">
+<meta property="og:description" content="What it is, what a bundle is, who can verify one, the cryptography, and the limits.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
 <style>
   :root {
@@ -343,6 +343,65 @@
 
     <h2 class="qa-group">Start here</h2>
     <details class="qa">
+      <summary>Does LoomSeal watch my files or documents?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>No. Nothing scans your folders, monitors your Word documents, or sits in the
+        background looking for changes. LoomSeal is a format. Software adopts it and writes
+        its own records through it as it works: a deploy tool writes an entry for every
+        deploy, who ran it, what changed, when. Each entry is chained to the one before it
+        and signed as it is written, not inspected later.</p>
+        <p>The seal covers those records and nothing else. It cannot prove the software wrote
+        down everything that happened, only that nothing written was changed or removed after
+        the fact.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What exactly is a bundle?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>One ordinary JSON file. Open it in a text editor and you will see the records, the
+        chain links, the anchors, and the signature. There is no special package and no
+        proprietary container.</p>
+        <p>You can email it, attach it to a ticket, archive it for years, or hand it to an
+        auditor. Checking it involves no service, no account, and no vendor. The file is the
+        whole thing.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What happens if someone edits the bundle file?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Verification fails, and the verifier says where. Every record is chained to the
+        one before it, so changing a character, deleting an entry, or reordering anything
+        breaks the chain arithmetic from that point on, and the verdict names the break.</p>
+        <p>That is the point, not a bug. Nobody can stop a person from opening a JSON file in
+        an editor. The format makes sure any change shows.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>Who can verify a bundle, and what do they need?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Anyone, with free tools: a command line tool, a Python reference implementation,
+        or the <a href="/verify">browser verifier</a> on this site. The browser one installs
+        nothing and keeps working with the network off once the page has loaded. No account
+        anywhere, and nobody at KordLoom is involved in the check.</p>
+        <p>Each one answers with a verdict: signed, chained, anchored, spanned, or it names
+        exactly what broke.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What do I do with it during an audit?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Say your deploy tool writes its records through LoomSeal. The auditor asks for the
+        change history, so you export <code>bundle.json</code> and attach it to the ticket.
+        The auditor drags the file into the <a href="/verify">browser verifier</a> on a
+        laptop with WiFi off, and it answers VERIFIED, or names the entry that broke and
+        why.</p>
+        <p>No portal logins and no screen shares. The file carries the evidence, and the
+        arithmetic settles it.</p>
+      </div>
+    </details>
+
+    <h2 class="qa-group">How it works</h2>
+    <details class="qa">
       <summary>Why can't I just send my logs?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>Because generating convincing artifacts became free. Screenshots, logs, dashboards,
@@ -493,20 +552,26 @@
     <details class="qa">
       <summary>Someone sent me a bundle. Now what?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
-        <p>You verify instead of trusting. No vendor portal, no screenshots, no phone calls to
-        confirm a PDF. One command, offline, and the math either holds or it does not. If the
-        bundle was altered, verification fails loudly and names the break.</p>
+        <p>You verify instead of trusting. Drag the file into the
+        <a href="/verify">browser verifier</a> or run the command line tool. No vendor
+        portal, no screenshots, no phone calls to confirm a PDF. Offline, in seconds, the
+        math either holds or it does not. If the bundle was altered, verification fails
+        loudly and names the break.</p>
       </div>
     </details>
     <details class="qa">
       <summary>How do I emit bundles from my own software?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
+        <p>Adopting the format means your software writes its own records through LoomSeal
+        as it works. Nothing watches from outside. The producer does the writing.</p>
         <p>Import the <code>seal</code> package from the
         <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">repository</a>
         to sign bundles and compute generic chain links, follow the bundle shape in
         <a href="/spec">the spec</a> and the schema, and register new claim types through the
         registry. Producers own their payloads. The envelope, chain profiles, and verification
-        procedure stay common so one verifier checks everyone.</p>
+        procedure stay common so one verifier checks everyone.
+        <a href="https://switchtender.com" target="_blank" rel="noopener">SwitchTender</a>
+        was the first producer to ship, if you want to see the format in real use.</p>
       </div>
     </details>
 

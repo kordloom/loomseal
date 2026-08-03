@@ -370,6 +370,7 @@
     <nav class="menu-panel" aria-label="LoomSeal menu">
       <p class="menu-label">LoomSeal</p>
       <a class="menu-item" href="#plain"><span class="m-name">In plain terms</span></a>
+      <a class="menu-item" href="#happens"><span class="m-name">What actually happens</span></a>
       <a class="menu-item" href="#about"><span class="m-name">The problem</span></a>
       <a class="menu-item" href="#timestamp"><span class="m-name">Why not a timestamp</span></a>
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
@@ -448,9 +449,9 @@
     <h1>LoomSeal</h1>
     <div class="rule" aria-hidden="true"></div>
     <p class="lead">Proof, not promises.</p>
-    <p class="sub">An open proof format. Hand someone a single file that proves your records
-    have not been altered, and let them check it themselves: offline, free, with no account and
-    no trust in you.</p>
+    <p class="sub">An open proof format. Software seals its records as it writes them. Hand
+    someone one file that proves nothing was changed or removed since, and let them check it
+    themselves: offline, free, with no account and no trust in you.</p>
   </main>
 
   <section id="plain" class="section reveal" aria-label="LoomSeal in plain terms">
@@ -509,8 +510,57 @@
       open, with nothing to buy and nothing to sign. Software that needs to prove what it did
       seals its history as it works and emits a bundle anyone can check, and the format underneath
       stays free no matter how far it spreads.</p>
-      <p>That is the whole of it. The rest of this page is why it survives somebody actively
-      trying to break it.</p>
+      <p>That is the whole of it. The next section walks one record from written to verified,
+      and the rest of the page is why it survives somebody actively trying to break it.</p>
+    </div>
+  </section>
+
+  <section id="happens" class="section reveal" aria-label="What actually happens">
+    <p class="eyebrow">What actually happens</p>
+    <p class="thesis">Software writes a record, the record is sealed as it lands, and the
+    history ends up as one file anyone can check.</p>
+    <div class="prose">
+      <p>First, the misconception worth clearing: LoomSeal doesn't watch your files, your
+      folders, or your documents, and nothing is scanning for changes. Software that adopts the
+      format writes its own records through it as it works, and the seal covers those records
+      and nothing else. Here is the whole life of one record, from the moment software writes
+      it to the moment a stranger checks it.</p>
+    </div>
+    <div class="gains">
+      <div class="gain">
+        <p class="gain-name">1. Software writes a record</p>
+        <p class="gain-text">A deploy tool finishes a release and writes an entry: who ran it,
+        what changed, when. It is ordinary logging in a shape the format defines.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">2. The record is sealed as it lands</p>
+        <p class="gain-text">Each entry is hashed together with the one before it and signed
+        the moment it is written, not scanned later. Alter or remove one afterward and the
+        chain arithmetic stops adding up.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">3. The history becomes one file</p>
+        <p class="gain-text">When somebody needs evidence, the tool exports the history as a
+        bundle: one ordinary JSON file. Email it, attach it to a ticket, archive it, hand it
+        to an auditor.</p>
+      </div>
+      <div class="gain">
+        <p class="gain-name">4. Anyone checks it anywhere</p>
+        <p class="gain-text">A free verifier reads the file and gives a verdict: signed,
+        chained, anchored, or the name of what broke. There is a CLI, a Python reference
+        implementation, and a verifier that runs entirely in the browser.</p>
+      </div>
+    </div>
+    <div class="prose">
+      <p>Played out end to end: the deploy tool has been writing who, what, and when through
+      the format all quarter. An auditor asks for the change history, so somebody exports
+      <code>bundle.json</code> and attaches it to the ticket. The auditor drags the file into
+      the <a href="/verify">browser verifier</a> on a laptop with the WiFi off, and it answers
+      VERIFIED: signed, chained, anchored. No account, no vendor, and not one question for the
+      team that sent it.</p>
+      <p>And if you open the bundle in an editor and change anything at all, verification
+      fails. That is the point. The file matches the history that was sealed as it was
+      written, or the verifier says exactly where it stopped matching.</p>
     </div>
   </section>
 
@@ -583,6 +633,9 @@
       <p>Sending it is the dull part, which is the point. One JSON file, small enough to email.
       The recipient runs a free, open-source verifier, offline, with no account and nothing
       installed from you, and a few seconds later they have a yes or a no.</p>
+      <p>No terminal required, either. The same check runs in the browser at
+      <a href="/verify">loomseal.com/verify</a>, entirely on the recipient's machine, and it
+      works offline once the page has loaded.</p>
     </div>
     <pre><code>go install github.com/kordloom/loomseal@latest
 git clone https://github.com/kordloom/loomseal

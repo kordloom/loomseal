@@ -3,31 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hash Chains vs Blockchains &middot; LoomSeal</title>
-<meta name="description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
-<link rel="canonical" href="https://loomseal.com/hash-chains-vs-blockchain">
+<title>How it works &middot; LoomSeal</title>
+<meta name="description" content="How LoomSeal works: each record is hashed to the one before it as it is written, the chain head is published where you cannot reach it, and the verifier runs the whole thing backwards offline.">
+<link rel="canonical" href="https://loomseal.com/how">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com/hash-chains-vs-blockchain">
-<meta property="og:title" content="Hash chains vs blockchains">
-<meta property="og:description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
+<meta property="og:url" content="https://loomseal.com/how">
+<meta property="og:title" content="How LoomSeal works">
+<meta property="og:description" content="The chain is built as you go, not assembled when somebody asks. Here is the whole mechanism, end to end.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
-<script type="application/ld+json">
-{
- "@context": "https://schema.org",
- "@type": "TechArticle",
- "headline": "Hash chains vs blockchains",
- "description": "Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.",
- "url": "https://loomseal.com/hash-chains-vs-blockchain",
- "publisher": {
-  "@type": "Organization",
-  "name": "KordLoom",
-  "url": "https://kordloom.com"
- }
-}
-</script>
 <style>
   :root {
     --paper: #f8f2e4;
@@ -141,13 +127,35 @@
     border-radius: 5px;
     padding: 0.1em 0.35em;
   }
-  .doc ul, .doc ol { margin: 0 0 1rem 1.3rem; }
-  .doc li { font-size: 0.93rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.45rem; }
-  .doc h3 { font-size: 0.98rem; font-weight: 600; color: var(--ink); margin: 1.7rem 0 0.5rem; }
-  .table-wrap { overflow-x: auto; margin: 0 0 1rem; }
-  .doc table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-  .doc th, .doc td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; color: var(--body-c); line-height: 1.55; }
-  .doc th { background: var(--code-bg); color: var(--ink); font-weight: 600; }
+  .doc pre {
+    margin: 1.4rem 0;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+  .doc pre code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1em;
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--deep);
+  }
+  .doc .scene {
+    border-left: 2px solid var(--border);
+    padding: 0.3rem 0 0.3rem 1.3rem;
+    margin: 0.4rem 0 0.9rem;
+  }
+  .doc .scene p:last-child { margin-bottom: 0; }
+  .doc .honest {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    color: var(--deep);
+  }
   footer {
     width: 100%;
     max-width: 60rem;
@@ -343,67 +351,52 @@
 
   <div class="page-head">
     <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
-    <h1>Hash chains vs blockchains</h1>
+    <h1>How it works</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">Both link records with hashes. Only one needs a network, consensus, and a coin.</p>
-    <p class="crumb"><a href="/">loomseal.com</a> &middot; Reading</p>
+    <p class="lead">The chain is built as you go,<br>not assembled when somebody asks.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; How it works</p>
   </div>
 
   <div class="doc">
+    <p class="canon">The mechanism in full. The <a href="/spec">spec</a> is the normative text,
+      and the <a href="/faq">FAQ</a> answers it in short.
+    </p>
 
-    <h2>The shared core</h2>
-    <p>Strip both to their skeletons and they are the same data structure: records linked by
-    digest, where each entry commits to the one before it, so any alteration cascades forward
-    and becomes detectable. That linked-digest core is decades older than any cryptocurrency,
-    and it is the part doing the tamper-evidence work in both.</p>
+    <h2>Three things while it runs, one when somebody asks</h2>
+    <p>Three things happen while your software runs, and one happens when somebody asks. Your
+    software records what it did, which it already does. Each entry is hashed together with the
+    one before it, so the entries form a chain. And every so often the current head of that
+    chain, a single 64-character string, is published somewhere you do not control: a git
+    commit, a timestamp authority, a transparency log.</p>
+    <pre><code>entry 1    link1 = H(claim1, "")
+entry 2    link2 = H(claim2, link1)
+entry 3    link3 = H(claim3, link2)
 
-    <h2>What a blockchain adds</h2>
-    <p>A blockchain is a hash chain plus machinery for a specific, hard situation: many
-    mutually distrusting writers and no operator everyone trusts. That machinery is
-    consensus, replication across many nodes, and usually an incentive token to keep
-    strangers honest, and it is expensive in every dimension: latency, throughput, cost,
-    operational complexity, and explanation. When the situation genuinely is many distrusting
-    writers, the price can be worth paying. When it is not, the machinery is ceremony.</p>
+head       link3  --published--&gt;  git commit, timestamp, transparency log</code></pre>
+    <p>Alter or delete anything earlier and every link after it changes. There is no way to edit
+    the middle of a chain and leave the end intact. So when somebody asks for evidence, you
+    export the claims for the window they care about, the digests of any files behind them, the
+    chain coordinates, the anchors, and one signature over the whole document.</p>
 
-    <h2>The question that decides it</h2>
-    <p>Ask one thing: who writes to this log? If the answer is one operator, and the problem
-    is that readers do not trust that operator, consensus among strangers solves nothing,
-    because there is exactly one writer to reach consensus with. What readers need is tamper
-    evidence plus a way to catch the operator rewriting history, and that second part does
-    not require a network. It requires anchoring.</p>
+    <h2>The verifier runs it backwards</h2>
+    <p>The verifier runs that backwards, offline. It confirms the signature, recomputes every
+    link from the claim contents, checks that each entry points at the one before it, and
+    matches the anchors against links in the chain. A removed or reordered entry is not merely
+    detected. The verifier names where the break is.</p>
 
-    <h2>Anchoring: the cheap alternative to consensus</h2>
-    <p>Publish the chain's head, one short hash, somewhere the operator cannot rewrite: a
-    timestamp authority under RFC 3161, a commit in a public git repository, a transparency
-    log. Do it on a schedule. A rewritten history now has to disagree with heads that were
-    published outside the operator's control before there was any reason to lie, which means
-    a forger needed to be forging from the beginning, in public, continuously. That is the
-    property most projects reaching for a blockchain actually wanted, at roughly zero cost
-    and with nothing to operate.</p>
+    <h2>The anchor is what does the work</h2>
+    <p>Notice what the anchor changes. A hash chain on its own only proves internal
+    consistency, and anyone could sit down and build a consistent one this afternoon.
+    Publishing the head as you go is what makes that worthless to a forger: a convincing fake
+    would have required lying from the first entry and publishing the false heads to a third
+    party the entire time. The security is not the cryptography. It is that history cannot be
+    backfilled.</p>
 
-    <h2>When a blockchain is the right call</h2>
-    <p>Genuinely multi-party writes with no trusted operator and value moving between
-    strangers: that is the honest home turf, and public chains serve it. What earns the
-    skepticism is the private blockchain deployed inside one company, which is a database
-    with extra steps, and the compliance project that says blockchain when it means
-    tamper-evident, which is buying consensus to solve a problem consensus does not
-    address.</p>
-
-    <h2>Where LoomSeal fits</h2>
-    <p>LoomSeal takes the boring side of this trade on purpose. Its design rules fix SHA-256,
-    HMAC-SHA256, and ed25519, no consensus, no tokens, no network dependency, and put the
-    external fixity in anchors: timestamp authorities, public git, transparency logs. One
-    file, verified offline by a free tool, with the rules public in
-    <a href="/spec">the spec</a>. The chain does the tamper evidence, the anchors do the
-    part people thought they needed a blockchain for.</p>
-
-    <h2>Related reading</h2>
-    <ul>
-      <li><a href="/tamper-evident-logs">Tamper-evident logs, explained</a></li>
-      <li><a href="/evidence-formats">Verifiable evidence formats, compared</a></li>
-      <li><a href="/ipe-completeness">IPE and the completeness problem</a></li>
-    </ul>
-
+    <h2>What sits on top of this</h2>
+    <p>That is the accuracy half: nothing was changed or removed. Proving nothing was left out
+    is the other half, and it rides on the same chains as <a href="/span">LoomSpan</a>. Every
+    bundle is checked by <a href="/verifiers">two verifiers kept honest against each other</a>,
+    and the <a href="/examples">worked examples</a> show the whole mechanism at real stakes.</p>
   </div>
 
   <footer>

@@ -3,31 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hash Chains vs Blockchains &middot; LoomSeal</title>
-<meta name="description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
-<link rel="canonical" href="https://loomseal.com/hash-chains-vs-blockchain">
+<title>Worked examples &middot; LoomSeal</title>
+<meta name="description" content="LoomSeal and LoomSpan shown at real stakes: an outage dispute and an SLA proof that turn on nothing being changed, and a SOC 2 audit that turns on nothing being left out.">
+<link rel="canonical" href="https://loomseal.com/examples">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com/hash-chains-vs-blockchain">
-<meta property="og:title" content="Hash chains vs blockchains">
-<meta property="og:description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
+<meta property="og:url" content="https://loomseal.com/examples">
+<meta property="og:title" content="Worked examples: LoomSeal and LoomSpan">
+<meta property="og:description" content="Arguments that used to run for weeks, each ended by one file in an afternoon. Grouped by whether they turn on LoomSeal or LoomSpan.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
-<script type="application/ld+json">
-{
- "@context": "https://schema.org",
- "@type": "TechArticle",
- "headline": "Hash chains vs blockchains",
- "description": "Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.",
- "url": "https://loomseal.com/hash-chains-vs-blockchain",
- "publisher": {
-  "@type": "Organization",
-  "name": "KordLoom",
-  "url": "https://kordloom.com"
- }
-}
-</script>
 <style>
   :root {
     --paper: #f8f2e4;
@@ -141,13 +127,34 @@
     border-radius: 5px;
     padding: 0.1em 0.35em;
   }
-  .doc ul, .doc ol { margin: 0 0 1rem 1.3rem; }
-  .doc li { font-size: 0.93rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.45rem; }
-  .doc h3 { font-size: 0.98rem; font-weight: 600; color: var(--ink); margin: 1.7rem 0 0.5rem; }
-  .table-wrap { overflow-x: auto; margin: 0 0 1rem; }
-  .doc table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-  .doc th, .doc td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; color: var(--body-c); line-height: 1.55; }
-  .doc th { background: var(--code-bg); color: var(--ink); font-weight: 600; }
+  .doc .kicker {
+    font-size: 0.9rem; line-height: 1.7; color: var(--body-c); margin: 0.2rem 0 0.4rem;
+  }
+  .doc .case { margin-top: 2.2rem; }
+  .doc .tag {
+    font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 0.35rem;
+  }
+  .doc h3 {
+    font-size: 1.06rem; font-weight: 600; letter-spacing: 0.01em;
+    color: var(--ink); margin: 0 0 0.7rem;
+  }
+  .doc .who { color: var(--deep); font-weight: 500; }
+  .doc .line {
+    font-family: ui-serif, Georgia, "Times New Roman", serif; font-style: italic;
+    color: var(--deep); margin: 0.6rem 0 0;
+  }
+  .doc .scene {
+    border-left: 2px solid var(--border);
+    padding: 0.3rem 0 0.3rem 1.3rem;
+    margin: 0.4rem 0 0.9rem;
+  }
+  .doc .scene p:last-child { margin-bottom: 0; }
+  .doc .honest {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    color: var(--deep);
+  }
   footer {
     width: 100%;
     max-width: 60rem;
@@ -343,67 +350,100 @@
 
   <div class="page-head">
     <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
-    <h1>Hash chains vs blockchains</h1>
+    <h1>Worked examples</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">Both link records with hashes. Only one needs a network, consensus, and a coin.</p>
-    <p class="crumb"><a href="/">loomseal.com</a> &middot; Reading</p>
+    <p class="lead">Arguments that used to run for weeks,<br>each ended by one file in an afternoon.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; Worked examples</p>
   </div>
 
   <div class="doc">
+    <p class="canon">Three real arguments, grouped by which half of proof ends each one. New to
+      the split? Read <a href="/how">how it works</a> or the <a href="/span">LoomSpan</a> page.
+    </p>
 
-    <h2>The shared core</h2>
-    <p>Strip both to their skeletons and they are the same data structure: records linked by
-    digest, where each entry commits to the one before it, so any alteration cascades forward
-    and becomes detectable. That linked-digest core is decades older than any cryptocurrency,
-    and it is the part doing the tamper-evidence work in both.</p>
+    <p class="kicker">The mechanism is the same every time: someone needs to be believed by
+    someone who has no reason to believe them, and the file does the believing so no one has to.
+    Two of these turn on <strong>LoomSeal</strong>, that nothing was changed or removed. The third
+    turns on <strong>LoomSpan</strong>, that nothing was left out. Here is what each looks like
+    when the stakes are real.</p>
 
-    <h2>What a blockchain adds</h2>
-    <p>A blockchain is a hash chain plus machinery for a specific, hard situation: many
-    mutually distrusting writers and no operator everyone trusts. That machinery is
-    consensus, replication across many nodes, and usually an incentive token to keep
-    strangers honest, and it is expensive in every dimension: latency, throughput, cost,
-    operational complexity, and explanation. When the situation genuinely is many distrusting
-    writers, the price can be worth paying. When it is not, the machinery is ceremony.</p>
+    <h2>LoomSeal examples</h2>
+    <p class="kicker">LoomSeal proves a record was not edited: signed by the machine that wrote
+    it, chained so nothing can be removed or reordered, and anchored so it could not have been
+    written after the fact. These two arguments turn entirely on that.</p>
 
-    <h2>The question that decides it</h2>
-    <p>Ask one thing: who writes to this log? If the answer is one operator, and the problem
-    is that readers do not trust that operator, consensus among strangers solves nothing,
-    because there is exactly one writer to reach consensus with. What readers need is tamper
-    evidence plus a way to catch the operator rewriting history, and that second part does
-    not require a network. It requires anchoring.</p>
+    <div class="case" id="case-dispute">
+      <p class="tag">A dispute nobody could win</p>
+      <h3>The outage neither side would own</h3>
+      <p>A managed-infrastructure vendor pushes config to a customer's fleet. One Tuesday a change
+      lands, and an hour later the customer's checkout is down for forty minutes. The customer's
+      incident review concludes the vendor altered a firewall rule with no ticket. The vendor's
+      on-call swears the rule was changed by the customer's own team the week before, and that the
+      log they are being shown has since been trimmed. Two internal logs, two stories, a contract
+      with penalties attached, and no way to tell whose export was edited.</p>
+      <p>The vendor's tooling had sealed every change as it ran, and the head of that chain was
+      committed to a public git repository every hour, long before the outage. The vendor exports
+      the week and sends one file. <span class="who">The customer's own engineer</span> checks it
+      offline, on a laptop, with no account and no call. The verifier confirms the signature,
+      recomputes the chain, and matches the anchor published the previous Wednesday. The firewall
+      rule was changed by the customer's team, at 09:14 the prior Thursday, and nothing in the
+      window was removed. The fight was over in the time it took to drag a file into a browser.</p>
+      <p class="line">Signed and anchored means neither side gets to rewrite the week after it went
+      wrong.</p>
+    </div>
 
-    <h2>Anchoring: the cheap alternative to consensus</h2>
-    <p>Publish the chain's head, one short hash, somewhere the operator cannot rewrite: a
-    timestamp authority under RFC 3161, a commit in a public git repository, a transparency
-    log. Do it on a schedule. A rewritten history now has to disagree with heads that were
-    published outside the operator's control before there was any reason to lie, which means
-    a forger needed to be forging from the beginning, in public, continuously. That is the
-    property most projects reaching for a blockchain actually wanted, at roughly zero cost
-    and with nothing to operate.</p>
+    <div class="case" id="case-proof">
+      <p class="tag">Proof instead of a walkthrough</p>
+      <h3>Proving the patch, not describing it</h3>
+      <p>A contract says critical vulnerabilities are patched within seventy-two hours. A year in,
+      the customer's security team asks the vendor to prove it, not describe it. The vendor could
+      open its ticketing database and read the dates aloud, but those dates live in a system the
+      vendor controls and could have tidied the night before the meeting. The customer knows this,
+      so the dates settle nothing, and the review sinks into a screen-share walking tickets one at
+      a time.</p>
+      <p>The vendor's deploy pipeline sealed each patch as it shipped, and the chain has been
+      anchored continuously since the contract began. The vendor exports the patch history for the
+      term and attaches it to the ticket. <span class="who">The security team</span> verifies it on
+      their own machines, offline, with nothing installed from the vendor. Each patch is there, in
+      order, signed, first written at a time that predates any anchor the vendor could have reached.
+      Where an SLA was missed, the file says so plainly, which is exactly what makes the rest of it
+      believable. A week of calls closed in an afternoon of reading.</p>
+      <p class="line">A record you cannot edit is worth the same to a stranger as to your oldest
+      customer, because checking it never runs back through you.</p>
+    </div>
 
-    <h2>When a blockchain is the right call</h2>
-    <p>Genuinely multi-party writes with no trusted operator and value moving between
-    strangers: that is the honest home turf, and public chains serve it. What earns the
-    skepticism is the private blockchain deployed inside one company, which is a database
-    with extra steps, and the compliance project that says blockchain when it means
-    tamper-evident, which is buying consensus to solve a problem consensus does not
-    address.</p>
+    <h2>LoomSpan examples</h2>
+    <p class="kicker"><a href="/span">LoomSpan</a> is a profile of the same format for the other
+    half: proving nothing was left out. On a fixed cadence the producer signs a beat to a public
+    feed, the chain head and the exact count of entries since the last one, so a silent gap becomes
+    either a missing heartbeat anyone can see or a signed false count. This argument turns on
+    that.</p>
 
-    <h2>Where LoomSeal fits</h2>
-    <p>LoomSeal takes the boring side of this trade on purpose. Its design rules fix SHA-256,
-    HMAC-SHA256, and ed25519, no consensus, no tokens, no network dependency, and put the
-    external fixity in anchors: timestamp authorities, public git, transparency logs. One
-    file, verified offline by a free tool, with the rules public in
-    <a href="/spec">the spec</a>. The chain does the tamper evidence, the anchors do the
-    part people thought they needed a blockchain for.</p>
+    <div class="case" id="case-audit">
+      <p class="tag">Completeness, the expensive half</p>
+      <h3>The audit that used to run on screenshots</h3>
+      <p>A company sells to enterprises, and every deal stalls on the same SOC 2 question: prove
+      the quarterly access review covered every system, not just the ones convenient to screenshot.
+      The evidence has always been a folder of exports assembled the week the auditor arrives, and
+      the auditor's hardest hours go to completeness, establishing by hand that nothing was left out
+      of the population, billed hourly.</p>
+      <p>The review tool now emits a spanned chain. Every sixty seconds it signs a beat to a public
+      feed: the chain head as of now, and the exact count of entries added since the last beat.
+      Switching the collector off during the review no longer leaves a convenient blank. It leaves
+      a missing heartbeat on a feed <span class="who">the auditor</span> can watch, or a signed
+      false count, which is a far worse thing to have put a signature on. The auditor checks one
+      bundle and reads the honest sentence off it: attested every sixty seconds, publicly anchored,
+      longest unattested window seventy-four seconds. The expensive half of the audit became a line
+      of output.</p>
+      <p class="line">LoomSpan turns a quiet gap into a visible one or a signed lie. There is no
+      third option that stays hidden.</p>
+    </div>
 
-    <h2>Related reading</h2>
-    <ul>
-      <li><a href="/tamper-evident-logs">Tamper-evident logs, explained</a></li>
-      <li><a href="/evidence-formats">Verifiable evidence formats, compared</a></li>
-      <li><a href="/ipe-completeness">IPE and the completeness problem</a></li>
-    </ul>
-
+    <p style="margin-top:2.6rem;">None of the three needed KordLoom in the room. The producer
+    sealed its own records as it worked, the recipient checked the file on their own machine, and
+    the disagreement resolved without anyone extending trust they had no reason to extend. That is
+    the entire point, shown three times. <a href="/#verify">Verify one yourself</a>, or read
+    <a href="/how">how it works</a>.</p>
   </div>
 
   <footer>

@@ -204,6 +204,7 @@
   .menu[open] .menu-panel { animation: menuIn 0.16s ease both; }
   @keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
   .menu-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--faint); padding: 0.75rem 0.7rem 0.5rem; }
+  .menu-sub { font-size: 0.56rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--meta-c); padding: 0.7rem 0.7rem 0.3rem; }
   .menu-item {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 0.9rem;
     padding: 0.68rem 0.7rem; border-radius: 10px; text-decoration: none; color: var(--ink); font-size: 0.95rem;
@@ -257,18 +258,39 @@
       <a class="menu-item" href="/#verify"><span class="m-name">Verify one right now</span></a>
       <a class="menu-item" href="/#proves"><span class="m-name">What a bundle proves</span></a>
       <a class="menu-item" href="/#producers"><span class="m-name">For producers</span></a>
+      <a class="menu-item" href="/verify"><span class="m-name">Verify a bundle</span></a>
       <div class="menu-div"></div>
-      <p class="menu-label">Documentation</p>
-      <a class="menu-item" href="/spec">
+      <p class="menu-sub">Learn</p>
+      <a class="menu-item" href="/how">
         <span class="mi-text">
-          <span class="m-name">The spec</span>
-          <span class="m-desc">The format, typeset and readable.</span>
+          <span class="m-name">How it works</span>
+          <span class="m-desc">The chain, built as you go.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/examples">
+        <span class="mi-text">
+          <span class="m-name">Worked examples</span>
+          <span class="m-desc">Seal and span, shown at real stakes.</span>
         </span>
       </a>
       <a class="menu-item" href="/span">
         <span class="mi-text">
           <span class="m-name">LoomSpan</span>
           <span class="m-desc">The completeness profile. Proves the span is whole.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/verifiers">
+        <span class="mi-text">
+          <span class="m-name">The verifiers</span>
+          <span class="m-desc">Two, kept honest against each other.</span>
+        </span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-sub">Reference</p>
+      <a class="menu-item" href="/spec">
+        <span class="mi-text">
+          <span class="m-name">The spec</span>
+          <span class="m-desc">The format, typeset and readable.</span>
         </span>
       </a>
       <a class="menu-item" href="/faq">

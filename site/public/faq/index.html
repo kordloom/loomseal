@@ -72,7 +72,7 @@
    "name": "How does it actually work?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "Three things happen while your software runs, and one happens when somebody asks. Your software records what it did, which it already does. Each entry is hashed together with the one before it, so entry three's link covers entry three and entry two's link. Alter or delete anything earlier and every link after it changes. Every so often the current head of that chain, one 64-character string, is published somewhere you do not control: a git commit, a timestamp authority, a transparency log. When somebody asks for evidence, you export a bundle: the claims for the window they care about, the digests of any files behind them, the chain coordinates, the anchors, and one ed25519 signature over the whole document. The verifier runs that backwards, offline. It checks the signature, recomputes every link from the claim contents, confirms each entry points at the one before it, and matches the anchors against links in the chain. A break is named, not merely detected. The anchor is the part doing the real work. A chain on its own only proves internal consistency, and anyone could sit down and build a consistent one this afternoon. Publishing the head as you go is what makes that worthless to a forger, because a convincing fake would have required lying from the first entry and publishing the false heads the entire time. Worked through at length on the home page ."
+    "text": "Three things happen while your software runs, and one happens when somebody asks. Your software records what it did, which it already does. Each entry is hashed together with the one before it, so entry three's link covers entry three and entry two's link. Alter or delete anything earlier and every link after it changes. Every so often the current head of that chain, one 64-character string, is published somewhere you do not control: a git commit, a timestamp authority, a transparency log. When somebody asks for evidence, you export a bundle: the claims for the window they care about, the digests of any files behind them, the chain coordinates, the anchors, and one ed25519 signature over the whole document. The verifier runs that backwards, offline. It checks the signature, recomputes every link from the claim contents, confirms each entry points at the one before it, and matches the anchors against links in the chain. A break is named, not merely detected. The anchor is the part doing the real work. A chain on its own only proves internal consistency, and anyone could sit down and build a consistent one this afternoon. Publishing the head as you go is what makes that worthless to a forger, because a convincing fake would have required lying from the first entry and publishing the false heads the entire time. Worked through at length on the how-it-works page."
    }
   },
   {
@@ -394,6 +394,7 @@
   .menu[open] .menu-panel { animation: menuIn 0.16s ease both; }
   @keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
   .menu-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--faint); padding: 0.75rem 0.7rem 0.5rem; }
+  .menu-sub { font-size: 0.56rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--meta-c); padding: 0.7rem 0.7rem 0.3rem; }
   .menu-item {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 0.9rem;
     padding: 0.68rem 0.7rem; border-radius: 10px; text-decoration: none; color: var(--ink); font-size: 0.95rem;
@@ -448,18 +449,39 @@
       <a class="menu-item" href="/#verify"><span class="m-name">Verify one right now</span></a>
       <a class="menu-item" href="/#proves"><span class="m-name">What a bundle proves</span></a>
       <a class="menu-item" href="/#producers"><span class="m-name">For producers</span></a>
+      <a class="menu-item" href="/verify"><span class="m-name">Verify a bundle</span></a>
       <div class="menu-div"></div>
-      <p class="menu-label">Documentation</p>
-      <a class="menu-item" href="/spec">
+      <p class="menu-sub">Learn</p>
+      <a class="menu-item" href="/how">
         <span class="mi-text">
-          <span class="m-name">The spec</span>
-          <span class="m-desc">The format, typeset and readable.</span>
+          <span class="m-name">How it works</span>
+          <span class="m-desc">The chain, built as you go.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/examples">
+        <span class="mi-text">
+          <span class="m-name">Worked examples</span>
+          <span class="m-desc">Seal and span, shown at real stakes.</span>
         </span>
       </a>
       <a class="menu-item" href="/span">
         <span class="mi-text">
           <span class="m-name">LoomSpan</span>
           <span class="m-desc">The completeness profile. Proves the span is whole.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/verifiers">
+        <span class="mi-text">
+          <span class="m-name">The verifiers</span>
+          <span class="m-desc">Two, kept honest against each other.</span>
+        </span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-sub">Reference</p>
+      <a class="menu-item" href="/spec">
+        <span class="mi-text">
+          <span class="m-name">The spec</span>
+          <span class="m-desc">The format, typeset and readable.</span>
         </span>
       </a>
       <a class="menu-item" href="/faq">
@@ -616,8 +638,8 @@
         consistency, and anyone could sit down and build a consistent one this afternoon.
         Publishing the head as you go is what makes that worthless to a forger, because a
         convincing fake would have required lying from the first entry and publishing the
-        false heads the entire time. Worked through at length on the
-        <a href="/#how">home page</a>.</p>
+        false heads the entire time. Worked through at length on
+        <a href="/how">how it works</a>.</p>
       </div>
     </details>
     <details class="qa">

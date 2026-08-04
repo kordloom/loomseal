@@ -26,6 +26,15 @@ failed, 2 usage error.
 - [LoomSpan](https://loomseal.com/span): the population attestation profile. Continuous
   signed counts on a fixed cadence turn silent omission into an affirmative lie. Coverage is
   reported as measurement, never as a badge.
+- [Worked examples](https://loomseal.com/examples): three real arguments, grouped by which
+  half of proof ends each one. Two turn on LoomSeal, that nothing was changed or removed. One
+  turns on LoomSpan, that nothing was left out.
+- [How it works](https://loomseal.com/how): the mechanism end to end. Each record is hashed
+  to the one before it as it is written, the chain head is published where the producer cannot
+  reach it, and the verifier runs the whole thing backwards offline.
+- [The verifiers](https://loomseal.com/verifiers): two verifiers, one in Go and one written
+  separately from the spec in Python, cross-checked on shared conformance vectors so the format
+  is not held honest by any single implementation.
 - [FAQ](https://loomseal.com/faq): why it exists, the value to operators and to reviewers,
   the cryptography, how keys are kept, quantum computers, why not a blockchain, and what
   happens to your proof if KordLoom disappears.

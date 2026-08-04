@@ -3,31 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hash Chains vs Blockchains &middot; LoomSeal</title>
-<meta name="description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
-<link rel="canonical" href="https://loomseal.com/hash-chains-vs-blockchain">
+<title>The verifiers &middot; LoomSeal</title>
+<meta name="description" content="LoomSeal ships two verifiers, one in Go and one written separately from the spec in Python, cross-checked on the same conformance vectors so the format is not held honest by a single implementation.">
+<link rel="canonical" href="https://loomseal.com/verifiers">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com/hash-chains-vs-blockchain">
-<meta property="og:title" content="Hash chains vs blockchains">
-<meta property="og:description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
+<meta property="og:url" content="https://loomseal.com/verifiers">
+<meta property="og:title" content="Who checks the checker">
+<meta property="og:description" content="Two verifiers, written apart in different languages, kept honest against each other on shared conformance vectors.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
-<script type="application/ld+json">
-{
- "@context": "https://schema.org",
- "@type": "TechArticle",
- "headline": "Hash chains vs blockchains",
- "description": "Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.",
- "url": "https://loomseal.com/hash-chains-vs-blockchain",
- "publisher": {
-  "@type": "Organization",
-  "name": "KordLoom",
-  "url": "https://kordloom.com"
- }
-}
-</script>
 <style>
   :root {
     --paper: #f8f2e4;
@@ -141,13 +127,17 @@
     border-radius: 5px;
     padding: 0.1em 0.35em;
   }
-  .doc ul, .doc ol { margin: 0 0 1rem 1.3rem; }
-  .doc li { font-size: 0.93rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.45rem; }
-  .doc h3 { font-size: 0.98rem; font-weight: 600; color: var(--ink); margin: 1.7rem 0 0.5rem; }
-  .table-wrap { overflow-x: auto; margin: 0 0 1rem; }
-  .doc table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-  .doc th, .doc td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; color: var(--body-c); line-height: 1.55; }
-  .doc th { background: var(--code-bg); color: var(--ink); font-weight: 600; }
+  .doc .scene {
+    border-left: 2px solid var(--border);
+    padding: 0.3rem 0 0.3rem 1.3rem;
+    margin: 0.4rem 0 0.9rem;
+  }
+  .doc .scene p:last-child { margin-bottom: 0; }
+  .doc .honest {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    color: var(--deep);
+  }
   footer {
     width: 100%;
     max-width: 60rem;
@@ -343,67 +333,38 @@
 
   <div class="page-head">
     <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
-    <h1>Hash chains vs blockchains</h1>
+    <h1>Who checks the checker</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">Both link records with hashes. Only one needs a network, consensus, and a coin.</p>
-    <p class="crumb"><a href="/">loomseal.com</a> &middot; Reading</p>
+    <p class="lead">Two verifiers, written apart,<br>kept honest against each other.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; The verifiers</p>
   </div>
 
   <div class="doc">
+    <p class="canon">The trust model, stated plainly. What a verified bundle means sits in
+      <a href="/#proves">what a bundle proves</a>, and the mechanism is in
+      <a href="/how">how it works</a>.
+    </p>
 
-    <h2>The shared core</h2>
-    <p>Strip both to their skeletons and they are the same data structure: records linked by
-    digest, where each entry commits to the one before it, so any alteration cascades forward
-    and becomes detectable. That linked-digest core is decades older than any cryptocurrency,
-    and it is the part doing the tamper-evidence work in both.</p>
+    <h2>Two verifiers, not one</h2>
+    <p>A format that says <em>do not take our word for it</em> and then ships one verifier is
+    asking you to trust our code in order to prove our code is trustworthy. So there are two. A
+    Go verifier ships in the binary. A separate Python one is written from the specification, in
+    a different language, on different libraries. Twenty-seven conformance vectors run against
+    both, and a disagreement is treated as a defect in the format rather than a curiosity.</p>
 
-    <h2>What a blockchain adds</h2>
-    <p>A blockchain is a hash chain plus machinery for a specific, hard situation: many
-    mutually distrusting writers and no operator everyone trusts. That machinery is
-    consensus, replication across many nodes, and usually an incentive token to keep
-    strangers honest, and it is expensive in every dimension: latency, throughput, cost,
-    operational complexity, and explanation. When the situation genuinely is many distrusting
-    writers, the price can be worth paying. When it is not, the machinery is ceremony.</p>
+    <h2>It has already earned its keep</h2>
+    <p>A timestamp carrying nanoseconds verified in Go and failed in Python, which reads as
+    tampering when nothing has been tampered with; the spec now hashes the stored bytes and the
+    failure is impossible. A signature check that assumed one hash function silently verified
+    nothing against an authority that used another, and only surfaced because the other
+    implementation disagreed. One verifier would have shipped both.</p>
 
-    <h2>The question that decides it</h2>
-    <p>Ask one thing: who writes to this log? If the answer is one operator, and the problem
-    is that readers do not trust that operator, consensus among strangers solves nothing,
-    because there is exactly one writer to reach consensus with. What readers need is tamper
-    evidence plus a way to catch the operator rewriting history, and that second part does
-    not require a network. It requires anchoring.</p>
-
-    <h2>Anchoring: the cheap alternative to consensus</h2>
-    <p>Publish the chain's head, one short hash, somewhere the operator cannot rewrite: a
-    timestamp authority under RFC 3161, a commit in a public git repository, a transparency
-    log. Do it on a schedule. A rewritten history now has to disagree with heads that were
-    published outside the operator's control before there was any reason to lie, which means
-    a forger needed to be forging from the beginning, in public, continuously. That is the
-    property most projects reaching for a blockchain actually wanted, at roughly zero cost
-    and with nothing to operate.</p>
-
-    <h2>When a blockchain is the right call</h2>
-    <p>Genuinely multi-party writes with no trusted operator and value moving between
-    strangers: that is the honest home turf, and public chains serve it. What earns the
-    skepticism is the private blockchain deployed inside one company, which is a database
-    with extra steps, and the compliance project that says blockchain when it means
-    tamper-evident, which is buying consensus to solve a problem consensus does not
-    address.</p>
-
-    <h2>Where LoomSeal fits</h2>
-    <p>LoomSeal takes the boring side of this trade on purpose. Its design rules fix SHA-256,
-    HMAC-SHA256, and ed25519, no consensus, no tokens, no network dependency, and put the
-    external fixity in anchors: timestamp authorities, public git, transparency logs. One
-    file, verified offline by a free tool, with the rules public in
-    <a href="/spec">the spec</a>. The chain does the tamper evidence, the anchors do the
-    part people thought they needed a blockchain for.</p>
-
-    <h2>Related reading</h2>
-    <ul>
-      <li><a href="/tamper-evident-logs">Tamper-evident logs, explained</a></li>
-      <li><a href="/evidence-formats">Verifiable evidence formats, compared</a></li>
-      <li><a href="/ipe-completeness">IPE and the completeness problem</a></li>
-    </ul>
-
+    <h2>The vectors outlive us</h2>
+    <p>The vectors are the durable part. They outlive whoever wrote either verifier, and a third
+    party can run them against an implementation of their own. That is what keeps the format from
+    being held honest by any single program, ours included. There is also a third verifier that
+    <a href="/verify">runs entirely in your browser</a>, so you can check a bundle without
+    installing anything at all.</p>
   </div>
 
   <footer>

@@ -261,6 +261,14 @@
   }
   .gain-link:hover { color: var(--ink); border-color: var(--faint); }
   .gain-link::after { content: " \2193"; }
+  .more-link { max-width: 46rem; margin: 1.6rem auto 0; text-align: left; }
+  .more-link a {
+    font-size: 0.95rem; letter-spacing: 0.01em; color: var(--ink);
+    text-decoration: none; border-bottom: 1px solid var(--faint);
+    padding-bottom: 2px; transition: border-color 0.15s ease;
+  }
+  .more-link a:hover { border-color: var(--ink); }
+  .more-link a::after { content: " \2192"; color: var(--faint); }
   .toc-grid {
     max-width: 46rem; margin: 0 auto;
     display: grid; grid-template-columns: 1fr 1fr;
@@ -283,6 +291,12 @@
     transition: color 0.15s ease, border-color 0.15s ease;
   }
   .toc-item:hover .toc-name { color: var(--ink); border-color: var(--faint); }
+  #contents .toc-grid:not(.toc-more) { grid-template-rows: repeat(4, auto); }
+  .toc-more { grid-template-rows: repeat(3, auto); margin-top: 0.1rem; }
+  .toc-more .toc-num { color: var(--meta-c); }
+  @media (max-width: 560px) {
+    .toc-grid, .toc-more { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; }
+  }
   .tenets {
     margin: 2.75rem auto 0;
     display: grid;
@@ -390,6 +404,7 @@
   .menu[open] .menu-panel { animation: menuIn 0.16s ease both; }
   @keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
   .menu-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--faint); padding: 0.75rem 0.7rem 0.5rem; }
+  .menu-sub { font-size: 0.56rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--meta-c); padding: 0.7rem 0.7rem 0.3rem; }
   .menu-item {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 0.9rem;
     padding: 0.68rem 0.7rem; border-radius: 10px; text-decoration: none; color: var(--ink); font-size: 0.95rem;
@@ -470,32 +485,44 @@
       <a class="menu-item" href="#plain"><span class="m-name">In plain terms</span></a>
       <a class="menu-item" href="#happens"><span class="m-name">What actually happens</span></a>
       <a class="menu-item" href="#about"><span class="m-name">The problem</span></a>
-      <a class="menu-item" href="#timestamp"><span class="m-name">Why not a timestamp</span></a>
       <a class="menu-item" href="#practice"><span class="m-name">In practice</span></a>
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
-      <a class="menu-item" href="#how"><span class="m-name">How it works</span></a>
       <a class="menu-item" href="#proves"><span class="m-name">What a bundle proves</span></a>
-      <a class="menu-item" href="#checked"><span class="m-name">Who checks the checker</span></a>
       <a class="menu-item" href="#producers"><span class="m-name">For producers</span></a>
       <a class="menu-item" href="#ourselves"><span class="m-name">Why we use it ourselves</span></a>
+      <a class="menu-item" href="/verify"><span class="m-name">Verify a bundle</span></a>
       <div class="menu-div"></div>
-      <p class="menu-label">Documentation</p>
-      <a class="menu-item" href="/verify">
+      <p class="menu-sub">Learn</p>
+      <a class="menu-item" href="/how">
         <span class="mi-text">
-          <span class="m-name">Verify a bundle</span>
-          <span class="m-desc">Drop a file. Nothing is uploaded.</span>
+          <span class="m-name">How it works</span>
+          <span class="m-desc">The chain, built as you go.</span>
         </span>
       </a>
-      <a class="menu-item" href="/spec">
+      <a class="menu-item" href="/examples">
         <span class="mi-text">
-          <span class="m-name">The spec</span>
-          <span class="m-desc">The format, typeset and readable.</span>
+          <span class="m-name">Worked examples</span>
+          <span class="m-desc">Seal and span, shown at real stakes.</span>
         </span>
       </a>
       <a class="menu-item" href="/span">
         <span class="mi-text">
           <span class="m-name">LoomSpan</span>
           <span class="m-desc">The completeness profile. Proves the span is whole.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/verifiers">
+        <span class="mi-text">
+          <span class="m-name">The verifiers</span>
+          <span class="m-desc">Two, kept honest against each other.</span>
+        </span>
+      </a>
+      <div class="menu-div"></div>
+      <p class="menu-sub">Reference</p>
+      <a class="menu-item" href="/spec">
+        <span class="mi-text">
+          <span class="m-name">The spec</span>
+          <span class="m-desc">The format, typeset and readable.</span>
         </span>
       </a>
       <a class="menu-item" href="/faq">
@@ -550,7 +577,7 @@
     <p class="lead">Proof, not promises.</p>
     <p class="sub">An open proof format. Software seals its records as it writes them. Hand
     someone one file that proves nothing was changed or removed since, and let them check it
-    themselves: offline, free, with no account and no trust in you.</p>
+    themselves. Offline, free, with no account and no trust in you.</p>
   </main>
 
   <section id="contents" class="section reveal" aria-label="Contents">
@@ -559,13 +586,18 @@
       <a class="toc-item" href="#plain"><span class="toc-num">01</span><span class="toc-name">In plain terms</span></a>
       <a class="toc-item" href="#happens"><span class="toc-num">02</span><span class="toc-name">What actually happens</span></a>
       <a class="toc-item" href="#about"><span class="toc-num">03</span><span class="toc-name">The problem</span></a>
-      <a class="toc-item" href="#timestamp"><span class="toc-num">04</span><span class="toc-name">Why not a timestamp</span></a>
-      <a class="toc-item" href="#practice"><span class="toc-num">05</span><span class="toc-name">In practice</span></a>
-      <a class="toc-item" href="#verify"><span class="toc-num">06</span><span class="toc-name">Verify one right now</span></a>
-      <a class="toc-item" href="#how"><span class="toc-num">07</span><span class="toc-name">How it works</span></a>
-      <a class="toc-item" href="#proves"><span class="toc-num">08</span><span class="toc-name">What a bundle proves</span></a>
-      <a class="toc-item" href="#checked"><span class="toc-num">09</span><span class="toc-name">Who checks the checker</span></a>
-      <a class="toc-item" href="#producers"><span class="toc-num">10</span><span class="toc-name">For producers</span></a>
+      <a class="toc-item" href="#practice"><span class="toc-num">04</span><span class="toc-name">In practice</span></a>
+      <a class="toc-item" href="#verify"><span class="toc-num">05</span><span class="toc-name">Verify one right now</span></a>
+      <a class="toc-item" href="#proves"><span class="toc-num">06</span><span class="toc-name">What a bundle proves</span></a>
+      <a class="toc-item" href="#producers"><span class="toc-num">07</span><span class="toc-name">For producers</span></a>
+    </nav>
+    <nav class="toc-grid toc-more" aria-label="More pages">
+      <a class="toc-item" href="/examples"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Worked examples</span></a>
+      <a class="toc-item" href="/how"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">How it works</span></a>
+      <a class="toc-item" href="/verifiers"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Who checks the checker</span></a>
+      <a class="toc-item" href="/span"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">LoomSpan</span></a>
+      <a class="toc-item" href="/spec"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">The spec</span></a>
+      <a class="toc-item" href="/faq"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">FAQ</span></a>
     </nav>
   </section>
 
@@ -575,7 +607,7 @@
     <div class="prose">
       <p>When somebody needs evidence out of your systems today, you export it. A spreadsheet, a
       PDF, a folder of screenshots. All of it came out of a system you control and could have
-      edited before sending, so the person reading it has exactly one reason to believe it. They
+      edited before sending, so the person reading it has exactly one reason to believe it: they
       trust you. Most days that is enough. The days it is not are the expensive ones.</p>
       <p>A LoomSeal bundle is that same evidence with a tamper-evident seal around it, the way a
       bottle of aspirin carries a seal you can check yourself before you buy it. It is one file,
@@ -590,19 +622,19 @@
         <p class="gain-name">Audits get shorter</p>
         <p class="gain-text">Reviewers stop spending the first half of an engagement
         establishing that your evidence is genuine. They check the file, then read it.</p>
-        <a class="gain-link" href="#case-audit">See it in practice</a>
+        <a class="gain-link" href="/examples#case-audit">See it in practice</a>
       </div>
       <div class="gain">
         <p class="gain-name">Reviews get proof, not prose</p>
         <p class="gain-text">Send the record instead of a narrative about the record. It gets
         checked in place, without a walkthrough, a screen share, or a follow-up call.</p>
-        <a class="gain-link" href="#case-proof">See it in practice</a>
+        <a class="gain-link" href="/examples#case-proof">See it in practice</a>
       </div>
       <div class="gain">
         <p class="gain-name">Disputes end early</p>
         <p class="gain-text">When two sides disagree about what happened and when, the file
         decides it in minutes. Nobody has to weigh whose word to take.</p>
-        <a class="gain-link" href="#case-dispute">See it in practice</a>
+        <a class="gain-link" href="/examples#case-dispute">See it in practice</a>
       </div>
       <div class="gain">
         <p class="gain-name">The record builds itself</p>
@@ -678,16 +710,22 @@
       team that sent it.</p>
       <p>And if you open the bundle in an editor and change anything at all, verification
       fails. That is the point. The file matches the history that was sealed as it was
-      written, or the verifier says exactly where it stopped matching.</p>
+      written, or the verifier says exactly where it stopped matching. The whole mechanism,
+      the chain and the anchors and the verifier running it backwards, is on
+      <a href="/how">how it works</a>.</p>
     </div>
   </section>
 
   <section id="about" class="section reveal" aria-label="Why LoomSeal exists">
     <p class="eyebrow">The problem</p>
-    <p class="thesis">The hard part is not proving what happened. It is proving nothing else
-    did.</p>
+    <p class="thesis">Anything can be generated now, which means trusting the source is no longer
+    a plan.</p>
     <div class="prose">
-      <p>Sooner or later somebody asks you to prove something.</p>
+      <p>When anything can be generated &mdash; screenshots, logs, dashboards, a whole convincing
+      history &mdash; the scarce thing isn't the artifact, it's a claim a stranger can check
+      without trusting the source. Vaults, SSO, and &ldquo;trusted&rdquo; databases all reduce to
+      <em>trust the operator</em>. That's exactly the assumption AI just made worthless.</p>
+      <p>Which matters because sooner or later somebody asks you to prove something.</p>
     </div>
 
     <div class="asks">
@@ -730,101 +768,19 @@
 </div>
   </section>
 
-  <section id="timestamp" class="section reveal" aria-label="Why not a timestamp">
-    <p class="eyebrow">Why not a timestamp</p>
-    <p class="thesis">A timestamp proves a document existed. It cannot prove it was the only
-    one.</p>
-    <div class="prose">
-      <p>A timestamp gets you part of the way and then stops. It proves one document existed at
-      one moment, which is worth having, but it says nothing about the documents you chose not to
-      stamp. Stamp the clean deploys, skip the incident, and every stamp you hand over is
-      individually true and collectively a lie. A chain has no such seam. The entries hold each
-      other, so the set is whole or it is visibly broken. Proving what happened is the easy half.
-      Proving nothing was left out is the half worth paying for.</p>
-    </div>
-  </section>
-
   <section id="practice" class="section reveal" aria-label="In practice">
     <p class="eyebrow">In practice</p>
     <p class="thesis">Three arguments that used to run for weeks, each ended by one file in an
     afternoon.</p>
     <div class="prose">
       <p>The mechanism is the same every time: someone needs to be believed by someone who has no
-      reason to believe them, and the file does the believing so no one has to. Here is what that
-      looks like when the stakes are real.</p>
+      reason to believe them, and the file does the believing so no one has to. Two of the three
+      turn on <strong>LoomSeal</strong>, that nothing was changed or removed: an outage dispute
+      neither side could win, and an SLA proved rather than described. The third turns on
+      <strong>LoomSpan</strong>, its completeness profile, that nothing was left out: the SOC 2
+      audit that used to run on screenshots.</p>
     </div>
-
-    <div class="cases">
-      <article class="case" id="case-dispute">
-        <p class="case-tag">A dispute nobody could win</p>
-        <p class="case-name">The outage neither side would own</p>
-        <p class="case-body">A managed-infrastructure vendor pushes config to a customer's fleet.
-        One Tuesday a change lands, and an hour later the customer's checkout is down for forty
-        minutes. The customer's incident review concludes the vendor altered a firewall rule with
-        no ticket. The vendor's on-call swears the rule was changed by the customer's own team the
-        week before, and that the log they are being shown has since been trimmed. Two internal
-        logs, two stories, a contract with penalties attached, and no way to tell whose export was
-        edited.</p>
-        <p class="case-body">The vendor's tooling had sealed every change as it ran, and the head
-        of that chain was committed to a public git repository every hour, long before the outage.
-        The vendor exports the week and sends one file. <span class="who">The customer's own
-        engineer</span> checks it offline, on a laptop, with no account and no call. The verifier
-        confirms the signature, recomputes the chain, and matches the anchor published the previous
-        Wednesday. The firewall rule was changed by the customer's team, at 09:14 the prior
-        Thursday, and nothing in the window was removed. The fight was over in the time it took to
-        drag a file into a browser.</p>
-        <p class="case-line">Signed and anchored means neither side gets to rewrite the week after
-        it went wrong.</p>
-      </article>
-
-      <article class="case" id="case-audit">
-        <p class="case-tag">Completeness, the expensive half</p>
-        <p class="case-name">The audit that used to run on screenshots</p>
-        <p class="case-body">A company sells to enterprises, and every deal stalls on the same
-        SOC 2 question: prove the quarterly access review covered every system, not just the ones
-        convenient to screenshot. The evidence has always been a folder of exports assembled the
-        week the auditor arrives, and the auditor's hardest hours go to completeness, establishing
-        by hand that nothing was left out of the population, billed hourly.</p>
-        <p class="case-body">The review tool now emits a spanned chain. Every sixty seconds it
-        signs a beat to a public feed: the chain head as of now, and the exact count of entries
-        added since the last beat. Switching the collector off during the review no longer leaves
-        a convenient blank. It leaves a missing heartbeat on a feed <span class="who">the
-        auditor</span> can watch, or a signed false count, which is a far worse thing to have put
-        a signature on. The auditor checks one bundle and reads the honest sentence off it:
-        attested every sixty seconds, publicly anchored, longest unattested window seventy-four
-        seconds. The expensive half of the audit became a line of output.</p>
-        <p class="case-line">LoomSpan turns a quiet gap into a visible one or a signed lie. There
-        is no third option that stays hidden.</p>
-      </article>
-
-      <article class="case" id="case-proof">
-        <p class="case-tag">Proof instead of a walkthrough</p>
-        <p class="case-name">Proving the patch, not describing it</p>
-        <p class="case-body">A contract says critical vulnerabilities are patched within
-        seventy-two hours. A year in, the customer's security team asks the vendor to prove it, not
-        describe it. The vendor could open its ticketing database and read the dates aloud, but
-        those dates live in a system the vendor controls and could have tidied the night before
-        the meeting. The customer knows this, so the dates settle nothing, and the review sinks
-        into a screen-share walking tickets one at a time.</p>
-        <p class="case-body">The vendor's deploy pipeline sealed each patch as it shipped, and the
-        chain has been anchored continuously since the contract began. The vendor exports the
-        patch history for the term and attaches it to the ticket. <span class="who">The security
-        team</span> verifies it on their own machines, offline, with nothing installed from the
-        vendor. Each patch is there, in order, signed, first written at a time that predates any
-        anchor the vendor could have reached. Where an SLA was missed, the file says so plainly,
-        which is exactly what makes the rest of it believable. A week of calls closed in an
-        afternoon of reading.</p>
-        <p class="case-line">A record you cannot edit is worth the same to a stranger as to your
-        oldest customer, because checking it never runs back through you.</p>
-      </article>
-    </div>
-
-    <div class="prose">
-      <p>None of the three needed KordLoom in the room. The producer sealed its own records as it
-      worked, the recipient checked the file on their own machine, and the disagreement resolved
-      without anyone extending trust they had no reason to extend. That is the entire point, shown
-      three times.</p>
-    </div>
+    <p class="more-link"><a href="/examples">Read the three worked examples</a></p>
   </section>
 
   <section id="verify" class="section reveal" aria-label="Verify one right now">
@@ -852,39 +808,6 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
     <p class="note">Real output, reproducible from the public repository. The verifier is built
     on the Go standard library alone, so every line that touches a verdict is readable in an
     afternoon.</p>
-  </section>
-
-  <section id="how" class="section reveal" aria-label="How it works">
-    <p class="eyebrow">How it works</p>
-    <p class="thesis">The chain is built as you go, not assembled when somebody asks.</p>
-    <div class="prose">
-      <p>Three things happen while your software runs, and one happens when somebody asks. Your
-      software records what it did, which it already does. Each entry is hashed together with the
-      one before it, so the entries form a chain. And every so often the current head of that
-      chain, a single 64-character string, is published somewhere you do not control: a git
-      commit, a timestamp authority, a transparency log.</p>
-    </div>
-    <pre><code>entry 1    link1 = H(claim1, "")
-entry 2    link2 = H(claim2, link1)
-entry 3    link3 = H(claim3, link2)
-
-head       link3  --published-->  git commit, timestamp, transparency log</code></pre>
-    <div class="prose">
-      <p>Alter or delete anything earlier and every link after it changes. There is no way to edit
-      the middle of a chain and leave the end intact. So when somebody asks for evidence, you
-      export the claims for the window they care about, the digests of any files behind them, the
-      chain coordinates, the anchors, and one signature over the whole document.</p>
-      <p>The verifier runs that backwards, offline. It confirms the signature, recomputes every
-      link from the claim contents, checks that each entry points at the one before it, and
-      matches the anchors against links in the chain. A removed or reordered entry is not merely
-      detected. The verifier names where the break is.</p>
-      <p>Notice what the anchor changes. A hash chain on its own only proves internal
-      consistency, and anyone could sit down and build a consistent one this afternoon.
-      Publishing the head as you go is what makes that worthless to a forger: a convincing fake
-      would have required lying from the first entry and publishing the false heads to a
-      third party the entire time. The security is not the cryptography. It is that
-      history cannot be backfilled.</p>
-    </div>
   </section>
 
   <section id="proves" class="section reveal" aria-label="What a verified bundle means">
@@ -920,32 +843,16 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
       was removed after it was written. It cannot prove that everything which happened was
       written down, because capture is a property of the producer and not of the format. What
       verification cannot prove sits in the <a href="/spec">spec</a> next to what it can.</p>
+      <p>Proving that nothing was left out is a different job, and a companion profile,
+      <a href="/span">LoomSpan</a>, does it on the same chains and the same verifier: continuous
+      signed counts that turn a silent gap into a visible one. And because a format that says
+      <em>do not take our word for it</em> cannot honestly ship a single checker, there are
+      <a href="/verifiers">two verifiers kept honest against each other</a>. The
+      <a href="/examples">worked examples</a> show both halves at real stakes.</p>
     </div>
     <div class="spine">
       <div class="rule spine-rule" aria-hidden="true"></div>
       <p class="spine-line">Signed. Chained. Anchored.</p>
-    </div>
-  </section>
-
-  <section id="checked" class="section reveal" aria-label="Who checks the checker">
-    <p class="eyebrow">Who checks the checker</p>
-    <p class="thesis">Two verifiers, written apart, kept honest against each other.</p>
-    <div class="uses">
-      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">A format that says
-      <em>do not take our word for it</em> and then ships one verifier is asking you to trust our
-      code in order to prove our code is trustworthy. So there are two. A Go verifier ships in the
-      binary. A separate Python one is written from the specification, in a different language, on
-      different libraries. Twenty-seven conformance vectors run against both, and a disagreement is
-      treated as a defect in the format rather than a curiosity.</p>
-      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">That has already earned its
-      keep. A timestamp carrying nanoseconds verified in Go and failed in Python, which reads as
-      tampering when nothing has been tampered with; the spec now hashes the stored bytes and the
-      failure is impossible. A signature check that assumed one hash function silently verified
-      nothing against an authority that used another, and only surfaced because the other
-      implementation disagreed. One verifier would have shipped both.</p>
-      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">The vectors are the durable
-      part. They outlive whoever wrote either verifier, and a third party can run them against an
-      implementation of their own.</p>
     </div>
   </section>
 

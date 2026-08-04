@@ -190,7 +190,7 @@
   .menu[open] > summary span:nth-child(2) { opacity: 0; }
   .menu[open] > summary span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
   .menu-panel {
-    position: absolute; top: 48px; left: 0; width: 360px; max-width: calc(100vw - 32px); transform-origin: top left;
+    position: absolute; top: 48px; left: 0; width: 360px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 88px); overflow-y: auto; overscroll-behavior: contain; transform-origin: top left;
     background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18); padding: 0.7rem;
   }
@@ -248,12 +248,16 @@
     <nav class="menu-panel" aria-label="LoomSeal menu">
       <p class="menu-label">LoomSeal</p>
       <a class="menu-item" href="/"><span class="m-name">Home</span></a>
-      <a class="menu-item" href="/#verify"><span class="m-name">Verify one right now</span></a>
-      <a class="menu-item" href="/#proves"><span class="m-name">What a bundle proves</span></a>
-      <a class="menu-item" href="/#producers"><span class="m-name">For producers</span></a>
+      <a class="menu-item" href="/#plain"><span class="m-name">In plain terms</span></a>
       <a class="menu-item" href="/verify"><span class="m-name">Verify a bundle</span></a>
       <div class="menu-div"></div>
       <p class="menu-sub">Learn</p>
+      <a class="menu-item" href="/overview">
+        <span class="mi-text">
+          <span class="m-name">Overview</span>
+          <span class="m-desc">The problem, the lifecycle, a live check.</span>
+        </span>
+      </a>
       <a class="menu-item" href="/how">
         <span class="mi-text">
           <span class="m-name">How it works</span>
@@ -266,6 +270,12 @@
           <span class="m-desc">Seal and span, shown at real stakes.</span>
         </span>
       </a>
+      <a class="menu-item" href="/proves">
+        <span class="mi-text">
+          <span class="m-name">What it proves</span>
+          <span class="m-desc">Three mechanisms, one guarantee.</span>
+        </span>
+      </a>
       <a class="menu-item" href="/span">
         <span class="mi-text">
           <span class="m-name">LoomSpan</span>
@@ -276,6 +286,12 @@
         <span class="mi-text">
           <span class="m-name">The verifiers</span>
           <span class="m-desc">Two, kept honest against each other.</span>
+        </span>
+      </a>
+      <a class="menu-item" href="/producers">
+        <span class="mi-text">
+          <span class="m-name">For producers</span>
+          <span class="m-desc">One format across products, one verifier.</span>
         </span>
       </a>
       <div class="menu-div"></div>

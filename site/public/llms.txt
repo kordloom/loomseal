@@ -16,9 +16,14 @@ failed, 2 usage error.
 
 ## Pages
 
-- [Home](https://loomseal.com/): a plain-language summary for non-engineers, why the format
-  exists, a reproducible verification you can run in sixty seconds, and what a verified bundle
-  does and does not prove.
+- [Home](https://loomseal.com/): a short landing. A plain-language summary for non-engineers,
+  then an index to every other page.
+- [Overview](https://loomseal.com/overview): the problem AI created, the life of one sealed
+  record from written to verified, and a reproducible verification you can run in sixty seconds.
+- [What it proves](https://loomseal.com/proves): what a verified bundle means. Signed, chained,
+  anchored, and the boundary stated as plainly as the guarantee.
+- [For producers](https://loomseal.com/producers): adopting the format. One envelope across
+  products, one verifier for everyone, Apache-2.0, and why KordLoom uses it on its own tools.
 - [The spec](https://loomseal.com/spec): the format itself. Bundle shape, canonical form
   (RFC 8785), producer keys and signatures, the three chain profiles
   (switchtender-audit-v1, loomseal-chain-v1), anchors, conformance

@@ -3,43 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoomSeal</title>
-<meta name="description" content="LoomSeal is an open proof format. Hand someone one file that proves your records have not been altered, and let them check it offline, free, with no account.">
-<link rel="canonical" href="https://loomseal.com">
+<title>Overview &middot; LoomSeal</title>
+<meta name="description" content="The problem AI created, the life of one sealed record from written to verified, and a live check you can run in sixty seconds.">
+<link rel="canonical" href="https://loomseal.com/overview">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com">
-<meta property="og:title" content="LoomSeal">
-<meta property="og:description" content="An open proof format. One file that proves your records have not been altered. Verified by anyone, offline and free.">
+<meta property="og:url" content="https://loomseal.com/overview">
+<meta property="og:title" content="LoomSeal overview">
+<meta property="og:description" content="The problem, the lifecycle, and a live check you can run yourself.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "SoftwareApplication",
-      "name": "LoomSeal",
-      "url": "https://loomseal.com",
-      "description": "An open proof format. Software seals its records as it writes them, and anyone verifies the file offline, free, with no account and no server.",
-      "applicationCategory": "DeveloperApplication",
-      "operatingSystem": "Linux, macOS, Windows",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "license": "https://www.apache.org/licenses/LICENSE-2.0",
-      "downloadUrl": "https://github.com/kordloom/loomseal",
-      "softwareHelp": "https://loomseal.com/faq",
-      "publisher": { "@id": "https://kordloom.com/#org" }
-    },
-    {
-      "@type": "Organization",
-      "@id": "https://kordloom.com/#org",
-      "name": "KordLoom",
-      "url": "https://kordloom.com"
-    }
-  ]
-}
-</script>
 <style>
   :root {
     --paper: #f8f2e4;
@@ -587,121 +561,143 @@
     </nav>
   </details>
 
-  <main>
-    <img class="mark" src="/loomseal-512.png" alt="LoomSeal woven LS mark">
-    <h1>LoomSeal</h1>
+  <main class="subhead">
+    <a href="/" aria-label="LoomSeal home"><img class="mark" src="/loomseal-512.png" alt="LoomSeal woven LS mark" style="width:clamp(92px,16vw,120px);margin-bottom:1.5rem;"></a>
+    <h1>Overview</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">Proof, not promises.</p>
-    <p class="sub">An open proof format. Software seals its records as it writes them. Hand
-    someone one file that proves nothing was changed or removed since, and let them check it
-    themselves. Offline, free, with no account and no trust in you.</p>
+    <p class="lead">The problem, the lifecycle, and a live check.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; Overview</p>
   </main>
 
-  <section id="plain" class="section reveal" aria-label="LoomSeal in plain terms">
-    <p class="eyebrow">In plain terms</p>
-    <p class="thesis">Proof you can hand to someone who has no reason to believe you.</p>
+  <section id="about" class="section reveal" aria-label="The problem">
+    <p class="eyebrow">The problem</p>
+    <p class="thesis">Anything can be generated now, which means trusting the source is no longer
+    a plan.</p>
     <div class="prose">
-      <p>When somebody needs evidence out of your systems today, you export it. A spreadsheet, a
-      PDF, a folder of screenshots. All of it came out of a system you control and could have
-      edited before sending, so the person reading it has exactly one reason to believe it: they
-      trust you. Most days that is enough. The days it is not are the expensive ones.</p>
-      <p>A LoomSeal bundle is that same evidence with a tamper-evident seal around it, the way a
-      bottle of aspirin carries a seal you can check yourself before you buy it. It is one file,
-      small enough to email. Whoever receives it runs a free checker on their own laptop, offline,
-      without an account and without contacting you. Seconds later they have one of two answers:
-      the record is whole and unchanged, or here is the exact entry that was altered.</p>
-      <p>Nobody has to take anyone's word for it, so nobody has to argue about it.</p>
+      <p>When anything can be generated &mdash; screenshots, logs, dashboards, a whole convincing
+      history &mdash; the scarce thing isn't the artifact, it's a claim a stranger can check
+      without trusting the source. Vaults, SSO, and &ldquo;trusted&rdquo; databases all reduce to
+      <em>trust the operator</em>. That's exactly the assumption AI just made worthless.</p>
+      <p>Which matters because sooner or later somebody asks you to prove something.</p>
     </div>
 
+    <div class="asks">
+      <p class="ask">A customer asks whether you patched what you said you patched, when you said you did.</p>
+      <p class="ask">An auditor asks who changed production the day it broke, and whether the log was edited.</p>
+      <p class="ask">A regulator asks for evidence of a control you have supposedly run for two years.</p>
+      <p class="ask">A buyer's security team asks you to prove your change process, not describe it.</p>
+    </div>
+
+    <div class="prose">
+      <p>So you go and pull the logs, and somewhere on the way to the meeting it lands on you
+      that your logs are a table in a database you control. You know you did not edit them. You
+      have no way to show it.</p>
+      <p>That is the gap LoomSeal closes, and it closes it by answering the three things a skeptic always says.</p>
+    </div>
+
+    <div class="objs">
+      <div class="obj">
+        <p class="obj-say">&ldquo;You made this up.&rdquo;</p>
+        <p class="obj-ans">The file is signed by the machine that produced it. Change one byte
+        anywhere in it and the signature fails.</p>
+      </div>
+      <div class="obj">
+        <p class="obj-say">&ldquo;You deleted the parts that made you look bad.&rdquo;</p>
+        <p class="obj-ans">Every entry carries the hash of the one before it. Remove or reorder
+        a single line and every link after it stops recomputing, and the verifier tells you
+        exactly which one broke.</p>
+      </div>
+      <div class="obj">
+        <p class="obj-say">&ldquo;You wrote this last night.&rdquo;</p>
+        <p class="obj-ans">The head of the chain was published outside your reach long before
+        anyone asked. Those entries existed before that anchor did, or the anchor would not
+        match.</p>
+      </div>
+    </div>
+
+    <div class="prose">
+      <p>None of that is new cryptography. It is three ordinary ideas stacked so that the person
+      holding the file never has to take your word for anything.</p>
+    </div>
+  </section>
+
+  <section id="happens" class="section reveal" aria-label="What actually happens">
+    <p class="eyebrow">What actually happens</p>
+    <p class="thesis">Software writes a record, the record is sealed as it lands, and the
+    history ends up as one file anyone can check.</p>
+    <div class="prose">
+      <p>First, the misconception worth clearing: LoomSeal doesn't watch your files, your
+      folders, or your documents, and nothing is scanning for changes. Software that adopts the
+      format writes its own records through it as it works, and the seal covers those records
+      and nothing else. Here is the whole life of one record, from the moment software writes
+      it to the moment a stranger checks it.</p>
+    </div>
     <div class="gains">
       <div class="gain">
-        <p class="gain-name">Audits get shorter</p>
-        <p class="gain-text">Reviewers stop spending the first half of an engagement
-        establishing that your evidence is genuine. They check the file, then read it.</p>
-        <a class="gain-link" href="/examples#case-audit">See it in practice</a>
+        <p class="gain-name">1. Software writes a record</p>
+        <p class="gain-text">A deploy tool finishes a release and writes an entry: who ran it,
+        what changed, when. It is ordinary logging in a shape the format defines.</p>
       </div>
       <div class="gain">
-        <p class="gain-name">Reviews get proof, not prose</p>
-        <p class="gain-text">Send the record instead of a narrative about the record. It gets
-        checked in place, without a walkthrough, a screen share, or a follow-up call.</p>
-        <a class="gain-link" href="/examples#case-proof">See it in practice</a>
+        <p class="gain-name">2. The record is sealed as it lands</p>
+        <p class="gain-text">Each entry is hashed together with the one before it and signed
+        the moment it is written, not scanned later. Alter or remove one afterward and the
+        chain arithmetic stops adding up.</p>
       </div>
       <div class="gain">
-        <p class="gain-name">Disputes end early</p>
-        <p class="gain-text">When two sides disagree about what happened and when, the file
-        decides it in minutes. Nobody has to weigh whose word to take.</p>
-        <a class="gain-link" href="/examples#case-dispute">See it in practice</a>
+        <p class="gain-name">3. The history becomes one file</p>
+        <p class="gain-text">When somebody needs evidence, the tool exports the history as a
+        bundle: one ordinary JSON file. Email it, attach it to a ticket, archive it, hand it
+        to an auditor.</p>
       </div>
       <div class="gain">
-        <p class="gain-name">The record builds itself</p>
-        <p class="gain-text">Nothing is assembled the day somebody asks. The seal forms while
-        your software runs, so there is no evidence project and no chance to curate it later.</p>
-      </div>
-      <div class="gain">
-        <p class="gain-name">It costs the other side nothing</p>
-        <p class="gain-text">No account, no license, no vendor to onboard, nothing installed
-        from you. The checker is free and open source, and it never phones anyone.</p>
-      </div>
-      <div class="gain">
-        <p class="gain-name">The evidence outlives us</p>
-        <p class="gain-text">A bundle sealed today still verifies if KordLoom is gone tomorrow,
-        because checking one never involved KordLoom in the first place.</p>
+        <p class="gain-name">4. Anyone checks it anywhere</p>
+        <p class="gain-text">A free verifier reads the file and gives a verdict: signed,
+        chained, anchored, or the name of what broke. There is a CLI, a Python reference
+        implementation, and a verifier that runs entirely in the browser.</p>
       </div>
     </div>
-
     <div class="prose">
-      <p>Two limits, said up front rather than buried. It cannot
-      prove your systems wrote down everything that happened. It proves that nothing was changed
-      or removed after it was written. And LoomSeal is a format, not a product: it is free and
-      open, with nothing to buy and nothing to sign. Software that needs to prove what it did
-      seals its history as it works and emits a bundle anyone can check, and the format underneath
-      stays free no matter how far it spreads.</p>
-      <p>That is the whole of it. From here, <a href="/overview">the overview</a> walks one record
-      from written to verified, the <a href="/examples">worked examples</a> show it at real stakes,
-      and <a href="/how">how it works</a> is why it survives somebody actively trying to break
-      it.</p>
+      <p>Played out end to end: the deploy tool has been writing who, what, and when through
+      the format all quarter. An auditor asks for the change history, so somebody exports
+      <code>bundle.json</code> and attaches it to the ticket. The auditor drags the file into
+      the <a href="/verify">browser verifier</a> on a laptop with the WiFi off, and it answers
+      VERIFIED: signed, chained, anchored. No account, no vendor, and not one question for the
+      team that sent it.</p>
+      <p>And if you open the bundle in an editor and change anything at all, verification
+      fails. That is the point. The file matches the history that was sealed as it was
+      written, or the verifier says exactly where it stopped matching. The whole mechanism,
+      the chain and the anchors and the verifier running it backwards, is on
+      <a href="/how">how it works</a>.</p>
     </div>
   </section>
 
-  <section id="explore" class="section reveal" aria-label="Explore">
-    <p class="eyebrow">Explore</p>
-    <p class="thesis">The short version is above. Everything else is one click away.</p>
-    <nav class="toc-grid" style="margin-top:2.4rem;" aria-label="Pages">
-      <a class="toc-item" href="/overview"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Overview</span></a>
-      <a class="toc-item" href="/how"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">How it works</span></a>
-      <a class="toc-item" href="/examples"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Worked examples</span></a>
-      <a class="toc-item" href="/proves"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">What it proves</span></a>
-      <a class="toc-item" href="/verifiers"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">The verifiers</span></a>
-      <a class="toc-item" href="/producers"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">For producers</span></a>
-      <a class="toc-item" href="/span"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">LoomSpan</span></a>
-      <a class="toc-item" href="/spec"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">The spec</span></a>
-      <a class="toc-item" href="/faq"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">FAQ</span></a>
-      <a class="toc-item" href="/verify"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Verify a bundle</span></a>
-    </nav>
-  </section>
-
-  <section id="follow" class="section reveal" aria-label="Hear when things ship">
-    <p class="eyebrow">If you want to follow this</p>
-    <div class="signup">
-      <p class="thesis">The format is free and stays free. Leave an address, hear when
-      something real ships.</p>
-      <form id="signup-form" novalidate>
-        <div class="signup-hide" aria-hidden="true">
-          <label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label>
-        </div>
-        <label class="signup-hide" for="signup-email">Email address</label>
-        <div class="signup-row">
-          <input id="signup-email" type="email" name="email" placeholder="you@example.com"
-            autocomplete="email" required>
-          <button type="submit">Keep me posted</button>
-        </div>
-      </form>
-      <p class="signup-say" id="signup-say" role="status" aria-live="polite"></p>
-      <p class="signup-note">Rare mail. The stored record is the address, this site's name, and
-      the time. Nothing else, which is what you would expect from a site about proof.</p>
+  <section id="verify" class="section reveal" aria-label="Verify one right now">
+    <p class="eyebrow">Verify one right now</p>
+    <p class="thesis">Sixty seconds from clone to verdict.</p>
+    <div class="prose">
+      <p>Sending it is the dull part, which is the point. One JSON file, small enough to email.
+      The recipient runs a free, open-source verifier, offline, with no account and nothing
+      installed from you, and a few seconds later they have a yes or a no.</p>
+      <p>No terminal required, either. The same check runs in the browser at
+      <a href="/verify">loomseal.com/verify</a>, entirely on the recipient's machine, and it
+      works offline once the page has loaded.</p>
     </div>
+    <pre><code>go install github.com/kordloom/loomseal@latest
+git clone https://github.com/kordloom/loomseal
+cd loomseal
+loomseal verify examples/audit.loomseal.json --evidence examples/evidence</code></pre>
+    <pre><code>bundle     lsb_example_0001 from loomseal-demo 0.1.0
+subject    fleet demo-yard
+signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
+chain      loomseal-chain-v1, full, 2 claims, head matched true
+anchors    1 matched by coordinates, 0 proof(s) carried, 0 verified
+evidence   1 verified, 0 missing, 0 referenced only
+VERIFIED   signed, chained (full), anchored by reference</code></pre>
+    <p class="note">Real output, reproducible from the public repository. The verifier is built
+    on the Go standard library alone, so every line that touches a verdict is readable in an
+    afternoon.</p>
   </section>
-
 
   <footer>
     <div class="foot-links">

@@ -3,43 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoomSeal</title>
-<meta name="description" content="LoomSeal is an open proof format. Hand someone one file that proves your records have not been altered, and let them check it offline, free, with no account.">
-<link rel="canonical" href="https://loomseal.com">
+<title>For producers &middot; LoomSeal</title>
+<meta name="description" content="Adopt LoomSeal to prove what your software did: one format across products, one verifier for everyone, Apache-2.0 with nothing to negotiate.">
+<link rel="canonical" href="https://loomseal.com/producers">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com">
-<meta property="og:title" content="LoomSeal">
-<meta property="og:description" content="An open proof format. One file that proves your records have not been altered. Verified by anyone, offline and free.">
+<meta property="og:url" content="https://loomseal.com/producers">
+<meta property="og:title" content="LoomSeal for producers">
+<meta property="og:description" content="One format across products, one verifier for everyone.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "SoftwareApplication",
-      "name": "LoomSeal",
-      "url": "https://loomseal.com",
-      "description": "An open proof format. Software seals its records as it writes them, and anyone verifies the file offline, free, with no account and no server.",
-      "applicationCategory": "DeveloperApplication",
-      "operatingSystem": "Linux, macOS, Windows",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "license": "https://www.apache.org/licenses/LICENSE-2.0",
-      "downloadUrl": "https://github.com/kordloom/loomseal",
-      "softwareHelp": "https://loomseal.com/faq",
-      "publisher": { "@id": "https://kordloom.com/#org" }
-    },
-    {
-      "@type": "Organization",
-      "@id": "https://kordloom.com/#org",
-      "name": "KordLoom",
-      "url": "https://kordloom.com"
-    }
-  ]
-}
-</script>
 <style>
   :root {
     --paper: #f8f2e4;
@@ -587,121 +561,66 @@
     </nav>
   </details>
 
-  <main>
-    <img class="mark" src="/loomseal-512.png" alt="LoomSeal woven LS mark">
-    <h1>LoomSeal</h1>
+  <main class="subhead">
+    <a href="/" aria-label="LoomSeal home"><img class="mark" src="/loomseal-512.png" alt="LoomSeal woven LS mark" style="width:clamp(92px,16vw,120px);margin-bottom:1.5rem;"></a>
+    <h1>For producers</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">Proof, not promises.</p>
-    <p class="sub">An open proof format. Software seals its records as it writes them. Hand
-    someone one file that proves nothing was changed or removed since, and let them check it
-    themselves. Offline, free, with no account and no trust in you.</p>
+    <p class="lead">One format across products, one verifier for everyone.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; For producers</p>
   </main>
 
-  <section id="plain" class="section reveal" aria-label="LoomSeal in plain terms">
-    <p class="eyebrow">In plain terms</p>
-    <p class="thesis">Proof you can hand to someone who has no reason to believe you.</p>
-    <div class="prose">
-      <p>When somebody needs evidence out of your systems today, you export it. A spreadsheet, a
-      PDF, a folder of screenshots. All of it came out of a system you control and could have
-      edited before sending, so the person reading it has exactly one reason to believe it: they
-      trust you. Most days that is enough. The days it is not are the expensive ones.</p>
-      <p>A LoomSeal bundle is that same evidence with a tamper-evident seal around it, the way a
-      bottle of aspirin carries a seal you can check yourself before you buy it. It is one file,
-      small enough to email. Whoever receives it runs a free checker on their own laptop, offline,
-      without an account and without contacting you. Seconds later they have one of two answers:
-      the record is whole and unchanged, or here is the exact entry that was altered.</p>
-      <p>Nobody has to take anyone's word for it, so nobody has to argue about it.</p>
-    </div>
-
-    <div class="gains">
-      <div class="gain">
-        <p class="gain-name">Audits get shorter</p>
-        <p class="gain-text">Reviewers stop spending the first half of an engagement
-        establishing that your evidence is genuine. They check the file, then read it.</p>
-        <a class="gain-link" href="/examples#case-audit">See it in practice</a>
+  <section id="producers" class="section reveal" aria-label="For producers">
+    <p class="eyebrow">For producers</p>
+    <p class="thesis">One format across products, one verifier for everyone.</p>
+    <div class="uses">
+      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">The format does not care
+      what the claims are about. Anything a machine records in order, and somebody later has to
+      believe, fits the same envelope.</p>
+      <div class="uses-grid">
+        <span class="use">Audit and access logs</span>
+        <span class="use">Deployments and change control</span>
+        <span class="use">CI and CD runs</span>
+        <span class="use">Build provenance and SBOMs</span>
+        <span class="use">Incident timelines</span>
+        <span class="use">Backup and restore records</span>
+        <span class="use">Compliance evidence</span>
+        <span class="use">Agent and model run logs</span>
       </div>
-      <div class="gain">
-        <p class="gain-name">Reviews get proof, not prose</p>
-        <p class="gain-text">Send the record instead of a narrative about the record. It gets
-        checked in place, without a walkthrough, a screen share, or a follow-up call.</p>
-        <a class="gain-link" href="/examples#case-proof">See it in practice</a>
-      </div>
-      <div class="gain">
-        <p class="gain-name">Disputes end early</p>
-        <p class="gain-text">When two sides disagree about what happened and when, the file
-        decides it in minutes. Nobody has to weigh whose word to take.</p>
-        <a class="gain-link" href="/examples#case-dispute">See it in practice</a>
-      </div>
-      <div class="gain">
-        <p class="gain-name">The record builds itself</p>
-        <p class="gain-text">Nothing is assembled the day somebody asks. The seal forms while
-        your software runs, so there is no evidence project and no chance to curate it later.</p>
-      </div>
-      <div class="gain">
-        <p class="gain-name">It costs the other side nothing</p>
-        <p class="gain-text">No account, no license, no vendor to onboard, nothing installed
-        from you. The checker is free and open source, and it never phones anyone.</p>
-      </div>
-      <div class="gain">
-        <p class="gain-name">The evidence outlives us</p>
-        <p class="gain-text">A bundle sealed today still verifies if KordLoom is gone tomorrow,
-        because checking one never involved KordLoom in the first place.</p>
-      </div>
+      <p style="font-size:0.82rem;line-height:1.6;color:var(--faint);margin-top:1rem;">
+      SwitchTender emits audit bundles today. The rest are uses the format supports, not
+      integrations that ship.</p>
     </div>
 
     <div class="prose">
-      <p>Two limits, said up front rather than buried. It cannot
-      prove your systems wrote down everything that happened. It proves that nothing was changed
-      or removed after it was written. And LoomSeal is a format, not a product: it is free and
-      open, with nothing to buy and nothing to sign. Software that needs to prove what it did
-      seals its history as it works and emits a bundle anyone can check, and the format underneath
-      stays free no matter how far it spreads.</p>
-      <p>That is the whole of it. From here, <a href="/overview">the overview</a> walks one record
-      from written to verified, the <a href="/examples">worked examples</a> show it at real stakes,
-      and <a href="/how">how it works</a> is why it survives somebody actively trying to break
-      it.</p>
+      <p>SwitchTender is the first shipping producer. The example bundle and the
+      <code>seal</code> package are the reference implementations. The chain profiles in the spec were derived from software KordLoom already
+      ships, so the format describes real constructions rather than hypothetical ones.</p>
+      <p>If you build software that should prove what it did, import
+      <code>github.com/kordloom/loomseal/seal</code> to sign bundles and compute chain links,
+      follow the bundle shape in the spec, and register your claim types through the registry.</p>
+      <p>The envelope, chain profiles, and verification stay common, so one verifier checks every
+      producer. The format is Apache-2.0, so adopting it needs no negotiation and no
+      permission.</p>
     </div>
   </section>
 
-  <section id="explore" class="section reveal" aria-label="Explore">
-    <p class="eyebrow">Explore</p>
-    <p class="thesis">The short version is above. Everything else is one click away.</p>
-    <nav class="toc-grid" style="margin-top:2.4rem;" aria-label="Pages">
-      <a class="toc-item" href="/overview"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Overview</span></a>
-      <a class="toc-item" href="/how"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">How it works</span></a>
-      <a class="toc-item" href="/examples"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Worked examples</span></a>
-      <a class="toc-item" href="/proves"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">What it proves</span></a>
-      <a class="toc-item" href="/verifiers"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">The verifiers</span></a>
-      <a class="toc-item" href="/producers"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">For producers</span></a>
-      <a class="toc-item" href="/span"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">LoomSpan</span></a>
-      <a class="toc-item" href="/spec"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">The spec</span></a>
-      <a class="toc-item" href="/faq"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">FAQ</span></a>
-      <a class="toc-item" href="/verify"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Verify a bundle</span></a>
-    </nav>
-  </section>
-
-  <section id="follow" class="section reveal" aria-label="Hear when things ship">
-    <p class="eyebrow">If you want to follow this</p>
-    <div class="signup">
-      <p class="thesis">The format is free and stays free. Leave an address, hear when
-      something real ships.</p>
-      <form id="signup-form" novalidate>
-        <div class="signup-hide" aria-hidden="true">
-          <label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label>
-        </div>
-        <label class="signup-hide" for="signup-email">Email address</label>
-        <div class="signup-row">
-          <input id="signup-email" type="email" name="email" placeholder="you@example.com"
-            autocomplete="email" required>
-          <button type="submit">Keep me posted</button>
-        </div>
-      </form>
-      <p class="signup-say" id="signup-say" role="status" aria-live="polite"></p>
-      <p class="signup-note">Rare mail. The stored record is the address, this site's name, and
-      the time. Nothing else, which is what you would expect from a site about proof.</p>
+  <section id="ourselves" class="section reveal" aria-label="Why we use it ourselves">
+    <p class="eyebrow">Why we use it ourselves</p>
+    <p class="thesis">Building on do not take our word for it, then asking you to take our word
+    for it, is not a position we can defend.</p>
+    <div class="prose">
+      <p>We use it on our own products for a reason that is a little uncomfortable.
+      SwitchTender's promise is that it proves every change. Without a bundle that promise is a
+      sentence on a website, and you would simply have to believe us that the audit trail behind
+      it is honest. Building a company on <em>do not take our word for it</em> and then asking you
+      to take our word for it is not a position we can defend. So SwitchTender emits them.
+      <code>switchtender audit bundle</code> turns its audit chain into a signed bundle, and you
+      can check the claim on the box without asking us anything.</p>
+      <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
+      A bundle is worth the same to a stranger as it is to your oldest customer, because checking
+      it never involves you at all.</p>
     </div>
   </section>
-
 
   <footer>
     <div class="foot-links">

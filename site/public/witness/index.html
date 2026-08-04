@@ -437,22 +437,35 @@
     gateway has nothing to authenticate with. The completeness claim is earned by that, not by
     the diagram.</p>
 
-    <h2>What the recipient runs</h2>
-    <p>They install nothing from you and ask you for nothing. The verifier is free, open source,
-    and runs offline on their machine.</p>
-    <pre><code>loomseal verify agent-window.loomseal.json
-
-boundary   mcp://production-agent-tools
-observed   8,412 tool calls
-chain      loomseal-chain-v1, full, head matched true
-anchors    2 matched, earliest published 2026-08-01 09:00 UTC
-span       attested every 60s, longest unattested window 74s
-coverage   this boundary only
-
-VERIFIED   signed, chained, anchored, spanned</code></pre>
-    <p>Read the last two lines again, because they are the honest part. It says
-    <em>this boundary only</em>, and it prints the longest window where nothing was attested
-    rather than rounding it away.</p>
+    <h2>Check one yourself, right now</h2>
+    <p>Everything above is an argument. This part is not. Below is a real sealed record of an
+    agent session: six tool calls, two population attestations, chained, signed, and anchored.
+    Download it and check it on your own machine, offline, with nothing installed from me.</p>
+    <pre><code>curl -O https://loomseal.com/witness/agent-window.loomseal.json
+go install github.com/kordloom/loomseal@latest
+loomseal verify agent-window.loomseal.json</code></pre>
+    <p>That prints, and this is the actual output, not a mockup:</p>
+    <pre><code>bundle     lsb_witness_demo_0001 from loomwitness-demo 0.1.0
+subject    url mcp://demo-agent-tools
+signature  ok, key sha256:03396219237f75a64f12aeb7f39723abf400b160c364980a765dac24aeba2464
+chain      loomseal-chain-v1, full, 8 claims, head matched true
+anchors    1 matched by coordinates, 0 proof(s) carried, 0 verified
+anchored   through seq 8
+note       1 anchor(s) name a location this verifier did not fetch; confirm them yourself
+span       2/2 windows attested, 2 count(s) recomputed
+note       unknown claim type loomseal.agentrun/1, not checked against a registry entry
+VERIFIED   signed, chained (full), anchored by reference, spanned</code></pre>
+    <p>Read the notes, because they are the honest part. The verifier says it did not fetch the
+    anchor and tells you to confirm it yourself. It says the agent claim type is not in its
+    registry, because LoomWitness does not exist and the type is not registered. It reports
+    coverage as a measurement rather than a badge. A tool that wanted to impress you would have
+    printed none of that.</p>
+    <p>Open the file in an editor first if you like. Change one character anywhere, then verify
+    again and watch it name the break. You can also drop it into the
+    <a href="/verify">browser verifier</a>, which runs entirely on your machine.</p>
+    <p style="font-size:0.86rem;color:var(--faint);">The session is synthetic and the timeline is
+    a demonstration. The cryptography is not: the links recompute, the signature checks, and the
+    Go and Python verifiers agree on it independently.</p>
 
     <h2>What it would prove, and what it would not</h2>
     <p>It would prove that every tool call crossing the attested boundary was recorded in order,
@@ -479,8 +492,14 @@ VERIFIED   signed, chained, anchored, spanned</code></pre>
     </div>
 
     <div class="signup">
-      <p>If you would use this, leave an address. You will hear from me when there is something
-      real to try, and not before.</p>
+      <p>If you sell AI agents to other companies, I want one answer more than I want your email:
+      <strong>when a customer asks what your agent did, what happens today?</strong> If the answer
+      is that you send them logs and they take your word for it, write to
+      <a href="mailto:hello@kordloom.com">hello@kordloom.com</a> and tell me how that goes. That
+      reply is worth more to me than a thousand signups, and it reaches the person who wrote
+      this.</p>
+      <p>Otherwise, leave an address and you will hear from me when there is something real to
+      try, and not before.</p>
       <form id="signup-form" novalidate>
         <div class="signup-hide" aria-hidden="true">
           <label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label>

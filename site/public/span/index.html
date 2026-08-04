@@ -127,6 +127,17 @@
     border-radius: 5px;
     padding: 0.1em 0.35em;
   }
+  .doc .scene {
+    border-left: 2px solid var(--border);
+    padding: 0.3rem 0 0.3rem 1.3rem;
+    margin: 0.4rem 0 0.9rem;
+  }
+  .doc .scene p:last-child { margin-bottom: 0; }
+  .doc .honest {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    color: var(--deep);
+  }
   footer {
     width: 100%;
     max-width: 60rem;
@@ -333,6 +344,25 @@
     cannot show what should have come next. Beats are therefore published where absence is
     visible: an append-only public feed on the declared cadence, where a missing entry is
     plain to anyone watching. The feed, not the file, is where going dark becomes loud.</p>
+
+    <h2>What it looks like in an audit</h2>
+    <p>A company sells to enterprises, and every deal stalls on the same SOC 2 question: prove the
+    quarterly access review covered every system, not just the ones convenient to screenshot. The
+    evidence has always been a folder of exports assembled the week the auditor arrives, and the
+    auditor's hardest hours go to completeness, establishing by hand that nothing was left out of
+    the population, billed hourly.</p>
+    <div class="scene">
+      <p>With a spanned chain the review tool signs a beat every sixty seconds to a public feed:
+      the chain head as of now, and the exact count of entries added since the last beat. Switching
+      the collector off during the review no longer leaves a convenient blank. It leaves a missing
+      heartbeat on a feed the auditor can watch, or a signed false count, which is a far worse thing
+      to have put a signature on.</p>
+      <p>The auditor checks one bundle and reads the measurement off it, no screenshots involved:</p>
+      <p class="honest">Attested every sixty seconds, publicly anchored, longest unattested window
+      seventy-four seconds.</p>
+    </div>
+    <p>That sentence is the whole deliverable for the expensive half of the audit. It is honest
+    about the one gap rather than hiding it, which is exactly what lets a reviewer trust the rest.</p>
 
     <h2>What it proves, and what it does not</h2>
     <p>A spanned chain proves the producer committed, beat by beat, to the exact population of

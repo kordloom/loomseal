@@ -188,6 +188,23 @@
   }
   .use { display: flex; gap: 0.6rem; align-items: baseline; font-size: 0.92rem; color: var(--body-c); }
   .use::before { content: "\2713"; color: var(--faint); font-size: 0.8rem; flex: 0 0 auto; }
+  .cases { max-width: 46rem; margin: 2.1rem auto 0; text-align: left; }
+  .case { border-top: 1px solid var(--rule-c); padding: 1.7rem 0; scroll-margin-top: 2.5rem; }
+  .case:first-child { border-top: 0; padding-top: 0.4rem; }
+  .case:last-child { padding-bottom: 0; }
+  .case-tag {
+    font-size: 0.62rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 0.7rem;
+  }
+  .case-name { font-size: 1.08rem; font-weight: 600; letter-spacing: 0.01em; color: var(--ink); margin-bottom: 0.65rem; }
+  .case-body { font-size: 0.94rem; line-height: 1.72; color: var(--body-c); margin-bottom: 0.85rem; }
+  .case-body:last-of-type { margin-bottom: 0; }
+  .case-body .who { color: var(--deep); font-weight: 500; }
+  .case-line {
+    margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed var(--border);
+    font-family: ui-serif, Georgia, "Times New Roman", serif; font-style: italic;
+    font-size: 1rem; line-height: 1.5; color: var(--deep);
+  }
   .prose {
     max-width: 46rem;
     margin: 1.9rem auto 0;
@@ -236,6 +253,36 @@
   .gain { border-top: 1px solid var(--rule-c); padding-top: 0.95rem; }
   .gain-name { font-size: 0.95rem; font-weight: 600; letter-spacing: 0.01em; color: var(--ink); margin-bottom: 0.35rem; }
   .gain-text { font-size: 0.9rem; line-height: 1.62; color: var(--body-c); }
+  .gain-link {
+    display: inline-block; margin-top: 0.5rem;
+    font-size: 0.78rem; letter-spacing: 0.02em; color: var(--faint);
+    text-decoration: none; border-bottom: 1px solid var(--border);
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .gain-link:hover { color: var(--ink); border-color: var(--faint); }
+  .gain-link::after { content: " \2193"; }
+  .toc-grid {
+    max-width: 46rem; margin: 0 auto;
+    display: grid; grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(5, auto); grid-auto-flow: column;
+    gap: 0 2.4rem;
+  }
+  .toc-item {
+    display: flex; gap: 0.95rem; align-items: baseline;
+    padding: 0.72rem 0.2rem; border-top: 1px solid var(--rule-c);
+    text-decoration: none; transition: padding-left 0.15s ease;
+  }
+  .toc-item:hover { padding-left: 0.5rem; }
+  .toc-num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem; letter-spacing: 0.04em; color: var(--faint); flex: 0 0 auto;
+  }
+  .toc-name {
+    font-size: 0.95rem; color: var(--body-c);
+    border-bottom: 1px solid transparent;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .toc-item:hover .toc-name { color: var(--ink); border-color: var(--faint); }
   .tenets {
     margin: 2.75rem auto 0;
     display: grid;
@@ -364,6 +411,7 @@
   @media (max-width: 640px) {
     .tenets { grid-template-columns: 1fr; gap: 1.5rem; }
     .gains { grid-template-columns: 1fr; gap: 1.2rem; }
+    .toc-grid { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; gap: 0; }
     .section { padding: 3rem 0; }
     .frame .meta { display: none; }
   }
@@ -423,6 +471,7 @@
       <a class="menu-item" href="#happens"><span class="m-name">What actually happens</span></a>
       <a class="menu-item" href="#about"><span class="m-name">The problem</span></a>
       <a class="menu-item" href="#timestamp"><span class="m-name">Why not a timestamp</span></a>
+      <a class="menu-item" href="#practice"><span class="m-name">In practice</span></a>
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
       <a class="menu-item" href="#how"><span class="m-name">How it works</span></a>
       <a class="menu-item" href="#proves"><span class="m-name">What a bundle proves</span></a>
@@ -504,6 +553,22 @@
     themselves: offline, free, with no account and no trust in you.</p>
   </main>
 
+  <section id="contents" class="section reveal" aria-label="Contents">
+    <p class="eyebrow">Contents</p>
+    <nav class="toc-grid" aria-label="Page contents">
+      <a class="toc-item" href="#plain"><span class="toc-num">01</span><span class="toc-name">In plain terms</span></a>
+      <a class="toc-item" href="#happens"><span class="toc-num">02</span><span class="toc-name">What actually happens</span></a>
+      <a class="toc-item" href="#about"><span class="toc-num">03</span><span class="toc-name">The problem</span></a>
+      <a class="toc-item" href="#timestamp"><span class="toc-num">04</span><span class="toc-name">Why not a timestamp</span></a>
+      <a class="toc-item" href="#practice"><span class="toc-num">05</span><span class="toc-name">In practice</span></a>
+      <a class="toc-item" href="#verify"><span class="toc-num">06</span><span class="toc-name">Verify one right now</span></a>
+      <a class="toc-item" href="#how"><span class="toc-num">07</span><span class="toc-name">How it works</span></a>
+      <a class="toc-item" href="#proves"><span class="toc-num">08</span><span class="toc-name">What a bundle proves</span></a>
+      <a class="toc-item" href="#checked"><span class="toc-num">09</span><span class="toc-name">Who checks the checker</span></a>
+      <a class="toc-item" href="#producers"><span class="toc-num">10</span><span class="toc-name">For producers</span></a>
+    </nav>
+  </section>
+
   <section id="plain" class="section reveal" aria-label="LoomSeal in plain terms">
     <p class="eyebrow">In plain terms</p>
     <p class="thesis">Proof you can hand to someone who has no reason to believe you.</p>
@@ -525,16 +590,19 @@
         <p class="gain-name">Audits get shorter</p>
         <p class="gain-text">Reviewers stop spending the first half of an engagement
         establishing that your evidence is genuine. They check the file, then read it.</p>
+        <a class="gain-link" href="#case-audit">See it in practice</a>
       </div>
       <div class="gain">
         <p class="gain-name">Reviews get proof, not prose</p>
         <p class="gain-text">Send the record instead of a narrative about the record. It gets
         checked in place, without a walkthrough, a screen share, or a follow-up call.</p>
+        <a class="gain-link" href="#case-proof">See it in practice</a>
       </div>
       <div class="gain">
         <p class="gain-name">Disputes end early</p>
         <p class="gain-text">When two sides disagree about what happened and when, the file
         decides it in minutes. Nobody has to weigh whose word to take.</p>
+        <a class="gain-link" href="#case-dispute">See it in practice</a>
       </div>
       <div class="gain">
         <p class="gain-name">The record builds itself</p>
@@ -673,6 +741,89 @@
       individually true and collectively a lie. A chain has no such seam. The entries hold each
       other, so the set is whole or it is visibly broken. Proving what happened is the easy half.
       Proving nothing was left out is the half worth paying for.</p>
+    </div>
+  </section>
+
+  <section id="practice" class="section reveal" aria-label="In practice">
+    <p class="eyebrow">In practice</p>
+    <p class="thesis">Three arguments that used to run for weeks, each ended by one file in an
+    afternoon.</p>
+    <div class="prose">
+      <p>The mechanism is the same every time: someone needs to be believed by someone who has no
+      reason to believe them, and the file does the believing so no one has to. Here is what that
+      looks like when the stakes are real.</p>
+    </div>
+
+    <div class="cases">
+      <article class="case" id="case-dispute">
+        <p class="case-tag">A dispute nobody could win</p>
+        <p class="case-name">The outage neither side would own</p>
+        <p class="case-body">A managed-infrastructure vendor pushes config to a customer's fleet.
+        One Tuesday a change lands, and an hour later the customer's checkout is down for forty
+        minutes. The customer's incident review concludes the vendor altered a firewall rule with
+        no ticket. The vendor's on-call swears the rule was changed by the customer's own team the
+        week before, and that the log they are being shown has since been trimmed. Two internal
+        logs, two stories, a contract with penalties attached, and no way to tell whose export was
+        edited.</p>
+        <p class="case-body">The vendor's tooling had sealed every change as it ran, and the head
+        of that chain was committed to a public git repository every hour, long before the outage.
+        The vendor exports the week and sends one file. <span class="who">The customer's own
+        engineer</span> checks it offline, on a laptop, with no account and no call. The verifier
+        confirms the signature, recomputes the chain, and matches the anchor published the previous
+        Wednesday. The firewall rule was changed by the customer's team, at 09:14 the prior
+        Thursday, and nothing in the window was removed. The fight was over in the time it took to
+        drag a file into a browser.</p>
+        <p class="case-line">Signed and anchored means neither side gets to rewrite the week after
+        it went wrong.</p>
+      </article>
+
+      <article class="case" id="case-audit">
+        <p class="case-tag">Completeness, the expensive half</p>
+        <p class="case-name">The audit that used to run on screenshots</p>
+        <p class="case-body">A company sells to enterprises, and every deal stalls on the same
+        SOC 2 question: prove the quarterly access review covered every system, not just the ones
+        convenient to screenshot. The evidence has always been a folder of exports assembled the
+        week the auditor arrives, and the auditor's hardest hours go to completeness, establishing
+        by hand that nothing was left out of the population, billed hourly.</p>
+        <p class="case-body">The review tool now emits a spanned chain. Every sixty seconds it
+        signs a beat to a public feed: the chain head as of now, and the exact count of entries
+        added since the last beat. Switching the collector off during the review no longer leaves
+        a convenient blank. It leaves a missing heartbeat on a feed <span class="who">the
+        auditor</span> can watch, or a signed false count, which is a far worse thing to have put
+        a signature on. The auditor checks one bundle and reads the honest sentence off it:
+        attested every sixty seconds, publicly anchored, longest unattested window seventy-four
+        seconds. The expensive half of the audit became a line of output.</p>
+        <p class="case-line">LoomSpan turns a quiet gap into a visible one or a signed lie. There
+        is no third option that stays hidden.</p>
+      </article>
+
+      <article class="case" id="case-proof">
+        <p class="case-tag">Proof instead of a walkthrough</p>
+        <p class="case-name">Proving the patch, not describing it</p>
+        <p class="case-body">A contract says critical vulnerabilities are patched within
+        seventy-two hours. A year in, the customer's security team asks the vendor to prove it, not
+        describe it. The vendor could open its ticketing database and read the dates aloud, but
+        those dates live in a system the vendor controls and could have tidied the night before
+        the meeting. The customer knows this, so the dates settle nothing, and the review sinks
+        into a screen-share walking tickets one at a time.</p>
+        <p class="case-body">The vendor's deploy pipeline sealed each patch as it shipped, and the
+        chain has been anchored continuously since the contract began. The vendor exports the
+        patch history for the term and attaches it to the ticket. <span class="who">The security
+        team</span> verifies it on their own machines, offline, with nothing installed from the
+        vendor. Each patch is there, in order, signed, first written at a time that predates any
+        anchor the vendor could have reached. Where an SLA was missed, the file says so plainly,
+        which is exactly what makes the rest of it believable. A week of calls closed in an
+        afternoon of reading.</p>
+        <p class="case-line">A record you cannot edit is worth the same to a stranger as to your
+        oldest customer, because checking it never runs back through you.</p>
+      </article>
+    </div>
+
+    <div class="prose">
+      <p>None of the three needed KordLoom in the room. The producer sealed its own records as it
+      worked, the recipient checked the file on their own machine, and the disagreement resolved
+      without anyone extending trust they had no reason to extend. That is the entire point, shown
+      three times.</p>
     </div>
   </section>
 

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,24 +14,26 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/kordloom/loomseal/internal/bundle"
+	"github.com/kordloom/loomseal/jcs"
 )
 
 // at is the fixed claim time used throughout the chain tests.
 const at = "2026-07-27T12:00:00Z"
 
-// stLink recomputes the SwitchTender construction for building fixtures.
+// stLink recomputes the SwitchTender v2 construction for building fixtures: SHA-256 over the
+// canonical JSON object of the claim's fields, so a fixture link matches what the verifier computes.
 func stLink(t *testing.T, seq int64, actor, method, path, prev string) string {
 	t.Helper()
 	parsed, err := time.Parse(time.RFC3339Nano, at)
 	if err != nil {
 		t.Fatalf("parse time: %v", err)
 	}
-	payload, err := json.Marshal([]string{
-		strconv.FormatInt(seq, 10), parsed.UTC().Format(time.RFC3339Nano), actor, method,
-		path, prev,
+	payload, err := jcs.Serialize(map[string]any{
+		"seq": seq, "at": parsed.UTC().Format(time.RFC3339Nano),
+		"actor": actor, "method": method, "path": path, "prev": prev,
 	})
 	if err != nil {
-		t.Fatalf("marshal fields: %v", err)
+		t.Fatalf("serialize fields: %v", err)
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])

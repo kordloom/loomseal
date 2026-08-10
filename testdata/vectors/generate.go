@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -550,7 +549,7 @@ func (s *state) switchTenderEscapes() map[string]any {
 
 // anchoredLink is the link a real RFC 3161 token in testdata attests to. A timestamp is signed over
 // a specific value, so the vector is built around the token rather than the other way round.
-const anchoredLink = "77c95e0459eef7970de647dfd263004d23b2c9a44b7feb10a24940bd695a05d3"
+const anchoredLink = "4e03f42f52842aa7f4f086d13a210a6856f6a0abadea183e257d3c7554e2211c"
 
 // switchTenderProof builds a bundle anchored by a real timestamp token, so a verifier that carries
 // proofs without opening them fails the suite.
@@ -603,12 +602,15 @@ func stripChain(claim map[string]any) map[string]any {
 	return out
 }
 
-// switchTenderLink recomputes a switchtender-audit-v1 link.
+// switchTenderLink recomputes a switchtender-audit-v2 link: SHA-256 over the canonical JSON object
+// of the claim's fields, so a field added later is committed without revising the profile.
 func switchTenderLink(seq int64, atStr, actor, method, path, prev string) string {
 	// Serialized with the JCS encoder, not encoding/json. encoding/json escapes &, <, >, U+2028,
 	// and U+2029 for embedding in HTML; RFC 8785 emits them raw. A vector built with the escaping
 	// encoder would have written the wrong answer into the file that defines what correct means.
-	fields := []any{strconv.FormatInt(seq, 10), atStr, actor, method, path, prev}
+	fields := map[string]any{
+		"seq": seq, "at": atStr, "actor": actor, "method": method, "path": path, "prev": prev,
+	}
 	b, err := jcs.Serialize(fields)
 	if err != nil {
 		panic(err)

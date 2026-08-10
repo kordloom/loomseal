@@ -107,10 +107,10 @@ func main() {
 			"public_key":      base64.StdEncoding.EncodeToString(pub),
 			"key_id":          seal.KeyID(pub),
 		},
-		// The subject is the attested boundary itself, which is what the claims are about and
-		// what the coverage statement is scoped to. The schema's subject enum has no agent
-		// member; a shipping LoomWitness would propose one.
-		"subject":    map[string]any{"type": "url", "id": boundary},
+		// The subject is the attested execution boundary the agent's tool calls crossed. The schema's
+		// subject enum carries an agent member for exactly this, so the boundary is named as what it
+		// is rather than borrowing the url type.
+		"subject":    map[string]any{"type": "agent", "id": boundary},
 		"claims":     claims,
 		"signatures": []any{},
 	}

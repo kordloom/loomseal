@@ -30,7 +30,7 @@ MAX_SAFE = 2 ** 53
 V1 = "loomseal-chain-v1"
 SWITCHTENDER = "switchtender-audit-v1"
 
-KNOWN_TYPES = {"switchtender.audit/1", "switchtender.run/1", "loomseal.span/1"}
+KNOWN_TYPES = {"switchtender.audit/1", "switchtender.run/1", "loomseal.span/1", "loomseal.agentrun/1"}
 
 
 class VError(Exception):
@@ -509,9 +509,16 @@ def _links_switchtender(b):
     for i, c in enumerate(b["claims"]):
         p = c["payload"]
         _check_rfc3339(c["at"], i)
-        arr = canon([str(c["chain"]["seq"]), c["at"], p.get("actor", ""),
-                     p.get("method", ""), p.get("path", ""), c["chain"].get("prev", "")])
-        if hashlib.sha256(arr).hexdigest() != c["chain"]["link"]:
+        claim = {"seq": c["chain"]["seq"], "at": c["at"], "prev": c["chain"].get("prev", ""),
+                 "actor": p.get("actor", ""), "method": p.get("method", ""),
+                 "path": p.get("path", "")}
+        # Fields added after the first release are hashed only when the entry carries them, exactly
+        # as the producer omits them, so an entry recorded before they existed recomputes unchanged.
+        for key in ("actor_type", "on_behalf_of", "content_digest"):
+            value = p.get(key)
+            if isinstance(value, str) and value:
+                claim[key] = value
+        if hashlib.sha256(canon(claim)).hexdigest() != c["chain"]["link"]:
             raise VError("chain", f"claim {i} link does not recompute (switchtender)")
 
 

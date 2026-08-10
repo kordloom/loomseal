@@ -49,7 +49,7 @@
       "required": ["type", "id"],
       "additionalProperties": false,
       "properties": {
-        "type": { "enum": ["url", "fleet", "repo"] },
+        "type": { "enum": ["url", "fleet", "repo", "agent"] },
         "id": { "type": "string", "minLength": 1 }
       }
     },

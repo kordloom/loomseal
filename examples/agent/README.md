@@ -29,15 +29,14 @@ against the producer key, the span counts are checked rather than asserted, and 
 Python verifiers agree on the result independently. `HEAD` carries the chain head and is
 committed to this repository, which is what the bundle's anchor references.
 
-## What building it surfaced
+## Format support
 
-Two things worth recording, because they are what a shipping producer would have to resolve.
+The two gaps building this surfaced are now closed.
 
-The subject enum in `schema/loomseal-bundle.schema.json` is `url`, `fleet`, `repo`. There is no
-`agent` member, so this bundle names the attested boundary as its subject with type `url`. That
-reads correctly, since coverage is scoped to the boundary and not to the agent, but a shipping
-producer would propose the enum change.
+The subject enum in `schema/loomseal-bundle.schema.json` carries an `agent` member, so this bundle
+names the attested execution boundary with type `agent` rather than borrowing `url`. Both verifiers
+accept it.
 
-`loomseal.agentrun/1` is not in the verifier's claim-type registry. Unknown types are reported
-and never failed, so the bundle verifies while the note stays visible. That is the honest state:
-the type is a sketch, not a registered part of the format.
+`loomseal.agentrun/1` is in both verifiers' claim-type registry, so the bundle verifies with no
+unknown-type note. The type is a registered part of the format, not a sketch, and a prospect
+verifying this bundle gets a completely clean result.

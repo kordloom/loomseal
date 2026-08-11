@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/kordloom/loomseal/internal/bundle"
-	"github.com/kordloom/loomseal/merkle"
 	"github.com/kordloom/loomseal/jcs"
+	"github.com/kordloom/loomseal/merkle"
 )
 
 // verifyMerkle checks a bundle under loomseal-merkle-v1: every disclosed claim's leaf hash is

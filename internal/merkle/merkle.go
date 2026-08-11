@@ -17,6 +17,7 @@ package merkle
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 )
 
@@ -246,4 +247,11 @@ func VerifyConsistency(firstSize, secondSize int64, firstRoot, secondRoot []byte
 		sn >>= 1
 	}
 	return sn == 0 && bytes.Equal(fr, firstRoot) && bytes.Equal(sr, secondRoot)
+}
+
+// Sum256Hex returns the hex SHA-256 of data. It is here so callers that build a claim digest use the
+// same hashing as the tree rather than reaching for their own.
+func Sum256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

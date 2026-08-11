@@ -360,8 +360,15 @@ for 3, 5, 6, 7, and 9. A test suite built only on power-of-two sizes does not de
 **Coordinates.** `chain.head.seq` is the tree size, the number of leaves in the log, and
 `chain.head.link` is the root at that size. Each claim's `chain.seq` is its leaf index plus one, so a
 leaf index is `seq - 1` and the first leaf has `seq` 1. Each claim's `chain.link` is that claim's leaf
-hash. Each claim's `chain.prev` must be present and the empty string, and `chain.head` must carry no `prev`
-member at all; a verifier rejects a head that carries one, rather than ignoring it. A tree has no per-entry
+hash. Each claim's `chain.prev` must be empty, whether written as an empty string or omitted, and
+`chain.head` must likewise carry no non-empty `prev`. A tree has no per-entry predecessor, so a
+non-empty `prev` implies a linear chain that is not being verified and a verifier rejects it.
+
+Empty and absent are deliberately the same here, rather than one being required. The schema does not
+require `prev`, and a serializer that omits empty members, which this format's own producers use,
+cannot write the member at all; a rule demanding it be present would make conformant tooling emit
+non-conformant bundles. Where a distinction between absent and empty carries meaning this format says
+so, and here it carries none: both spell the same absence of a predecessor. A tree has no per-entry
 predecessor, so a non-empty `prev` implies a linear chain that is not being verified and a verifier
 rejects it; an absent `prev` on a claim is likewise rejected rather than read as empty, because a
 verifier must never guess which of two spellings a producer meant.
@@ -648,8 +655,8 @@ The verifier performs these steps in order and fails closed:
 3. If `chain` is present: require the profile known and the claims sorted by `seq`. For a linear
    profile require the claims contiguous, then recompute every link for an unkeyed profile or check
    continuity for a keyed one. For the tree profile require `keyed` false, `params.install_id`
-   present, every `seq` within 1 through `chain.head.seq` and none repeated, every `prev` present and
-   empty, and an `inclusion` member on every claim; then recompute each claim's leaf hash, confirm it
+   present, every `seq` within 1 through `chain.head.seq` and none repeated, every `prev` empty or
+   absent, and an `inclusion` member on every claim; then recompute each claim's leaf hash, confirm it
    equals that claim's `link`, fold each inclusion proof and require it reproduce `chain.head.link`,
    and, when a consistency proof is present, recompute both its roots. Contiguity is not required in
    the tree profile; a sparse window is its purpose. Reject `inclusion` or `chain.consistency` under

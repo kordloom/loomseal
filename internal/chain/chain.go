@@ -42,6 +42,12 @@ func Verify(raw []byte, b *bundle.Bundle) (Result, error) {
 	if b.Chain == nil {
 		return res, fmt.Errorf("%w: bundle declares no chain", ErrClaim)
 	}
+	// The tree profile is checked before the linear rules below, which it legitimately violates: a
+	// tree has no per-entry predecessor for continuity to follow, its head is a root rather than the
+	// newest claim's link, and disclosing a non-contiguous subset of leaves is the whole point.
+	if b.Chain.Profile == bundle.ProfileMerkle {
+		return verifyMerkle(raw, b)
+	}
 	for i := range b.Claims {
 		if b.Claims[i].Chain == nil {
 			return res, fmt.Errorf("%w: claim %d has no chain coordinates", ErrClaim, i)

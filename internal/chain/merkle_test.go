@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/kordloom/loomseal/internal/bundle"
-	"github.com/kordloom/loomseal/internal/merkle"
+	"github.com/kordloom/loomseal/merkle"
 	"github.com/kordloom/loomseal/internal/verify"
 	"github.com/kordloom/loomseal/jcs"
 	"github.com/kordloom/loomseal/seal"

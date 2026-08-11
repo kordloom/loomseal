@@ -12,7 +12,7 @@ import (
 // katPath is the vector file an independent implementation produced from RFC 6962 alone, without
 // reference to this package. Checking against it is what separates being correct from being merely
 // self-consistent: two implementations that agree only with themselves can be wrong the same way.
-const katPath = "../../reference/merkle_kat/kat.json"
+const katPath = "../reference/merkle_kat/kat.json"
 
 // kat is the vector file's shape.
 type kat struct {

@@ -7,6 +7,11 @@
 // second implementation in another language can be compared against it entry for entry. The mapping
 // from a claim to its leaf bytes lives with the chain profile that uses this package.
 //
+// It is public because a producer emitting the loomseal-merkle-v1 profile needs exactly these
+// operations to build a root and the proofs that accompany a disclosure. The verifier does not
+// depend on a producer having used this code: every proof it emits is checkable from the
+// specification alone.
+//
 // The two domain separators are the point of the construction. A leaf is hashed with a leading
 // 0x00 and an interior node with a leading 0x01, so no leaf can ever be reinterpreted as a node.
 // Without them a tree admits a second preimage: an attacker presents an interior node's two child

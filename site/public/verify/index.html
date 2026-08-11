@@ -182,6 +182,16 @@
       rows.push(["chain", (report.chain_profile || "") + ", " + (report.chain_mode || "") +
         ", " + (report.claims_checked || 0) + " claims, head matched " + !!report.head_matched]);
     }
+    if (report.tree_size) {
+      rows.push(["tree", report.tree_size + " leaves, " + (report.inclusion_proofs || 0) +
+        " inclusion proof(s) folded to the signed root"]);
+      if (report.consistency_ok) {
+        rows.push(["growth", "append-only proved from size " + report.consistency_from +
+          ", so nothing the earlier root covered was changed or dropped"]);
+      } else {
+        rows.push(["note", "no consistency proof, so this bundle does not prove the log only ever appended"]);
+      }
+    }
     if (report.anchors_matched || report.anchor_proofs_carried) {
       rows.push(["anchors", report.anchors_matched + " matched by coordinates, " +
         (report.anchor_proofs_carried || 0) + " proof(s) carried, " +

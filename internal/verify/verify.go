@@ -68,6 +68,19 @@ type Report struct {
 	HeadMatched bool `json:"head_matched"`
 	// ClaimsChecked is how many chained claims were checked.
 	ClaimsChecked int `json:"claims_checked"`
+	// TreeSize is how many leaves sit in the log the signed head names, set only under the tree
+	// profile. It is the size of the whole log, not of the window this bundle discloses, so a
+	// reader sees how much history the disclosed claims were proved against.
+	TreeSize int64 `json:"tree_size,omitempty"`
+	// InclusionProofs is how many audit paths were folded and reproduced the head's root, one per
+	// disclosed claim. Set only under the tree profile, which is the only one that carries proofs.
+	InclusionProofs int `json:"inclusion_proofs,omitempty"`
+	// ConsistencyFrom is the earlier log size this bundle proved the log grew from by appending
+	// only. Zero when the bundle carried no consistency proof.
+	ConsistencyFrom int64 `json:"consistency_from,omitempty"`
+	// ConsistencyOK reports whether that proof verified. A bundle without one proves nothing about
+	// append-only growth, which is why the field is absent rather than false there.
+	ConsistencyOK bool `json:"consistency_ok,omitempty"`
 	// AnchorsMatched is how many anchors matched a coordinate the verifier checked: a bundled
 	// claim, or the head when it tied to the newest claim.
 	AnchorsMatched int `json:"anchors_matched"`
@@ -243,6 +256,12 @@ func (r *Report) checkChain(raw []byte, b *bundle.Bundle) {
 	r.ChainMode = res.Mode
 	r.ClaimsChecked = res.Claims
 	r.HeadMatched = res.HeadMatched
+	// Zero under a linear profile, which carries no tree and no proofs, so these stay out of the
+	// report rather than reading as an empty tree.
+	r.TreeSize = res.TreeSize
+	r.InclusionProofs = res.InclusionProofs
+	r.ConsistencyFrom = res.ConsistencyFrom
+	r.ConsistencyOK = res.ConsistencyOK
 }
 
 // checkAnchors matches every anchor's coordinates against the coordinates the verifier
@@ -427,6 +446,22 @@ func (r *Report) checkEvidence(b *bundle.Bundle, dir string) {
 	}
 }
 
+// chainWording says what the chain verification established, in the terms the declared profile
+// works in. A linear profile is worded by the mode it reached, because the question there is
+// whether links were recomputed or only followed. A tree recomputes everything, so "full" would
+// tell a reader nothing; what it established is membership in a log of a stated size, plus
+// append-only growth when a consistency proof folded.
+func (r *Report) chainWording() string {
+	if r.ChainProfile != bundle.ProfileMerkle {
+		return r.ChainMode
+	}
+	wording := fmt.Sprintf("tree of %d", r.TreeSize)
+	if r.ConsistencyOK {
+		wording += fmt.Sprintf(", append-only from %d", r.ConsistencyFrom)
+	}
+	return wording
+}
+
 // level words the conformance achieved.
 func (r *Report) level() string {
 	if !r.SignatureOK {
@@ -434,7 +469,7 @@ func (r *Report) level() string {
 	}
 	level := "signed"
 	if r.ChainPresent && r.ChainOK {
-		level += ", chained (" + r.ChainMode + ")"
+		level += ", chained (" + r.chainWording() + ")"
 	}
 	anchored := r.AnchorProofsVerified > 0 || r.AnchorsMatched > 0
 	switch {

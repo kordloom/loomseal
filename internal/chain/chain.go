@@ -32,6 +32,18 @@ type Result struct {
 	// HeadMatched reports whether the declared head coincided with the newest claim and
 	// matched it. A head beyond the bundled claims cannot be tied to them and stays false.
 	HeadMatched bool
+	// TreeSize is how many leaves the signed head names, which in the tree profile is the size of
+	// the whole log rather than of the disclosed window. It stays zero under a linear profile.
+	TreeSize int64
+	// InclusionProofs is how many audit paths were folded and reproduced the head root. It stays
+	// zero under a linear profile, which has no per-claim proofs.
+	InclusionProofs int
+	// ConsistencyFrom is the earlier log size a verified consistency proof grew from. It stays zero
+	// when the bundle carried no such proof.
+	ConsistencyFrom int64
+	// ConsistencyOK reports whether that proof recomputed both roots, so the log is proved to have
+	// grown from the earlier one by appending only.
+	ConsistencyOK bool
 }
 
 // Verify checks the bundle's chain: coordinates on every claim, contiguous ascending

@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kordloom/loomseal/internal/bundle"
+	"github.com/kordloom/loomseal/internal/merkle"
 	"github.com/kordloom/loomseal/jcs"
 	"github.com/kordloom/loomseal/seal"
 )
@@ -91,6 +93,7 @@ func main() {
 
 	s.positives()
 	s.negatives()
+	s.merkleNegatives()
 	s.spans()
 
 	if err := s.write(); err != nil {
@@ -159,6 +162,34 @@ func (s *state) positives() {
 		"An rfc3161 anchor carrying a real timestamp token verifies offline against the link it "+
 			"attests to, with no network and no trust in the producer.",
 		s.sign(s.switchTenderProof()))
+
+	// The tree profile. Sparse disclosure is the property no linear profile has: these bundles carry
+	// a subset of a longer log's leaves, which the contiguity rule would otherwise refuse.
+	s.add("merkle-sparse", true, "signed, chained (tree of 6)", "",
+		"A tree bundle disclosing two non-contiguous leaves of a six leaf log verifies, because each "+
+			"one folds through its audit path to the root the signed head names.",
+		s.sign(s.merkleBundle(6, []int{1, 4}, 0)))
+
+	s.add("merkle-single-leaf", true, "signed, chained (tree of 1)", "",
+		"A log of one leaf verifies with an empty audit path, which is the correct and only path at "+
+			"that size.",
+		s.sign(s.merkleBundle(1, []int{0}, 0)))
+
+	s.add("merkle-right-edge", true, "signed, chained (tree of 9)", "",
+		"A leaf on the right edge of a nine leaf log verifies, where the tree is least regular and a "+
+			"fold that mishandles the odd node fails.",
+		s.sign(s.merkleBundle(9, []int{6}, 0)))
+
+	s.add("merkle-consistency", true, "signed, chained (tree of 6, append-only from 4)", "",
+		"A consistency proof from an earlier root verifies, proving the log grew by appending only, "+
+			"which a hash chain cannot state on its own.",
+		s.sign(s.merkleBundle(6, []int{0, 5}, 4)))
+
+	s.add("merkle-consistency-power-of-two", true, "signed, chained (tree of 9, append-only from 8)", "",
+		"A consistency proof whose earlier size is a power of two verifies. That case seeds the old "+
+			"root rather than reading it from the proof, and an implementation that expects it in the "+
+			"proof rejects a valid bundle.",
+		s.sign(s.merkleBundle(9, []int{2}, 8)))
 
 	s.add("switchtender-audit-json-escapes", true, "signed, chained (full)", "",
 		"A recorded path carrying &, <, > and U+2028 verifies, because the profile serializes with "+
@@ -349,6 +380,117 @@ func (s *state) spanBundle(entries []spanEntry) map[string]any {
 
 // spans emits the population attestation vectors: valid, gapped, adopted mid-life, and the two
 // contradictions the profile must fail.
+// merkleNegatives emits the tree profile vectors a conformant verifier must refuse. Each one is a
+// forgery a producer could attempt, and each is signed, so only the profile's own checks catch it.
+func (s *state) merkleNegatives() {
+	// A claim whose content was altered after the tree was built. Its leaf no longer hashes to the
+	// link the bundle carries.
+	m := s.merkleBundle(6, []int{1, 4}, 0)
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["payload"].(map[string]any)["path"] = "/api/evil"
+	s.add("merkle-claim-altered", false, "", "chain",
+		"A claim edited after the tree was built no longer hashes to its own leaf, so the leaf does "+
+			"not recompute.", s.sign(m))
+
+	// An audit path element replaced. The fold no longer reaches the signed root.
+	m = s.merkleBundle(6, []int{1, 4}, 0)
+	claim = m["claims"].([]any)[0].(map[string]any)
+	claim["inclusion"].(map[string]any)["path"].([]any)[0] = strings.Repeat("ab", 32)
+	s.add("merkle-bad-inclusion-path", false, "", "chain",
+		"An audit path with a substituted sibling does not fold to the root the head names.",
+		s.sign(m))
+
+	// A leaf presented at a position it does not occupy.
+	m = s.merkleBundle(6, []int{1, 4}, 0)
+	claim = m["claims"].([]any)[0].(map[string]any)
+	claim["chain"].(map[string]any)["seq"] = int64(3)
+	s.add("merkle-wrong-leaf-index", false, "", "chain",
+		"A claim moved to another position does not prove membership at that position.", s.sign(m))
+
+	// A sequence past the tree the head declares.
+	m = s.merkleBundle(6, []int{1, 4}, 0)
+	claim = m["claims"].([]any)[0].(map[string]any)
+	claim["chain"].(map[string]any)["seq"] = int64(99)
+	s.add("merkle-seq-past-tree", false, "", "chain",
+		"A claim naming a position past the tree size is outside the log the head attests.",
+		s.sign(m))
+
+	// An install id that is not the signer's. Without this check a second producer re-signs another
+	// install's leaves, root, and timestamp token and every other check passes.
+	m = s.merkleBundle(6, []int{1, 4}, 0)
+	m["chain"].(map[string]any)["params"].(map[string]any)["install_id"] = "in_someone_else"
+	s.add("merkle-foreign-install", false, "", "chain",
+		"A tree whose leaves bind an install other than the producer's is refused, which is what "+
+			"stops one producer from re-signing another's log and anchor.", s.sign(m))
+
+	// A per-entry previous link, which a tree has no place for.
+	m = s.merkleBundle(6, []int{1, 4}, 0)
+	claim = m["claims"].([]any)[0].(map[string]any)
+	claim["chain"].(map[string]any)["prev"] = strings.Repeat("cd", 32)
+	s.add("merkle-claim-with-prev", false, "", "chain",
+		"A tree claim carrying a previous link implies a linear chain that is not being verified.",
+		s.sign(m))
+
+	// A consistency proof over a log that rewrote an entry it had already published. This is the
+	// append-only guarantee and the reason the proof exists.
+	//
+	// The rewritten entry is deliberately one the bundle does not disclose, so every disclosed leaf
+	// still recomputes and folds to the head root. Only the consistency proof can catch this, which
+	// is what the vector is for: a bundle that failed on a leaf hash instead would pass the suite
+	// while leaving the append-only check untested.
+	honestLeaves := make([][]byte, 0, 4)
+	for _, c := range merkleLog(6)[:4] {
+		honestLeaves = append(honestLeaves, merkleLeafData(c))
+	}
+	rewrittenLog := merkleLog(6)
+	rewrittenLog[2]["payload"].(map[string]any)["path"] = "/api/rewritten"
+	rewrittenLeaves := make([][]byte, 0, 6)
+	for _, c := range rewrittenLog {
+		rewrittenLeaves = append(rewrittenLeaves, merkleLeafData(c))
+	}
+	proof, perr := merkle.ConsistencyProof(4, rewrittenLeaves)
+	if perr != nil {
+		panic(perr)
+	}
+	disclosed := make([]any, 0, 2)
+	for _, idx := range []int{0, 5} {
+		path, ierr := merkle.InclusionProof(int64(idx), rewrittenLeaves)
+		if ierr != nil {
+			panic(ierr)
+		}
+		c := map[string]any{}
+		for k, v := range rewrittenLog[idx] {
+			c[k] = v
+		}
+		c["chain"] = map[string]any{
+			"seq": int64(idx + 1), "prev": "",
+			"link": hex.EncodeToString(merkle.LeafHash(rewrittenLeaves[idx])),
+		}
+		c["inclusion"] = map[string]any{"path": hexList(path)}
+		disclosed = append(disclosed, c)
+	}
+	m = s.base()
+	m["claims"] = disclosed
+	m["chain"] = map[string]any{
+		"profile": bundle.ProfileMerkle,
+		"keyed":   false,
+		"params":  map[string]any{"install_id": installID},
+		"head": map[string]any{
+			"seq": int64(6), "link": hex.EncodeToString(merkle.Root(rewrittenLeaves)),
+		},
+		"consistency": map[string]any{
+			"from_size": int64(4),
+			// The root the world saw before the rewrite, which this log can no longer reproduce.
+			"from_root": hex.EncodeToString(merkle.Root(honestLeaves)),
+			"path":      hexList(proof),
+		},
+	}
+	s.add("merkle-consistency-rewritten", false, "", "chain",
+		"A log that changed an entry it had already published cannot produce a consistency proof "+
+			"from the root the world saw before the change. Every disclosed leaf here still "+
+			"recomputes, so only the append-only check catches it.", s.sign(m))
+}
+
 func (s *state) spans() {
 	valid := []spanEntry{
 		{kind: "audit", at: "2026-07-27T15:00:10Z"},
@@ -672,4 +814,121 @@ func (s *state) write() error {
 	}
 	out = append(out, '\n')
 	return os.WriteFile(filepath.Join(dir, "manifest.json"), out, 0o600)
+}
+
+// merkleLeafData builds one claim's leaf bytes under loomseal-merkle-v1: the canonical object of the
+// domain, the install, and the claim digest over the claim's content.
+func merkleLeafData(claim map[string]any) []byte {
+	content := map[string]any{}
+	for k, v := range claim {
+		if k == "chain" || k == "inclusion" {
+			continue
+		}
+		content[k] = v
+	}
+	if ev, ok := content["evidence"].([]any); ok {
+		stripped := make([]any, 0, len(ev))
+		for _, e := range ev {
+			obj := e.(map[string]any)
+			cp := map[string]any{}
+			for k, v := range obj {
+				if k != "present" {
+					cp[k] = v
+				}
+			}
+			stripped = append(stripped, cp)
+		}
+		content["evidence"] = stripped
+	}
+	canonical, err := jcs.Serialize(content)
+	if err != nil {
+		panic("canonicalize claim: " + err.Error())
+	}
+	leaf, err := jcs.Serialize(map[string]any{
+		"domain":     bundle.ProfileMerkle,
+		"install_id": installID,
+		"claim":      "sha256:" + merkle.Sum256Hex(canonical),
+	})
+	if err != nil {
+		panic("canonicalize leaf: " + err.Error())
+	}
+	return leaf
+}
+
+// merkleLog returns n deterministic claim objects, the whole log a tree is built over.
+func merkleLog(n int) []map[string]any {
+	out := make([]map[string]any, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, map[string]any{
+			"type": "switchtender.audit/1", "at": at,
+			"payload": map[string]any{
+				"actor": "release-token", "method": "POST",
+				"path": fmt.Sprintf("/api/runs/%d", i),
+			},
+		})
+	}
+	return out
+}
+
+// merkleBundle builds a tree bundle over a log of size, disclosing the leaves at the given indexes
+// and, when fromSize is above zero, carrying a consistency proof from that earlier size.
+func (s *state) merkleBundle(size int, disclose []int, fromSize int) map[string]any {
+	log := merkleLog(size)
+	leaves := make([][]byte, 0, size)
+	for _, c := range log {
+		leaves = append(leaves, merkleLeafData(c))
+	}
+	root := merkle.Root(leaves)
+
+	claims := make([]any, 0, len(disclose))
+	for _, idx := range disclose {
+		path, err := merkle.InclusionProof(int64(idx), leaves)
+		if err != nil {
+			panic(err)
+		}
+		c := map[string]any{}
+		for k, v := range log[idx] {
+			c[k] = v
+		}
+		c["chain"] = map[string]any{
+			"seq": int64(idx + 1), "prev": "",
+			"link": hex.EncodeToString(merkle.LeafHash(leaves[idx])),
+		}
+		c["inclusion"] = map[string]any{"path": hexList(path)}
+		claims = append(claims, c)
+	}
+
+	chain := map[string]any{
+		"profile": bundle.ProfileMerkle,
+		"keyed":   false,
+		"params":  map[string]any{"install_id": installID},
+		"head": map[string]any{
+			"seq": int64(size), "link": hex.EncodeToString(root),
+		},
+	}
+	if fromSize > 0 {
+		proof, err := merkle.ConsistencyProof(int64(fromSize), leaves)
+		if err != nil {
+			panic(err)
+		}
+		chain["consistency"] = map[string]any{
+			"from_size": int64(fromSize),
+			"from_root": hex.EncodeToString(merkle.Root(leaves[:fromSize])),
+			"path":      hexList(proof),
+		}
+	}
+
+	m := s.base()
+	m["chain"] = chain
+	m["claims"] = claims
+	return m
+}
+
+// hexList hex encodes a proof's hashes for a bundle.
+func hexList(in [][]byte) []any {
+	out := make([]any, 0, len(in))
+	for _, h := range in {
+		out = append(out, hex.EncodeToString(h))
+	}
+	return out
 }

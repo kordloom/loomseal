@@ -92,13 +92,20 @@ func verifyMerkle(raw []byte, b *bundle.Bundle) (Result, error) {
 			return res, fmt.Errorf("%w: claim %d does not prove membership of the tree the head names",
 				ErrBroken, i)
 		}
+		res.InclusionProofs++
 	}
 
 	if err := verifyConsistency(b, root, size); err != nil {
 		return res, err
 	}
+	// Recorded only once the fold above returned, so a reported proof is one that held.
+	if c := b.Chain.Consistency; c != nil {
+		res.ConsistencyFrom = c.FromSize
+		res.ConsistencyOK = true
+	}
 	res.Mode = ModeFull
 	res.Claims = len(b.Claims)
+	res.TreeSize = size
 	// Every disclosed leaf folded to the head root, so the head is confirmed by the bundle itself
 	// rather than merely declared, which a linear window cannot do when its head leads the claims.
 	res.HeadMatched = true

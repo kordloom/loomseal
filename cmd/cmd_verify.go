@@ -87,6 +87,22 @@ func renderReport(w io.Writer, r *verify.Report) {
 	if r.ChainPresent && r.ChainOK && !r.HeadMatched {
 		fmt.Fprintln(w, "note       declared head is ahead of the bundled claims; its link is not verified here")
 	}
+	// A tree proves something a linear chain cannot, and the chain line above does not say it. The
+	// disclosed claims were folded to the root the signature covers, so the reader is told how large
+	// the log they belong to is and how many of its entries this bundle proved membership for.
+	if r.TreeSize > 0 {
+		fmt.Fprintf(w, "tree       %d leaves, %d inclusion proof(s) folded to the signed root\n",
+			r.TreeSize, r.InclusionProofs)
+		// Append-only growth is a separate question from whether this bundle is intact, so it gets
+		// its own line either way. Silence would read as proved to anyone skimming.
+		if r.ConsistencyOK {
+			fmt.Fprintf(w, "growth     append-only proved from size %d, so nothing the earlier "+
+				"root covered was changed or dropped\n", r.ConsistencyFrom)
+		} else {
+			fmt.Fprintln(w, "note       no consistency proof, so this bundle does not prove the "+
+				"log only ever appended")
+		}
+	}
 	if r.AnchorsMatched > 0 || r.AnchorProofsCarried > 0 {
 		fmt.Fprintf(w, "anchors    %d matched by coordinates, %d proof(s) carried, %d verified\n",
 			r.AnchorsMatched, r.AnchorProofsCarried, r.AnchorProofsVerified)

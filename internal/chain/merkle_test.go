@@ -216,6 +216,21 @@ func TestMerkleSparseDisclosureVerifies(t *testing.T) {
 	if rep.ClaimsChecked != 2 {
 		t.Errorf("claims checked = %d, want 2", rep.ClaimsChecked)
 	}
+	// The size is the whole log's, not the window's, which is the fact a reader needs to know how
+	// much history the two disclosed claims were proved against.
+	if rep.TreeSize != 6 {
+		t.Errorf("tree size = %d, want 6", rep.TreeSize)
+	}
+	if rep.InclusionProofs != 2 {
+		t.Errorf("inclusion proofs = %d, want 2", rep.InclusionProofs)
+	}
+	if rep.ConsistencyOK || rep.ConsistencyFrom != 0 {
+		t.Errorf("consistency ok=%v from=%d, want a bundle carrying no proof to report neither",
+			rep.ConsistencyOK, rep.ConsistencyFrom)
+	}
+	if want := "signed, chained (tree of 6)"; rep.Level != want {
+		t.Errorf("level = %q, want %q", rep.Level, want)
+	}
 }
 
 // TestMerkleConsistencyProvesAppendOnly checks a bundle carrying a consistency proof verifies, which
@@ -229,6 +244,15 @@ func TestMerkleConsistencyProvesAppendOnly(t *testing.T) {
 	rep := verify.Run(signed, verify.Options{})
 	if !rep.OK {
 		t.Fatalf("bundle with a consistency proof did not verify: %v", rep.Problems)
+	}
+	if !rep.ConsistencyOK || rep.ConsistencyFrom != 4 {
+		t.Errorf("consistency ok=%v from=%d, want true from 4", rep.ConsistencyOK,
+			rep.ConsistencyFrom)
+	}
+	// Append-only growth answers a different question from whether the bundle is intact, so the
+	// report says it in words rather than leaving it to a reader to infer from a proof count.
+	if want := "signed, chained (tree of 6, append-only from 4)"; rep.Level != want {
+		t.Errorf("level = %q, want %q", rep.Level, want)
 	}
 }
 

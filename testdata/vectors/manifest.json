@@ -72,6 +72,90 @@
       "why": "A lone low surrogate escape is invalid and is rejected, not coerced."
     },
     {
+      "name": "merkle-bad-inclusion-path",
+      "file": "merkle-bad-inclusion-path.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "An audit path with a substituted sibling does not fold to the root the head names."
+    },
+    {
+      "name": "merkle-claim-altered",
+      "file": "merkle-claim-altered.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A claim edited after the tree was built no longer hashes to its own leaf, so the leaf does not recompute."
+    },
+    {
+      "name": "merkle-claim-with-prev",
+      "file": "merkle-claim-with-prev.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A tree claim carrying a previous link implies a linear chain that is not being verified."
+    },
+    {
+      "name": "merkle-consistency",
+      "file": "merkle-consistency.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 6, append-only from 4)",
+      "why": "A consistency proof from an earlier root verifies, proving the log grew by appending only, which a hash chain cannot state on its own."
+    },
+    {
+      "name": "merkle-consistency-power-of-two",
+      "file": "merkle-consistency-power-of-two.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 9, append-only from 8)",
+      "why": "A consistency proof whose earlier size is a power of two verifies. That case seeds the old root rather than reading it from the proof, and an implementation that expects it in the proof rejects a valid bundle."
+    },
+    {
+      "name": "merkle-consistency-rewritten",
+      "file": "merkle-consistency-rewritten.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A log that changed an entry it had already published cannot produce a consistency proof from the root the world saw before the change. Every disclosed leaf here still recomputes, so only the append-only check catches it."
+    },
+    {
+      "name": "merkle-foreign-install",
+      "file": "merkle-foreign-install.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A tree whose leaves bind an install other than the producer's is refused, which is what stops one producer from re-signing another's log and anchor."
+    },
+    {
+      "name": "merkle-right-edge",
+      "file": "merkle-right-edge.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 9)",
+      "why": "A leaf on the right edge of a nine leaf log verifies, where the tree is least regular and a fold that mishandles the odd node fails."
+    },
+    {
+      "name": "merkle-seq-past-tree",
+      "file": "merkle-seq-past-tree.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A claim naming a position past the tree size is outside the log the head attests."
+    },
+    {
+      "name": "merkle-single-leaf",
+      "file": "merkle-single-leaf.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 1)",
+      "why": "A log of one leaf verifies with an empty audit path, which is the correct and only path at that size."
+    },
+    {
+      "name": "merkle-sparse",
+      "file": "merkle-sparse.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 6)",
+      "why": "A tree bundle disclosing two non-contiguous leaves of a six leaf log verifies, because each one folds through its audit path to the root the signed head names."
+    },
+    {
+      "name": "merkle-wrong-leaf-index",
+      "file": "merkle-wrong-leaf-index.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A claim moved to another position does not prove membership at that position."
+    },
+    {
       "name": "non-integer-number",
       "file": "non-integer-number.loomseal.json",
       "must_verify": false,

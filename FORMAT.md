@@ -692,8 +692,16 @@ emitting product and documented there; this registry fixes the names and require
 | Type                   | Emitted by   | Status   | Payload minimum                       |
 |------------------------|--------------|----------|---------------------------------------|
 | `switchtender.audit/1` | SwitchTender | v0.1     | actor, method, path                   |
-| `switchtender.run/1`   | SwitchTender | draft    | run id, kind, hosts, approver         |
+| `switchtender.run/1`   | SwitchTender | reserved | not emitted yet, see below            |
 | `loomseal.span/1`      | Any producer | v0.1     | stream, cadence_s, beat, count        |
+
+`switchtender.run/1` is reserved and nothing emits it. A run's record travels today as
+`switchtender.audit/1` claims: the request that created it, any approval or rejection, and an outcome
+entry whose method is `RUN` and whose `content_digest` commits to what the run did, which a holder of
+the outcome body can check. The name is held so that a later, richer run claim cannot be defined by
+somebody else, and this row says so rather than describing a payload no bundle carries. A verifier
+that meets the type today reports it as unknown, which is the correct outcome for a type with no
+producer.
 
 New types enter by change to this registry. Product namespaces belong to their products. The
 `loomseal` namespace is owned by this specification: its types are defined here, and any

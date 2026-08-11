@@ -292,6 +292,15 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 	if r.HeadMatched {
 		verified[b.Chain.Head.Seq] = b.Chain.Head.Link
 	}
+	// A root a verified consistency proof starts from is a coordinate this verifier recomputed, so an
+	// anchor over it matches. That pairing is the strongest statement the format makes about
+	// truncation: the anchor fixed the root at a time the producer did not control, and the proof
+	// shows the log there is now grew from exactly it, which refutes a loss rather than merely
+	// failing to reach an anchor. Treating such an anchor as matching nothing would throw away the
+	// best evidence a bundle can carry.
+	if c := b.Chain.Consistency; c != nil && r.ConsistencyOK {
+		verified[c.FromSize] = c.FromRoot
+	}
 	head := b.Chain.Head
 	var newestAttestation time.Time
 	for i, a := range b.Anchors {

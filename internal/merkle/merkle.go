@@ -200,8 +200,12 @@ func VerifyConsistency(firstSize, secondSize int64, firstRoot, secondRoot []byte
 		return len(proof) == 0 && bytes.Equal(firstRoot, secondRoot)
 	}
 	if firstSize == 0 {
-		// Every log extends the empty log, and no proof can say otherwise.
-		return len(proof) == 0
+		// RFC 6962 defines a consistency proof only for a prefix of one or more entries, so this case
+		// is a judgment call, and it is refused. Every log trivially extends the empty log, which means
+		// such a proof establishes nothing while looking like evidence; accepting it would let a
+		// producer answer "prove you only appended" with a proof that proves nothing. A relying party
+		// with no earlier checkpoint has nothing to compare and should not be calling this at all.
+		return false
 	}
 	if len(proof) == 0 {
 		return false

@@ -212,8 +212,11 @@ func TestConsistencyEdgeSizes(t *testing.T) {
 	if VerifyConsistency(4, 4, root, LeafHash([]byte("x")), nil) {
 		t.Error("an unchanged size with a different root verified")
 	}
-	if !VerifyConsistency(0, 5, EmptyRoot(), Root(leaves(5)), nil) {
-		t.Error("growth from the empty log does not verify")
+	// A prefix of zero entries is refused rather than treated as trivially true: it would look like
+	// evidence while proving nothing. The independent implementation makes the same choice, so the
+	// two verifiers cannot disagree on a case the RFC leaves open.
+	if VerifyConsistency(0, 5, EmptyRoot(), Root(leaves(5)), nil) {
+		t.Error("a prefix of zero entries verified, which proves nothing and must be refused")
 	}
 	if VerifyConsistency(2, 5, Root(leaves(2)), Root(leaves(5)), nil) {
 		t.Error("a required consistency proof was accepted as absent")

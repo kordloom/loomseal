@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 MAX_SAFE = 2 ** 53
 V1 = "loomseal-chain-v1"
 SWITCHTENDER = "switchtender-audit-v1"
+MERKLE = "loomseal-merkle-v1"
 
 KNOWN_TYPES = {"switchtender.audit/1", "switchtender.run/1", "loomseal.span/1", "loomseal.agentrun/1"}
 
@@ -448,6 +449,15 @@ def _check_chain(b, report):
     report["chain_present"] = True
     chain = b["chain"]
     claims = b["claims"]
+    # The tree profile is checked before the linear rules below, which it legitimately violates: a
+    # tree has no per-entry predecessor, its head is a root rather than the newest claim's link, and
+    # disclosing a non-contiguous subset of leaves is the whole point of the profile.
+    if chain["profile"] == MERKLE:
+        _check_merkle(b, report)
+        for c in claims:
+            if c["type"] not in KNOWN_TYPES and c["type"] not in report["unknown_types"]:
+                report["unknown_types"].append(c["type"])
+        return
     for i, c in enumerate(claims):
         if "chain" not in c:
             raise VError("chain", f"claim {i} has no chain coordinates")
@@ -479,6 +489,165 @@ def _check_chain(b, report):
     for c in claims:
         if c["type"] not in KNOWN_TYPES and c["type"] not in report["unknown_types"]:
             report["unknown_types"].append(c["type"])
+
+
+def _leaf_hash(data):
+    return hashlib.sha256(b"\x00" + data).digest()
+
+
+def _node_hash(left, right):
+    return hashlib.sha256(b"\x01" + left + right).digest()
+
+
+def _merkle_leaf_data(claim, install):
+    """Leaf bytes for one claim: the canonical object of the domain, the install, and the claim
+    digest. The digest covers the claim's content with the members describing its position, its
+    proof, and how this bundle packages its evidence removed, so the same log entry disclosed in two
+    bundles yields one leaf."""
+    content = {k: v for k, v in claim.items() if k not in ("chain", "inclusion")}
+    if isinstance(content.get("evidence"), list):
+        content["evidence"] = [
+            {k: v for k, v in e.items() if k != "present"} for e in content["evidence"]
+        ]
+    digest = "sha256:" + hashlib.sha256(canon(content)).hexdigest()
+    return canon({"domain": MERKLE, "install_id": install, "claim": digest})
+
+
+def _verify_inclusion(leaf, index, size, path, root):
+    """Fold an audit path to the root. The index and size choose the shape of the fold; a relying
+    party holds one entry and its path, never the log, so the tree is never rebuilt."""
+    if index < 0 or size < 1 or index >= size:
+        return False
+    fn, sn = index, size - 1
+    computed = _leaf_hash(leaf)
+    for p in path:
+        if sn == 0:
+            return False
+        if (fn & 1) or fn == sn:
+            computed = _node_hash(p, computed)
+            while fn and not (fn & 1):
+                fn >>= 1
+                sn >>= 1
+        else:
+            computed = _node_hash(computed, p)
+        fn >>= 1
+        sn >>= 1
+    return sn == 0 and computed == root
+
+
+def _verify_consistency(from_size, head_size, from_root, head_root, path):
+    """Recompute both the old root and the new one from a consistency proof. Recomputing only one of
+    them would say nothing about the relationship between them."""
+    if from_size < 1 or from_size > head_size:
+        return False
+    if from_size == head_size:
+        return not path and from_root == head_root
+    fn, sn = from_size - 1, head_size - 1
+    while fn & 1:
+        fn >>= 1
+        sn >>= 1
+    if fn != 0:
+        if not path:
+            return False
+        old = new = path[0]
+        rest = path[1:]
+    else:
+        # The prefix ends on a complete subtree, so the verifier already holds its root and the
+        # proof does not carry it. This seeding case is where implementations most often split.
+        old = new = from_root
+        rest = path
+    for p in rest:
+        if sn == 0:
+            return False
+        if (fn & 1) or fn == sn:
+            old = _node_hash(p, old)
+            new = _node_hash(p, new)
+            while fn and not (fn & 1):
+                fn >>= 1
+                sn >>= 1
+        else:
+            new = _node_hash(new, p)
+        fn >>= 1
+        sn >>= 1
+    return sn == 0 and old == from_root and new == head_root
+
+
+def _unhex(value, what):
+    try:
+        raw = bytes.fromhex(value)
+    except (ValueError, TypeError):
+        raise VError("chain", f"{what} is not hex")
+    if len(raw) != 32:
+        raise VError("chain", f"{what} is not a 32 byte hash")
+    return raw
+
+
+def _check_merkle(b, report):
+    """Verify a bundle under loomseal-merkle-v1, per FORMAT.md."""
+    chain = b["chain"]
+    if chain.get("keyed"):
+        raise VError("chain", f"{MERKLE} is an unkeyed profile")
+    install = (chain.get("params") or {}).get("install_id")
+    if not install:
+        raise VError("chain", f"{MERKLE} requires params.install_id")
+    # The install id is hashed into every leaf, so it must be the signer's own or the binding proves
+    # nothing: a copier reusing another install's leaves, root, and timestamp token would otherwise
+    # emit a bundle that is internally consistent while asserting a history its key never had.
+    if install != b["producer"].get("install_id"):
+        raise VError("chain", "chain params.install_id is not the producer's install")
+    head = chain["head"]
+    if head.get("prev", "") != "":
+        raise VError("chain", "a tree head has no previous link")
+    size = head["seq"]
+    root = _unhex(head["link"], "head link")
+
+    seen = set()
+    prev_seq = 0
+    for i, c in enumerate(b["claims"]):
+        if "chain" not in c:
+            raise VError("chain", f"claim {i} has no chain coordinates")
+        if "inclusion" not in c:
+            raise VError("chain", f"claim {i} carries no inclusion proof")
+        co = c["chain"]
+        if co.get("prev", "") != "":
+            raise VError("chain", f"claim {i} has a previous link, which a tree has no place for")
+        if co["seq"] > size:
+            raise VError("chain", f"claim {i} seq is past the tree size")
+        if co["seq"] in seen:
+            raise VError("chain", f"claim {i} repeats a sequence")
+        seen.add(co["seq"])
+        if co["seq"] <= prev_seq:
+            raise VError("chain", f"claim {i} sequence does not ascend")
+        prev_seq = co["seq"]
+
+        leaf = _merkle_leaf_data(c, install)
+        if _leaf_hash(leaf).hex() != co["link"]:
+            raise VError("chain", f"claim {i} leaf hash does not recompute")
+        path = [_unhex(h, f"claim {i} inclusion path") for h in c["inclusion"]["path"]]
+        # The index and size come from the claim's own seq and the signed head, never from a value
+        # carried beside the proof, because folding binds a leaf to a root and not to a size.
+        if not _verify_inclusion(leaf, co["seq"] - 1, size, path, root):
+            raise VError("chain", f"claim {i} does not prove membership of the tree the head names")
+
+    cons = chain.get("consistency")
+    if cons is not None:
+        if cons["from_size"] > size:
+            raise VError("chain", "consistency from_size is past the tree size")
+        proof = [_unhex(h, "consistency path") for h in cons["path"]]
+        if not _verify_consistency(cons["from_size"], size,
+                                   _unhex(cons["from_root"], "consistency from_root"), root, proof):
+            raise VError("chain", "the log does not prove it grew from the root it names by "
+                                  "appending only")
+        report["consistency_from"] = cons["from_size"]
+        report["consistency_ok"] = True
+
+    report["chain_mode"] = "full"
+    report["chain_ok"] = True
+    report["tree_size"] = size
+    report["inclusion_proofs"] = len(b["claims"])
+    # Every disclosed leaf folded to the head root, so the head is confirmed by the bundle itself
+    # rather than merely declared, which a linear window cannot do when its head leads the claims.
+    report["head_matched"] = True
 
 
 def _recompute_links(b):

@@ -182,9 +182,18 @@ before such forgery was possible.
 
 A chain fixes claims in an append-only order. Products already have chains with different
 constructions, so LoomSeal names each construction as a profile and the verifier implements the
-profiles. A bundle declares one profile in `chain.profile`. Claims carry `chain.seq`,
-`chain.prev`, and `chain.link`. Claims in a bundle are sorted by ascending `seq` and must be
-contiguous; discontinuous history means separate bundles.
+profiles. A bundle declares one profile in `chain.profile`.
+
+Profiles come in two shapes. A **linear** profile hashes each claim onto its predecessor, so a link
+depends on the whole prefix before it; `switchtender-audit-v1` and `loomseal-chain-v1` are linear.
+A **tree** profile hashes claims into a Merkle tree, so an entry is proved against a root without
+its neighbours; `loomseal-merkle-v1` is the tree profile. The two paragraphs below state the linear
+rules. The tree profile deliberately does not follow them, and its own section is normative wherever
+they differ; a verifier selects its behaviour from `chain.profile`, which the signature covers, and
+never from any other field.
+
+In a linear profile claims carry `chain.seq`, `chain.prev`, and `chain.link`. Claims in a bundle are
+sorted by ascending `seq` and must be contiguous; discontinuous history means separate bundles.
 
 `chain.head` records the newest coordinates the producer attests for the whole chain, which may
 lead the claims a bundle carries: a bundle is a window into a longer history. When the head
@@ -248,6 +257,165 @@ prevents forgery by a party who can write the underlying store. Relying parties 
 chains structurally, checking that each claim's `prev` equals the prior claim's `link`, and
 against anchors. The operator, holding the key, verifies fully.
 
+### loomseal-merkle-v1
+
+The tree profile. Claims are the leaves of an RFC 6962 Merkle tree, the construction Certificate
+Transparency uses. It exists for two things a linear chain cannot do: prove one entry belongs to the
+log without disclosing any other entry, and prove that the log only ever appended.
+
+This profile is unkeyed. `chain.keyed` must be `false`, and a bundle declaring it `true` is rejected.
+
+**Hashing.** All hashes are SHA-256 and are written as 64 lowercase hex characters with no `sha256:`
+prefix, matching `chain.link`.
+
+- Leaf hash: `SHA-256(0x00 || leaf_data)`.
+- Interior node hash: `SHA-256(0x01 || left || right)`, where `left` and `right` are the 32 raw bytes
+  of the child hashes, in that order.
+- Root of an empty tree: `SHA-256` of no input, that is
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+
+The one-byte prefixes are normative. Without them the same bytes can be read as a leaf or as a node,
+and an attacker presents an interior node's two child hashes as a single leaf's content to prove
+membership of an entry the log never held.
+
+**Leaf data.** The leaf data of a claim is the RFC 8785 canonical form of that claim's JSON object as
+it appears in the bundle, with its `chain` and `inclusion` members removed. Both removals are
+required: `chain` carries the leaf's position and `inclusion` carries its proof, and a leaf commits to
+content, not to where it sits or how it is proved. As everywhere else in this format, a verifier
+canonicalizes the bytes the bundle carries and never parses and re-serializes a value; the note on
+time in `switchtender-audit-v1` applies here for the same reason.
+
+A leaf hash is not the claim digest of `loomseal-chain-v1`. That digest is SHA-256 over the canonical
+claim with no prefix; a leaf hash has the `0x00` prefix. They are different values by construction and
+must not be substituted for one another.
+
+**The tree is the whole log, not the bundle.** `D[n]` is the log's entries in order, every one of
+them, and `n` is the log's size. A bundle discloses a subset of those leaves, so a verifier generally
+cannot rebuild the tree and must not try: the root is established by the signature and confirmed by
+folding each disclosed leaf's audit path. A bundle that happens to carry every leaf is not a special
+case and is verified the same way.
+
+**Tree shape.** Write `MTH(D[n])` for the tree hash of `n` leaves. `MTH` of no leaves is the empty
+root above. `MTH(D[1])` is the leaf hash of the single leaf. For `n > 1`, let `k` be the largest power
+of two strictly less than `n`, and
+
+```
+MTH(D[n]) = SHA-256(0x01 || MTH(D[0:k]) || MTH(D[k:n]))
+```
+
+`k` is not `n / 2`. The two definitions agree at every power of two and differ at every other size, so
+an implementation that splits at `n / 2` yields correct roots for 1, 2, 4, and 8 leaves and wrong ones
+for 3, 5, 6, 7, and 9. A test suite built only on power-of-two sizes does not detect this.
+
+**Coordinates.** `chain.head.seq` is the tree size, the number of leaves in the log, and
+`chain.head.link` is the root at that size. Each claim's `chain.seq` is its leaf index plus one, so a
+leaf index is `seq - 1` and the first leaf has `seq` 1. Each claim's `chain.link` is that claim's leaf
+hash. Each claim's `chain.prev` must be the empty string: a tree has no per-entry predecessor, and a
+non-empty `prev` implies a linear chain that is not being verified, so a verifier rejects it.
+
+Claims are sorted by ascending `chain.seq`, must not repeat a `seq`, and **need not be contiguous**.
+Disclosing an arbitrary subset is the purpose of this profile. Every `chain.seq` must lie in the range
+1 through `chain.head.seq` inclusive.
+
+`chain.head.seq` must be at least 1. The empty root is defined above because the tree hash is defined
+for every size and a consistency proof's arithmetic reaches it, but a bundle carries at least one
+claim and every claim's `seq` must fall within the tree, so no valid bundle in this profile heads an
+empty log.
+
+The `inclusion` member belongs to this profile alone. A claim carrying it under a linear profile is
+rejected rather than ignored, because a reader who sees a proof beside a claim is entitled to assume
+some verifier checked it.
+
+**Inclusion proofs.** Every claim in this profile carries an `inclusion` member:
+
+```json
+"inclusion": { "path": ["<64 hex>", "..."] }
+```
+
+`path` is the audit path for that leaf: the sibling hashes from the leaf's level upward, lowest
+first. It is required on every claim and may be an empty array, which is the correct and only value
+for a log of exactly one leaf. The leaf index and the tree size are not repeated inside `inclusion`;
+they are `chain.seq - 1` and `chain.head.seq`, and a verifier uses those.
+
+The audit path is defined exactly, so that no implementation has to infer it. `PATH(m, D[n])` is the
+path for leaf index `m` of a log of `n` leaves. `PATH(0, D[1])` is empty. For `n > 1`, with `k` the
+largest power of two strictly less than `n`:
+
+```
+PATH(m, D[n]) = PATH(m, D[0:k]) : MTH(D[k:n])        when m <  k
+PATH(m, D[n]) = PATH(m-k, D[k:n]) : MTH(D[0:k])      when m >= k
+```
+
+where `:` appends. The path is therefore ordered lowest sibling first, and its length is the depth of
+that leaf, which for a tree that is not a perfect power of two is not the same for every leaf.
+
+A verifier recomputes the claim's leaf hash from its leaf data, confirms it equals `chain.link`, and
+then confirms that folding the leaf hash with the path reproduces `chain.head.link`, combining at each
+level in the order the definition above fixes: the path element is the right input when the leaf's
+subtree is the left half at that split, and the left input when it is the right half. An
+implementation may compute this with the equivalent iterative walk over the leaf index and the
+rightmost index rather than recursively; the two agree by construction, and this specification fixes
+the result, not the method. The path must be exactly the length that definition produces: a path with
+a level too few or too many does not verify.
+
+An inclusion proof binds the leaf, its index, and the path to the root. It does not independently
+authenticate the tree size: for some positions two sizes fold identically, so a declared size that is
+wrong can still reach the correct root. This is not a weakness, because the root is the signed value,
+but it fixes an obligation on the verifier: **take both the root and the tree size from
+`chain.head`, which the signature covers, and never from any value supplied beside the proof.**
+
+**Consistency proofs.** A bundle may carry one consistency proof on `chain`:
+
+```json
+"consistency": {
+  "from_size": 12,
+  "from_root": "<64 hex>",
+  "path": ["<64 hex>", "..."]
+}
+```
+
+It asserts that the log of `from_size` leaves whose root was `from_root` is a prefix of the log this
+bundle heads, and that the log reached its current state by appending only. The rules are exact:
+
+- `from_size` must be at least 1. A prefix of zero entries is rejected. RFC 6962 leaves the case
+  undefined, and every log trivially extends the empty log, so accepting it would answer "prove you
+  only appended" with a proof that establishes nothing. A relying party with no earlier root has
+  nothing to compare and must not be handed something that looks like evidence.
+- `from_size` must be less than or equal to `chain.head.seq`.
+- When `from_size` equals `chain.head.seq`, `path` must be empty and `from_root` must equal
+  `chain.head.link`. Nothing was appended, so there is nothing to fold.
+- Otherwise `path` must be non-empty.
+
+The proof itself is defined exactly. `PROOF(m, D[n])` for `0 < m < n` is `SUBPROOF(m, D[n], true)`,
+where the flag records whether the prefix is exactly the subtree under consideration, in which case
+the verifier already holds its root and it is not sent:
+
+```
+SUBPROOF(m, D[m], true)  = {}
+SUBPROOF(m, D[m], false) = { MTH(D[m]) }
+SUBPROOF(m, D[n], flag)  = SUBPROOF(m, D[0:k], flag) : MTH(D[k:n])        when m <= k
+SUBPROOF(m, D[n], flag)  = SUBPROOF(m-k, D[k:n], false) : MTH(D[0:k])     when m >  k
+```
+
+with `k` the largest power of two strictly less than `n`, and `:` appending. The verifier folds the
+proof to recompute both the old root and the new one, and both must match `from_root` and
+`chain.head.link` respectively; recomputing only one of them is not a consistency check. A log that
+edited or dropped anything it had already published cannot produce a proof that recomputes its old
+root, however well formed the new log is on its own.
+
+This is the difference between inferring truncation and proving its absence. A linear chain plus an
+anchor detects a lost tail only indirectly: the chain no longer reaches an anchor it should. A
+consistency proof states the append-only property directly, and it composes with anchoring. When an
+anchor fixes a root at a moment outside the producer's control and a later bundle proves consistency
+from that same root, the anchored history is provably a prefix of the current log. A producer that
+quietly removed an entry recorded before the anchor cannot produce both.
+
+**What a verifier reports.** The claims checked, the tree size, whether every inclusion proof folded
+to the head root, and, when a consistency proof is present, the size it proved from and whether it
+held. A bundle in this profile whose inclusion proofs all verify has a confirmed head: unlike a
+linear window, whose head beyond the newest claim cannot be recomputed, a tree's root is confirmed by
+any single inclusion proof that folds to it.
+
 ## Anchors
 
 An anchor fixes a chain link in time, in a place the producer cannot rewrite alone. An anchor
@@ -265,7 +433,17 @@ The verifier checks that each anchor's `seq` and `link` match a coordinate it ve
 in the bundle, or the head when the head tied to the newest claim. An anchor that matches only a
 declared head beyond the bundled claims is reported, but because that head link is unverified the
 anchor binds nothing the verifier confirmed and does not by itself earn the anchored level. An
-anchor that matches no verified coordinate fails the bundle. An anchor type the verifier cannot
+anchor that matches no verified coordinate fails the bundle.
+
+In `loomseal-merkle-v1` the coordinates an anchor may match are the head, whose `seq` is the tree
+size and whose `link` is the root, and the `from_size` and `from_root` of a consistency proof the
+bundle carries. A previously published root is a verified coordinate in this profile precisely
+because the consistency proof recomputes it, so an anchor over an older root must be matched rather
+than reported as naming nothing. That pairing is the strongest statement the format makes about
+truncation: the anchor fixes a root at a time the producer did not control, and the consistency proof
+shows the current log still contains it. An anchor naming a single claim's `link` matches a leaf
+hash, which fixes only that one entry's content and says nothing about the log's shape, so a producer
+anchoring this profile anchors roots. An anchor type the verifier cannot
 validate offline, such as `git`, `https`, or `rekor`, is matched by coordinates only and reports
 as anchored by reference, leaving the relying party to confirm the ref out of band. Anchoring
 cadence bounds the window in which a compromised producer key could rewrite unanchored history;
@@ -346,13 +524,17 @@ Go, Python, and the browser build, agree on every one.
 | Level | Name     | Meaning                                                            |
 |-------|----------|--------------------------------------------------------------------|
 | 1     | Signed   | Valid producer signature over the canonical bundle                 |
-| 2     | Chained  | Claims linked in a declared profile, continuity verifies           |
+| 2     | Chained  | Claims fixed in a declared profile: linear continuity, or a tree   |
+|       |          | whose inclusion proofs fold to the signed root                     |
 | 3     | Anchored | At least one verified anchor binds the chain outside the producer  |
 | 4     | Spanned  | Anchored, plus span claims present and every span check verifies   |
 
 Level 2 verification is full for unkeyed profiles (every link recomputed) and structural for
 keyed profiles (continuity of `prev` to `link`, with full verification reserved to the key
-holder). The verifier's report names which form it performed. Marketing language maps one to
+holder). In the tree profile it is full: every leaf is recomputed and every inclusion proof folded.
+The verifier's report names which form it performed. A consistency proof does not introduce a level;
+it is an additional property the report states, because it answers a different question from the
+levels, which is whether the log grew by appending rather than whether this bundle is intact. Marketing language maps one to
 one: signed, chained, anchored, spanned. No other adjectives.
 
 ## Verification
@@ -362,8 +544,12 @@ The verifier performs these steps in order and fails closed:
 1. Parse the document, require `loomseal` version `0.1`, validate against the schema.
 2. Reconstruct the canonical form with `signatures` emptied and verify at least one signature
    against `producer.public_key`. If the caller pinned a fingerprint, require `key_id` match.
-3. If `chain` is present: require claims sorted, contiguous, and profile known. Recompute every
-   link for unkeyed profiles; check continuity for keyed profiles.
+3. If `chain` is present: require the profile known and the claims sorted by `seq`. For a linear
+   profile require the claims contiguous, then recompute every link for an unkeyed profile or check
+   continuity for a keyed one. For the tree profile require no repeated `seq`, recompute each claim's
+   leaf hash, fold each inclusion proof to the head root, and, when a consistency proof is present,
+   recompute both roots from it. Contiguity is not required in the tree profile; a sparse window is
+   its purpose.
 4. For each anchor: match its coordinates to the bundle, verify embedded proofs, report the
    anchor set with times and refs.
 5. If span claims are present: require beat contiguity, recompute every count from the
@@ -419,6 +605,21 @@ counts, and a deleted beat is itself visible. It still does not prove an event w
 the first place; a beat bounds when an omission had to begin, not whether one happened. And it
 says nothing about silence after the newest anchored beat, which only the published feed can
 show.
+
+A bundle on `loomseal-merkle-v1` proves two further things, and they are the reason the profile
+exists. First, each disclosed claim belongs to the log whose root the producer signed, and the
+disclosure reveals nothing about any other entry: the audit path is a list of opaque hashes, so a
+receipt about one subject can be handed to an outsider without exposing what else the log holds or
+even how the neighbouring entries are shaped. Second, when the bundle carries a consistency proof
+from a root that was anchored earlier, the log is proved to have grown from that root by appending
+only, so an entry recorded before the anchor cannot have been edited or dropped since. That is a
+stronger statement than the linear profile can make, where a lost tail is inferred from an anchor the
+chain no longer reaches rather than refuted outright.
+
+It does not prove the log is complete. A tree fixes what it contains, and a producer that never wrote
+an entry has a perfectly consistent log without it; that gap is what LoomSpan bounds, and the two
+compose. Nor does an inclusion proof say anything about the tree size on its own, which is why the
+size is read from the signed head.
 
 It does not prove: that the producer observed the world honestly at capture time (a chain fixes
 the record, not the honesty of the recorder); that a keyed chain is internally valid without the

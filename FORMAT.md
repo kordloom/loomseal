@@ -694,6 +694,7 @@ emitting product and documented there; this registry fixes the names and require
 | `switchtender.audit/1` | SwitchTender | v0.1     | actor, method, path                   |
 | `switchtender.run/1`   | SwitchTender | reserved | not emitted yet, see below            |
 | `loomseal.span/1`      | Any producer | v0.1     | stream, cadence_s, beat, count        |
+| `loomseal.agentrun/1`  | Any producer | v0.1     | session, tool, args, outcome          |
 
 `switchtender.run/1` is reserved and nothing emits it. A run's record travels today as
 `switchtender.audit/1` claims: the request that created it, any approval or rejection, and an outcome

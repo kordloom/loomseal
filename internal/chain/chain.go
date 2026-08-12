@@ -221,6 +221,14 @@ func checkV1(raw []byte, b *bundle.Bundle) error {
 	if installID == "" {
 		return fmt.Errorf("%w: %s requires params.install_id", ErrProfile, bundle.ProfileV1)
 	}
+	// The id has to be the signer's, not merely present. An id a bundle states but nothing ties to
+	// the producer is something a copier can restate, so a link bound to it is bound to nothing they
+	// cannot also claim. The tree profile has always required this; the linear one described it and
+	// did not check it.
+	if installID != b.Producer.InstallID {
+		return fmt.Errorf("%w: %s params.install_id %q does not match producer.install_id %q",
+			ErrProfile, bundle.ProfileV1, installID, b.Producer.InstallID)
+	}
 	tree, err := jcs.Parse(raw)
 	if err != nil {
 		return err

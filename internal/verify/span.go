@@ -41,10 +41,21 @@ type spanClaim struct {
 // a file; that detection belongs to a published feed where a missing beat is visible.
 func (r *Report) checkSpan(b *bundle.Bundle) {
 	before := len(r.Problems)
+	// LoomSpan is defined over the linear profiles. Its beats carry a non-empty chain.prev and its
+	// coverage requires contiguous beats, and the tree profile forbids both by design: a tree has no
+	// per-entry predecessor, and selective disclosure is the point of it. A span claim in a tree
+	// bundle is therefore refused rather than checked, because attempting a check the profile cannot
+	// satisfy would report a coverage answer that means nothing.
+	treeProfile := b.Chain != nil && b.Chain.Profile == bundle.ProfileMerkle
 	var spans []spanClaim
 	for i, c := range b.Claims {
 		if c.Type != spanType {
 			continue
+		}
+		if treeProfile {
+			r.problem("claim %d is a span claim, which the %s profile does not carry", i,
+				bundle.ProfileMerkle)
+			return
 		}
 		r.SpanPresent = true
 		s, ok := r.parseSpanClaim(i, c)

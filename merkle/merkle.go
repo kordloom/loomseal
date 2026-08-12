@@ -78,10 +78,10 @@ func splitPoint(n int64) int64 {
 // Root returns the Merkle tree hash over leaves, in order. An empty list gives EmptyRoot.
 func Root(leaves [][]byte) []byte {
 	n := int64(len(leaves))
-	switch {
-	case n == 0:
+	switch n {
+	case 0:
 		return EmptyRoot()
-	case n == 1:
+	case 1:
 		return LeafHash(leaves[0])
 	}
 	k := splitPoint(n)

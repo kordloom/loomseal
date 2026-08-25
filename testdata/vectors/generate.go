@@ -359,6 +359,15 @@ func (s *state) negatives() {
 			"which is what stops a published receipt from being lifted into another install's bundle.",
 		s.sign(m))
 
+	// chain.params.install_id set to something other than the producer. It is informational in this
+	// profile, so a disagreeing param is refused rather than silently ignored, closing the trap where
+	// a third-party producer sets it and assumes it binds anything.
+	m = s.switchTender()
+	m["chain"].(map[string]any)["params"] = map[string]any{"install_id": "in_someone_else"}
+	s.add("switchtender-params-disagrees", false, "", "chain",
+		"A switchtender-audit-v1 chain.params.install_id that is not the producer's is refused: the "+
+			"param is informational and the per-claim install_id is what binds.", s.sign(m))
+
 	// A window that opens past sequence one with no prev link. Its first claim recomputes as though
 	// it were genesis, so only the window-genesis rule catches that it names no predecessor.
 	m = s.v1(1, false)

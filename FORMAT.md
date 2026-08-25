@@ -251,6 +251,13 @@ entries recorded before the field existed hash exactly as they always did, and s
 liftable as they always were. A producer should carry `install_id` on every new entry, and a relying
 party should treat only entries that carry it as bound to the producing install.
 
+The per-entry `install_id` is the only value that binds in this profile. `chain.params.install_id`,
+which the tree and generic profiles use, is **informational** here and is not consulted when
+recomputing a link. A producer may carry it to mirror the producer block, but because it binds
+nothing on its own, a verifier refuses a bundle whose `chain.params.install_id` disagrees with
+`producer.install_id`, so a third-party producer cannot set the param and assume it binds. A param
+equal to the producer restates it and is accepted.
+
 An earlier revision of this construction hashed six values as a positional array. Nothing consumed
 that form outside this repository, so the profile was redefined in place rather than versioned; a
 future addition, once the format has outside adopters, would take a new profile name instead.
@@ -797,4 +804,14 @@ bundle with sidecar evidence travels as a directory or archive; the bundle stays
 A bundle may be wrapped in a DSSE envelope with payload type
 `application/vnd.kordloom.loomseal+json` for tooling that expects DSSE. Mapping claims onto in-toto
 attestation predicates is possible later and deliberately not part of v0.1.
+
+### Producer library notes
+
+These describe the reference Go library, not the format itself. The format is unchanged.
+
+- Since v0.11.0 the canonical serializer refuses input that is not valid UTF-8 rather than emitting
+  the replacement character. This was always the correct behavior, since coercing invalid bytes to
+  U+FFFD lets two different inputs share one canonical form and one hash. A producer that fed raw,
+  possibly invalid, bytes into the serializer now receives an error where earlier it received output,
+  so the failure surfaces as "this input was never valid" rather than "hashing stopped working."
 

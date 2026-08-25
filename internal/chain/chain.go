@@ -163,6 +163,16 @@ type switchTenderPayload struct {
 // JSON object of the claim's sequence, time, actor, method, path, and previous link, plus the actor
 // type, delegated account, content digest, and install id when the entry carries them.
 func checkSwitchTender(b *bundle.Bundle) error {
+	// chain.params.install_id is informational in this profile: the per-claim install_id is what
+	// binds. A third-party producer might set the param and assume it binds something, so a param
+	// that disagrees with the producer is refused rather than silently ignored. Because a bound
+	// claim's install_id must equal the producer, this also keeps the param from disagreeing with the
+	// claims. A param equal to the producer is allowed and simply restates it.
+	if pid := b.Chain.Params["install_id"]; pid != "" && pid != b.Producer.InstallID {
+		return fmt.Errorf("%w: %s chain.params.install_id %q is informational and must equal "+
+			"producer.install_id %q; the per-claim install_id is what binds", ErrProfile,
+			bundle.ProfileSwitchTender, pid, b.Producer.InstallID)
+	}
 	for i := range b.Claims {
 		claim := &b.Claims[i]
 		var p switchTenderPayload

@@ -99,7 +99,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: govulncheck
-        run: |
-          if ! go run golang.org/x/vuln/cmd/govulncheck@latest ./...; then
-            echo "::warning title=govulncheck::Vulnerabilities found; review the log above."
-          fi
+        # A tool whose whole purpose is checkable evidence does not ship with known vulnerabilities
+        # behind a warning that always passes. A finding fails the build.
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

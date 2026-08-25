@@ -12,6 +12,7 @@ const usage = `loomseal verifies LoomSeal proof bundles offline.
 
 Usage:
   loomseal verify <bundle.loomseal.json> [flags]
+  loomseal verify - [flags]                 read the bundle from stdin
   loomseal version
 
 Verify flags:

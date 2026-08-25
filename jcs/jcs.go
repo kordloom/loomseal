@@ -135,7 +135,7 @@ func writeValue(b *bytes.Buffer, v any) error {
 	case bool:
 		b.WriteString(strconv.FormatBool(t))
 	case string:
-		writeString(b, t)
+		return writeString(b, t)
 	case json.Number:
 		return writeNumber(b, t)
 	case int:
@@ -178,7 +178,9 @@ func writeObject(b *bytes.Buffer, m map[string]any) error {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		writeString(b, k)
+		if err := writeString(b, k); err != nil {
+			return err
+		}
 		b.WriteByte(':')
 		if err := writeValue(b, m[k]); err != nil {
 			return err
@@ -213,8 +215,12 @@ func writeNumber(b *bytes.Buffer, n json.Number) error {
 
 // writeString serializes a string with RFC 8785 minimal escaping: shorthand escapes where
 // they exist, \u00xx with lowercase hex for other control characters, everything else as
-// literal UTF-8.
-func writeString(b *bytes.Buffer, s string) {
+// literal UTF-8. Invalid UTF-8 is rejected rather than emitted as the replacement character, so a
+// producer building a tree directly cannot serialize to bytes a verifier would parse differently.
+func writeString(b *bytes.Buffer, s string) error {
+	if !utf8.ValidString(s) {
+		return fmt.Errorf("%w: string is not valid UTF-8", ErrString)
+	}
 	b.WriteByte('"')
 	for _, r := range s {
 		switch r {
@@ -241,6 +247,7 @@ func writeString(b *bytes.Buffer, s string) {
 		}
 	}
 	b.WriteByte('"')
+	return nil
 }
 
 // validateStrings rejects input that RFC 8785 forbids before Go's decoder can hide it. Go's

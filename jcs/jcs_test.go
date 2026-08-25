@@ -138,6 +138,10 @@ func TestSerializeGoValues(t *testing.T) {
 		In: map[string]any{"n": complex(1, 1)}, Want: ErrType,
 	}, { // Test 4: int64 beyond the bound is rejected.
 		In: int64(1) << 54, Want: ErrNumber,
+	}, { // Test 5: A string value that is not valid UTF-8 is rejected, not emitted as U+FFFD.
+		In: map[string]any{"s": string([]byte{0xff, 0xfe})}, Want: ErrString,
+	}, { // Test 6: An object key that is not valid UTF-8 is rejected.
+		In: map[string]any{string([]byte{0xff}): "x"}, Want: ErrString,
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {

@@ -41,7 +41,13 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "loomseal verify: exactly one bundle file is required")
 		return CodeUsage
 	}
-	raw, err := os.ReadFile(file)
+	var raw []byte
+	var err error
+	if file == "-" {
+		raw, err = io.ReadAll(os.Stdin)
+	} else {
+		raw, err = os.ReadFile(file)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "loomseal verify: %v\n", err)
 		return CodeUsage
@@ -115,6 +121,12 @@ func renderReport(w io.Writer, r *verify.Report) {
 	if r.AnchorsToDeclaredHead > 0 {
 		fmt.Fprintf(w, "note       %d anchor(s) reference only the unverified declared head, not a claim in this bundle\n",
 			r.AnchorsToDeclaredHead)
+	}
+	// A proof on a declared head that leads the claims is not opened, because the link it attests ties
+	// to nothing this verifier confirmed. Saying so keeps a reader from reading "proof" as "verified".
+	if r.AnchorProofsOnDeclaredHead > 0 {
+		fmt.Fprintf(w, "note       %d proof(s) sit on the unverified declared head and were not checked; "+
+			"they earn no anchored level\n", r.AnchorProofsOnDeclaredHead)
 	}
 	// An anchor pins history only up to the position it names. What it leaves uncovered is the
 	// part a compromised producer key could still rewrite, so the reader is told the size of it

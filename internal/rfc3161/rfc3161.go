@@ -11,10 +11,12 @@
 package rfc3161
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -29,6 +31,8 @@ var (
 	ErrImprint = errors.New("timestamp token does not attest to this link")
 	// ErrSignature means the token's signature does not verify against its own signer certificate.
 	ErrSignature = errors.New("timestamp token signature does not verify")
+	// ErrValidity means the token's signing time lies outside its signer certificate's validity window.
+	ErrValidity = errors.New("timestamp token signing time is outside the certificate validity window")
 )
 
 // OIDs used inside a timestamp token.
@@ -168,7 +172,7 @@ type tstInfo struct {
 // would mean a bundle's strength depended on which build of the verifier read it, which is the
 // opposite of what an offline proof is for.
 func Verify(token []byte, link string) (*Result, error) {
-	raw, err := decodeHex(link)
+	raw, err := hex.DecodeString(link)
 	if err != nil {
 		return nil, fmt.Errorf("%w: link is not hex: %w", ErrImprint, err)
 	}
@@ -189,8 +193,11 @@ func Verify(token []byte, link string) (*Result, error) {
 		return nil, fmt.Errorf("%w: payload is %v, want TSTInfo", ErrParse,
 			sd.EncapContentInfo.EContentType)
 	}
-	if len(sd.SignerInfos) == 0 {
-		return nil, fmt.Errorf("%w: token carries no signer", ErrParse)
+	// A timestamp token has exactly one signer, the authority. Zero is malformed, and more than one is
+	// ambiguous: verifying only the first would let an unverified second signer ride along.
+	if len(sd.SignerInfos) != 1 {
+		return nil, fmt.Errorf("%w: token carries %d signers, want exactly one", ErrParse,
+			len(sd.SignerInfos))
 	}
 
 	var info tstInfo
@@ -202,16 +209,26 @@ func Verify(token []byte, link string) (*Result, error) {
 		return nil, fmt.Errorf("%w: imprint uses %v, want SHA-256", ErrImprint,
 			info.MessageImprint.Algorithm.Algorithm)
 	}
-	if !equalBytes(info.MessageImprint.Digest, sum[:]) {
+	if !bytes.Equal(info.MessageImprint.Digest, sum[:]) {
 		return nil, ErrImprint
 	}
 
-	signer, err := signerCertificate(sd)
+	signer, err := signerCertificate(sd, sd.SignerInfos[0].SID)
 	if err != nil {
 		return nil, err
 	}
 	if err := verifySignature(sd.SignerInfos[0], sd.EncapContentInfo.EContent, signer); err != nil {
 		return nil, err
+	}
+	// An authority's certificate has to be valid when it signs, so a token whose signing time falls
+	// outside its own signer certificate's window is not evidence of anything, whatever the signature
+	// says. This needs no root store: it is a self-consistency check between two values the token
+	// already carries. Without it a token signed years outside its certificate's life still reaches
+	// the strongest verdict the format issues.
+	if info.GenTime.Before(signer.NotBefore) || info.GenTime.After(signer.NotAfter) {
+		return nil, fmt.Errorf("%w: signed at %s, certificate valid %s to %s", ErrValidity,
+			info.GenTime.UTC().Format(time.RFC3339), signer.NotBefore.UTC().Format(time.RFC3339),
+			signer.NotAfter.UTC().Format(time.RFC3339))
 	}
 	return &Result{
 		Time:         info.GenTime.UTC(),
@@ -221,9 +238,22 @@ func Verify(token []byte, link string) (*Result, error) {
 	}, nil
 }
 
-// signerCertificate returns the certificate that signed the token. A token carries its chain so a
-// relying party needs nothing else, and the leaf is the one bearing the timestamping usage.
-func signerCertificate(sd signedData) (*x509.Certificate, error) {
+// issuerAndSerial is the IssuerAndSerialNumber form of a CMS signer identifier: the certificate is
+// named by its issuer and serial, which is what an RFC 3161 token uses.
+type issuerAndSerial struct {
+	// Issuer is the issuer distinguished name, kept raw for a byte comparison against a certificate.
+	Issuer asn1.RawValue
+	// SerialNumber is the certificate serial the issuer assigned.
+	SerialNumber *big.Int
+}
+
+// signerCertificate returns the certificate that signed the token, resolved from the signer id the
+// token names rather than from whichever embedded certificate happens to carry the timestamping usage.
+// Naming the signer matters when a token carries more than one certificate, such as an authority mid
+// key rollover: picking the first timestamping certificate would report, and check the signature
+// against, a certificate the token never claimed signed it. When the signer id is a form this verifier
+// does not resolve, it falls back to the first timestamping certificate, the prior behavior.
+func signerCertificate(sd signedData, sid asn1.RawValue) (*x509.Certificate, error) {
 	if len(sd.Certificates.Bytes) == 0 {
 		return nil, fmt.Errorf("%w: token carries no certificate to check its signature against",
 			ErrParse)
@@ -232,14 +262,36 @@ func signerCertificate(sd signedData) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: certificates: %w", ErrParse, err)
 	}
-	for _, c := range certs {
-		for _, eku := range c.ExtKeyUsage {
-			if eku == x509.ExtKeyUsageTimeStamping {
+	var named issuerAndSerial
+	if _, e := asn1.Unmarshal(sid.FullBytes, &named); e == nil && named.SerialNumber != nil {
+		for _, c := range certs {
+			if c.SerialNumber.Cmp(named.SerialNumber) == 0 &&
+				bytes.Equal(c.RawIssuer, named.Issuer.FullBytes) {
+				if !hasTimestamping(c) {
+					return nil, fmt.Errorf("%w: the certificate the token names is not marked for "+
+						"timestamping", ErrParse)
+				}
 				return c, nil
 			}
 		}
 	}
+	for _, c := range certs {
+		if hasTimestamping(c) {
+			return c, nil
+		}
+	}
 	return nil, fmt.Errorf("%w: no certificate in the token is marked for timestamping", ErrParse)
+}
+
+// hasTimestamping reports whether a certificate carries the timestamping extended key usage, which
+// RFC 3161 requires of the authority's signing certificate.
+func hasTimestamping(c *x509.Certificate) bool {
+	for _, eku := range c.ExtKeyUsage {
+		if eku == x509.ExtKeyUsageTimeStamping {
+			return true
+		}
+	}
+	return false
 }
 
 // verifySignature checks the signer's signature over the signed attributes, and that those
@@ -273,7 +325,7 @@ func verifySignature(si signerInfo, payload []byte, cert *x509.Certificate) erro
 		if _, err := asn1.Unmarshal(a.Values.Bytes, &digest); err != nil {
 			return fmt.Errorf("%w: message digest attribute: %w", ErrParse, err)
 		}
-		if !equalBytes(digest, payloadDigest) {
+		if !bytes.Equal(digest, payloadDigest) {
 			return fmt.Errorf("%w: the signed attributes commit to a different payload", ErrSignature)
 		}
 		bound = true
@@ -351,51 +403,4 @@ func signatureAlgorithm(oid asn1.ObjectIdentifier, h crypto.Hash) (x509.Signatur
 		return x509.PureEd25519, nil
 	}
 	return 0, fmt.Errorf("%w: unsupported signature algorithm %v", ErrParse, oid)
-}
-
-// equalBytes reports whether two byte slices match.
-func equalBytes(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// decodeHex decodes a lowercase hex string.
-func decodeHex(s string) ([]byte, error) {
-	if len(s)%2 != 0 {
-		return nil, fmt.Errorf("odd length")
-	}
-	out := make([]byte, len(s)/2)
-	for i := range out {
-		hi, err := hexNibble(s[i*2])
-		if err != nil {
-			return nil, err
-		}
-		lo, err := hexNibble(s[i*2+1])
-		if err != nil {
-			return nil, err
-		}
-		out[i] = hi<<4 | lo
-	}
-	return out, nil
-}
-
-// hexNibble decodes one hex character.
-func hexNibble(c byte) (byte, error) {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0', nil
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10, nil
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10, nil
-	default:
-		return 0, fmt.Errorf("invalid hex character %q", c)
-	}
 }

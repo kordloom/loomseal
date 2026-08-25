@@ -136,3 +136,40 @@ func TestExecuteUsage(t *testing.T) {
 		t.Errorf("version: code %d stdout %q", code, stdout)
 	}
 }
+
+// Test the holder flow end to end through the CLI: keygen, present a bundle bound to a verifier and
+// nonce, then verify the presentation. Matching pins pass; a wrong audience fails.
+func TestExecutePresentRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bundlePath := writeBundle(t)
+
+	code, keyOut, keyErr := run("keygen")
+	if code != CodeOK {
+		t.Fatalf("keygen code %d err %s", code, keyErr)
+	}
+	keyPath := filepath.Join(dir, "holder.key.json")
+	if err := os.WriteFile(keyPath, []byte(keyOut), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, presOut, presErr := run("present", bundlePath, "--holder-key", keyPath,
+		"--audience", "acme", "--nonce", "n1", "--at", "2026-07-27T12:00:00Z")
+	if code != CodeOK {
+		t.Fatalf("present code %d err %s", code, presErr)
+	}
+	presPath := filepath.Join(dir, "pres.json")
+	if err := os.WriteFile(presPath, []byte(presOut), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, vOut, _ := run("verify", presPath, "--audience", "acme", "--nonce", "n1")
+	if code != CodeOK || !strings.Contains(vOut, "PRESENTATION VERIFIED") {
+		t.Fatalf("verify code %d out %q", code, vOut)
+	}
+
+	code, _, _ = run("verify", presPath, "--audience", "someone-else", "--nonce", "n1")
+	if code != CodeFailed {
+		t.Fatalf("wrong audience did not fail: code %d", code)
+	}
+}

@@ -217,7 +217,70 @@
         },
         "inclusion": {
           "$ref": "#/$defs/inclusion"
+        },
+        "disclosures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/disclosure"
+          }
+        },
+        "attestations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attestation"
+          }
         }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "key_id",
+        "public_key",
+        "alg",
+        "role",
+        "sig"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "public_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "alg": {
+          "const": "ed25519"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sig": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "disclosure": {
+      "type": "object",
+      "required": [
+        "salt",
+        "name",
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "salt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {}
       }
     },
     "evidence": {

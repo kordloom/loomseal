@@ -394,12 +394,17 @@ def verify(raw_bytes, evidence_dir=None):
               "anchors_to_declared_head": 0, "unknown_types": [],
               "span_present": False, "span_ok": False, "span_beats": 0,
               "span_counts_verified": 0, "span_counts_carried": 0,
-              "span_gaps": [], "span_longest_gap": "", "span_coverage": ""}
+              "span_gaps": [], "span_longest_gap": "", "span_coverage": "",
+              "disclosures_present": False, "fields_revealed": 0, "fields_redacted": 0,
+              "revealed_fields": [], "attestations_present": False, "attestations_verified": 0,
+              "attestors": []}
     try:
         b = parse_strict(raw_bytes)
         _schema_check(b)
         _check_signature(raw_bytes, b, report)
         _check_chain(b, report)
+        _check_disclosures(b, report)
+        _check_attestations(b, report)
         _check_anchors(b, report)
         _check_span(b, report)
         _check_evidence(b, evidence_dir, report)
@@ -432,7 +437,14 @@ def _key_id(pub_bytes):
 
 def _check_signature(raw_bytes, b, report):
     parsed = parse_strict(raw_bytes)
+    # Strip the members a producer signature does not cover: the signatures array and every claim's
+    # holder-controlled disclosures. The signature commits to the _sd digest set, not to the
+    # disclosures, so a holder withholds a field without breaking it.
     parsed["signatures"] = []
+    for claim in parsed.get("claims", []):
+        if isinstance(claim, dict):
+            claim.pop("disclosures", None)
+            claim.pop("attestations", None)
     canonical = canon(parsed)
     prod = b["producer"]
     try:
@@ -530,7 +542,8 @@ def _merkle_leaf_data(claim, install):
     digest. The digest covers the claim's content with the members describing its position, its
     proof, and how this bundle packages its evidence removed, so the same log entry disclosed in two
     bundles yields one leaf."""
-    content = {k: v for k, v in claim.items() if k not in ("chain", "inclusion")}
+    content = {k: v for k, v in claim.items()
+               if k not in ("chain", "inclusion", "disclosures", "attestations")}
     if isinstance(content.get("evidence"), list):
         # present and location are packaging details, dropped so the same entry disclosed in two
         # bundles that package their evidence differently still yields one leaf.
@@ -700,7 +713,9 @@ def _links_v1(b):
     if install != b["producer"].get("install_id"):
         raise VError("chain", f"{V1} params.install_id does not match producer.install_id")
     for i, c in enumerate(b["claims"]):
-        bare = {k: v for k, v in c.items() if k != "chain"}
+        # disclosures are holder-controlled and travel outside the committed claim, so they never
+        # enter the link. Redactable fields are committed through the payload's _sd digest set.
+        bare = {k: v for k, v in c.items() if k not in ("chain", "disclosures", "attestations")}
         claim_digest = "sha256:" + hashlib.sha256(canon(bare)).hexdigest()
         link_input = canon({"domain": V1, "install_id": install,
                              "seq": c["chain"]["seq"], "prev": c["chain"].get("prev", ""),
@@ -785,6 +800,107 @@ def _rfc3339_epoch(ts):
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
     except (ValueError, TypeError, AttributeError):
         return None
+
+
+def _is_hex64(s):
+    """Report whether s is exactly 64 lowercase hex characters, the shape of a sha256 digest."""
+    return len(s) == 64 and all(c in "0123456789abcdef" for c in s)
+
+
+def _check_disclosures(b, report):
+    """Verify LoomSwatch field-level selective disclosure. A claim commits redactable fields as an
+    _sd array of digests in its payload and reveals a subset through claim.disclosures, each a
+    [salt, name, value] triple. The _sd set is covered by the link or leaf while disclosures travel
+    outside both, so revealing or withholding a field never changes what the producer signed. A
+    disclosure must hash to a digest in the set, or it is a foreign or tampered value."""
+    chain = b.get("chain")
+    swatch = chain is not None and chain.get("profile") in (V1, MERKLE)
+    for i, c in enumerate(b["claims"]):
+        payload = c.get("payload")
+        sd = payload.get("_sd") if isinstance(payload, dict) else None
+        disc = c.get("disclosures")
+        if sd is None and not disc:
+            continue
+        report["disclosures_present"] = True
+        if not swatch:
+            raise VError("disclosure", f"claim {i} carries selective disclosure, which belongs to "
+                                       f"{V1} or {MERKLE}")
+        if sd is not None and not isinstance(sd, list):
+            raise VError("disclosure", f"claim {i} disclosure set _sd is not an array")
+        seen_sd = set()
+        for d in (sd or []):
+            if not isinstance(d, str) or not _is_hex64(d):
+                raise VError("disclosure", f"claim {i} disclosure set _sd holds a value that is not "
+                                           "a 64 hex digest")
+            if d in seen_sd:
+                raise VError("disclosure", f"claim {i} disclosure set _sd holds a duplicate digest")
+            seen_sd.add(d)
+        seen = set()
+        names = []
+        for j, d in enumerate(disc or []):
+            if not isinstance(d, dict):
+                raise VError("disclosure", f"claim {i} disclosure {j} is not an object")
+            salt, name, has_value = d.get("salt"), d.get("name"), "value" in d
+            if not isinstance(salt, str) or not salt or not isinstance(name, str) or not name \
+                    or not has_value:
+                raise VError("disclosure", f"claim {i} disclosure {j} is incomplete")
+            digest = hashlib.sha256(canon([salt, name, d["value"]])).hexdigest()
+            if digest not in seen_sd:
+                raise VError("disclosure", f"claim {i} disclosure of field {name!r} matches no "
+                                           "committed digest")
+            if digest in seen:
+                raise VError("disclosure", f"claim {i} disclosure repeats the same field digest")
+            seen.add(digest)
+            names.append(name)
+        report["fields_revealed"] += len(names)
+        report["fields_redacted"] += len(seen_sd) - len(names)
+        report["revealed_fields"].extend(sorted(names))
+
+
+def _check_attestations(b, report):
+    """Verify counter-signatures a party other than the producer added to a claim. Each attestation
+    signs the RFC 8785 canonical object of the claim's link and the signer's role, binding one claim
+    and what the signer says they are. Attestations are excluded from the link, the leaf, and the
+    producer signature, so a counterparty attests without the producer re-signing. See the Go
+    verifier for the rationale."""
+    for i, c in enumerate(b["claims"]):
+        atts = c.get("attestations")
+        if not atts:
+            continue
+        report["attestations_present"] = True
+        chain = c.get("chain")
+        if not chain or not chain.get("link"):
+            raise VError("attestation",
+                         f"claim {i} carries an attestation but has no chain link to vouch for")
+        for j, a in enumerate(atts):
+            if a.get("alg") != "ed25519":
+                raise VError("attestation",
+                             f"claim {i} attestation {j} alg {a.get('alg')!r}, want ed25519")
+            try:
+                pub = base64.b64decode(a.get("public_key", ""), validate=True)
+            except Exception:
+                raise VError("attestation", f"claim {i} attestation {j} public_key is not base64")
+            if len(pub) != 32:
+                raise VError("attestation",
+                             f"claim {i} attestation {j} public_key is not a 32 byte ed25519 key")
+            if _key_id(pub) != a.get("key_id"):
+                raise VError("attestation",
+                             f"claim {i} attestation {j} key_id does not match its public key")
+            role = a.get("role")
+            if not role:
+                raise VError("attestation", f"claim {i} attestation {j} role is empty")
+            try:
+                sig = base64.b64decode(a.get("sig", ""), validate=True)
+            except Exception:
+                raise VError("attestation", f"claim {i} attestation {j} sig is not base64")
+            preimage = canon({"link": chain["link"], "role": role})
+            try:
+                Ed25519PublicKey.from_public_bytes(pub).verify(sig, preimage)
+            except Exception:
+                raise VError("attestation", f"claim {i} attestation {j} by {a.get('key_id')} does "
+                                            "not verify over the claim link")
+            report["attestations_verified"] += 1
+            report["attestors"].append(f"{role} {a.get('key_id')}")
 
 
 def _check_anchors(b, report):
@@ -1011,6 +1127,16 @@ def failing_check_error(check, r):
             return "span case failed earlier than the span step"
         if not r["span_present"] or r["span_ok"] or not any("span" in p for p in r["problems"]):
             return f"span case did not fail on a span check: {r['problems']}"
+    elif check == "disclosure":
+        if not r["signature_ok"]:
+            return "disclosure case failed before the signature"
+        if not r["disclosures_present"] or not any("disclosure" in p for p in r["problems"]):
+            return f"disclosure case did not fail on a disclosure: {r['problems']}"
+    elif check == "attestation":
+        if not r["signature_ok"]:
+            return "attestation case failed before the signature"
+        if not r["attestations_present"] or not any("attestation" in p for p in r["problems"]):
+            return f"attestation case did not fail on an attestation: {r['problems']}"
     else:
         return f"manifest names an unknown failing_check {check!r}"
     return None
@@ -1039,9 +1165,108 @@ def run_vectors(dirpath):
     return 1 if bad else 0
 
 
+def _is_presentation(raw_bytes):
+    """Report whether raw is a holder presentation rather than a bundle."""
+    try:
+        d = json.loads(raw_bytes)
+    except Exception:
+        return False
+    return isinstance(d, dict) and d.get("loomseal_presentation")
+
+
+def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None):
+    """Verify a holder presentation: the embedded bundle, the holder signature over the presented
+    bundle bound to the audience and nonce, and the optional audience and nonce pins. Mirrors the Go
+    RunPresentation."""
+    report = {"ok": False, "presentation_ok": False, "problems": [], "bundle": None}
+    try:
+        p = parse_strict(raw_bytes)
+    except VError as e:
+        report["problems"].append(f"parse: {e.msg}")
+        return report
+    if not isinstance(p, dict) or p.get("loomseal_presentation") != "0.1":
+        report["problems"].append("parse: not a loomseal presentation 0.1")
+        return report
+    report["audience"], report["nonce"] = p.get("audience"), p.get("nonce")
+    report["created_at"] = p.get("created_at")
+    bundle_obj = p.get("bundle")
+    report["bundle"] = verify(canon(bundle_obj), evidence_dir)
+    try:
+        _check_presentation_sig(p, bundle_obj, report)
+    except VError as e:
+        report["problems"].append(f"{e.check}: {e.msg}")
+    if audience:
+        m = p.get("audience") == audience
+        report["audience_match"] = m
+        if not m:
+            report["problems"].append("presentation audience does not match the expected")
+    if nonce:
+        m = p.get("nonce") == nonce
+        report["nonce_match"] = m
+        if not m:
+            report["problems"].append("presentation nonce does not match the expected challenge")
+    report["ok"] = (not report["problems"] and report["presentation_ok"]
+                    and report["bundle"] is not None and report["bundle"]["ok"])
+    return report
+
+
+def _check_presentation_sig(p, bundle_obj, report):
+    """Verify the holder key self-description and the signature over the canonical binding of audience,
+    presented-bundle digest, time, and nonce."""
+    holder = p.get("holder") or {}
+    if holder.get("alg") != "ed25519":
+        raise VError("presentation", "holder alg is not ed25519")
+    try:
+        pub = base64.b64decode(holder.get("public_key", ""), validate=True)
+    except Exception:
+        raise VError("presentation", "holder public_key is not base64")
+    if len(pub) != 32:
+        raise VError("presentation", "holder public_key is not a 32 byte ed25519 key")
+    if _key_id(pub) != holder.get("key_id"):
+        raise VError("presentation", "holder key_id does not match the embedded public key")
+    if _rfc3339_epoch(p.get("created_at")) is None:
+        raise VError("presentation", "presentation created_at is not RFC 3339")
+    bundle_sha = hashlib.sha256(canon(bundle_obj)).hexdigest()
+    preimage = canon({"audience": p.get("audience", ""), "bundle_sha256": bundle_sha,
+                      "created_at": p.get("created_at", ""), "nonce": p.get("nonce", "")})
+    try:
+        sig = base64.b64decode(p.get("sig", ""), validate=True)
+    except Exception:
+        raise VError("presentation", "holder signature is not base64")
+    try:
+        Ed25519PublicKey.from_public_bytes(pub).verify(sig, preimage)
+    except Exception:
+        raise VError("presentation", "holder signature does not verify over the presented bundle")
+    report["presentation_ok"] = True
+    report["holder_key_id"] = _key_id(pub)
+
+
+def run_presentations(dirpath):
+    """Run every presentation vector in a manifest and report agreement with its expectations."""
+    man = json.load(open(os.path.join(dirpath, "presentations.json")))
+    bad = 0
+    for v in man["vectors"]:
+        raw = open(os.path.join(dirpath, v["file"]), "rb").read()
+        r = verify_presentation(raw, v.get("expect_audience") or None, v.get("expect_nonce") or None)
+        ok = r["ok"]
+        status = "OK " if ok == v["must_verify"] else "!! "
+        if status == "!! ":
+            bad += 1
+        print(f"{status}{v['name']:<28} ok={ok} expect={v['must_verify']}")
+    print(f"\n{'ALL MATCH' if bad == 0 else str(bad) + ' MISMATCH'}")
+    return 1 if bad else 0
+
+
 def main(argv):
     if len(argv) >= 3 and argv[1] == "--vectors":
         return run_vectors(argv[2])
+    if len(argv) >= 3 and argv[1] == "--presentations":
+        return run_presentations(argv[2])
+    if len(argv) >= 2 and _is_presentation(open(argv[1], "rb").read()):
+        raw = open(argv[1], "rb").read()
+        report = verify_presentation(raw, evidence_dir=argv[2] if len(argv) > 2 else None)
+        print(json.dumps(report, indent=2))
+        return 0 if report["ok"] else 1
     if len(argv) < 2:
         print("usage: loomverify.py <bundle.json> [evidence_dir] | --vectors <dir>")
         return 2

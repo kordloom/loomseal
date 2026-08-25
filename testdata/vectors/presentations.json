@@ -1,0 +1,51 @@
+{
+  "description": "LoomSeal v0.1 presentation conformance vectors. Each entry declares the audience and nonce the verifier requires and whether the presentation must verify under them. A verifier is conformant when it agrees with every entry.",
+  "vectors": [
+    {
+      "name": "present-bad-holder-sig",
+      "file": "present-bad-holder-sig.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose holder signature was altered does not verify."
+    },
+    {
+      "name": "present-no-pins",
+      "file": "present-valid.loomseal-presentation.json",
+      "must_verify": true,
+      "why": "The same presentation with no pins verifies: the pins are the caller's to require."
+    },
+    {
+      "name": "present-stale-nonce",
+      "file": "present-valid.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "old-nonce",
+      "must_verify": false,
+      "why": "The same presentation fails against a stale challenge, which is what stops a replay."
+    },
+    {
+      "name": "present-tampered-bundle",
+      "file": "present-tampered-bundle.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose embedded bundle was changed fails: the bundle no longer verifies and its digest no longer matches the holder signature."
+    },
+    {
+      "name": "present-valid",
+      "file": "present-valid.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": true,
+      "why": "A presentation bound to the verifier and nonce it declares verifies under those pins."
+    },
+    {
+      "name": "present-wrong-audience",
+      "file": "present-valid.loomseal-presentation.json",
+      "expect_audience": "someone-else",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "The same presentation fails when the verifier requires a different audience, which is what stops it being replayed to another verifier."
+    }
+  ]
+}

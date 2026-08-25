@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/internal/chain"
+	"github.com/kordloom/loomseal/jcs"
 	"github.com/kordloom/loomseal/seal"
 )
 
@@ -392,5 +394,179 @@ func TestMeasureUnanchored(t *testing.T) {
 				t.Errorf("mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// swatchSalt returns a deterministic salt for a redactable field in the tests.
+func swatchSalt(name string) string { return "swatch-test-salt-" + name }
+
+// swatchDigest computes a LoomSwatch field commitment the way a producer and the verifier both do.
+func swatchDigest(t *testing.T, name string, value any) string {
+	t.Helper()
+	b, err := jcs.Serialize([]any{swatchSalt(name), name, value})
+	if err != nil {
+		t.Fatalf("serialize disclosure: %v", err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// swatchBundle builds and signs a one-claim loomseal-chain-v1 bundle committing title and salary as
+// an _sd set, disclosing the named fields.
+func swatchBundle(t *testing.T, reveal ...string) []byte {
+	t.Helper()
+	priv := testKey()
+	pub, _ := priv.Public().(ed25519.PublicKey)
+	fields := []struct {
+		name  string
+		value any
+	}{{"title", "Engineer"}, {"salary", 185000}}
+	revealed := map[string]bool{}
+	for _, r := range reveal {
+		revealed[r] = true
+	}
+	var digs []string
+	var disc []any
+	for _, f := range fields {
+		digs = append(digs, swatchDigest(t, f.name, f.value))
+		if revealed[f.name] {
+			disc = append(disc, map[string]any{"salt": swatchSalt(f.name), "name": f.name, "value": f.value})
+		}
+	}
+	sort.Strings(digs)
+	sd := make([]any, len(digs))
+	for i, d := range digs {
+		sd[i] = d
+	}
+	// The link is computed over the claim without its chain and disclosures, matching the verifier.
+	content := map[string]any{
+		"type": "example.person/1", "at": at,
+		"payload": map[string]any{"record": "employment", "_sd": sd},
+	}
+	link, err := chain.LinkV1(nil, "in_1", 1, "", content)
+	if err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	content["chain"] = map[string]any{"seq": 1, "prev": "", "link": link}
+	if len(disc) > 0 {
+		content["disclosures"] = disc
+	}
+	m := map[string]any{
+		"loomseal": "0.1", "bundle_id": "lsb_swatch", "created_at": at,
+		"producer": map[string]any{
+			"product": "test", "product_version": "1", "install_id": "in_1",
+			"public_key": base64Std(pub), "key_id": seal.KeyID(pub),
+		},
+		"subject": map[string]any{"type": "url", "id": "https://example.com"},
+		"chain": map[string]any{
+			"profile": "loomseal-chain-v1", "keyed": false,
+			"params": map[string]any{"install_id": "in_1"},
+			"head":   map[string]any{"seq": 1, "link": link},
+		},
+		"claims": []any{content},
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	signed, err := seal.SignBundle(raw, priv)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return signed
+}
+
+// Test that a holder can withhold a disclosed field after signing without breaking the bundle, which
+// is the whole point of selective disclosure: the signature covers the committed _sd set, never the
+// disclosures.
+func TestRunSwatchWithholdAfterSigning(t *testing.T) {
+	t.Parallel()
+
+	// Test 0: Both fields disclosed.
+	full := swatchBundle(t, "title", "salary")
+	got := Run(full, Options{})
+	if !got.OK || got.FieldsRevealed != 2 || got.FieldsRedacted != 0 {
+		t.Fatalf("full disclosure: ok %t revealed %d redacted %d problems %v", got.OK,
+			got.FieldsRevealed, got.FieldsRedacted, got.Problems)
+	}
+
+	// Test 1: The holder withholds salary after signing, without re-signing. It must still verify.
+	var doc map[string]any
+	if err := json.Unmarshal(full, &doc); err != nil {
+		t.Fatal(err)
+	}
+	claim := doc["claims"].([]any)[0].(map[string]any)
+	var kept []any
+	for _, d := range claim["disclosures"].([]any) {
+		if d.(map[string]any)["name"] != "salary" {
+			kept = append(kept, d)
+		}
+	}
+	claim["disclosures"] = kept
+	withheld, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = Run(withheld, Options{})
+	if !got.OK || !got.SignatureOK || got.FieldsRevealed != 1 || got.FieldsRedacted != 1 {
+		t.Fatalf("withheld: ok %t signature %t revealed %d redacted %d problems %v", got.OK,
+			got.SignatureOK, got.FieldsRevealed, got.FieldsRedacted, got.Problems)
+	}
+
+	// Test 2: A disclosed value edited after signing fails the disclosure check while the signature
+	// and chain still verify.
+	forged := []byte(strings.Replace(string(full), "185000", "1", 1))
+	got = Run(forged, Options{})
+	if got.OK || !got.SignatureOK || !got.ChainOK {
+		t.Fatalf("forged: ok %t signature %t chain %t", got.OK, got.SignatureOK, got.ChainOK)
+	}
+}
+
+// Test that a counterparty can attach a counter-signature after the producer signed, without
+// re-signing, and that the attestation binds the role: changing it after the fact fails.
+func TestRunAttestationAfterSigning(t *testing.T) {
+	t.Parallel()
+	signed := swatchBundle(t) // a signed one-claim loomseal-chain-v1 bundle with a link
+
+	var doc map[string]any
+	if err := json.Unmarshal(signed, &doc); err != nil {
+		t.Fatal(err)
+	}
+	claim := doc["claims"].([]any)[0].(map[string]any)
+	link := claim["chain"].(map[string]any)["link"].(string)
+
+	cpriv := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, 32))
+	cpub, _ := cpriv.Public().(ed25519.PublicKey)
+	preimage, err := jcs.Serialize(map[string]any{"link": link, "role": "counterparty"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := ed25519.Sign(cpriv, preimage)
+	claim["attestations"] = []any{map[string]any{
+		"key_id": seal.KeyID(cpub), "public_key": base64Std(cpub), "alg": "ed25519",
+		"role": "counterparty", "sig": base64Std(sig),
+	}}
+
+	// Test 0: producer signature untouched, counterparty attestation verifies.
+	withAtt, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Run(withAtt, Options{})
+	if !got.OK || !got.SignatureOK || got.AttestationsVerified != 1 {
+		t.Fatalf("attested: ok %t signature %t verified %d problems %v", got.OK, got.SignatureOK,
+			got.AttestationsVerified, got.Problems)
+	}
+
+	// Test 1: the role is changed after signing; the attestation no longer verifies, the producer
+	// signature still does.
+	claim["attestations"].([]any)[0].(map[string]any)["role"] = "auditor"
+	forged, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = Run(forged, Options{})
+	if got.OK || !got.SignatureOK {
+		t.Fatalf("forged attestation: ok %t signature %t", got.OK, got.SignatureOK)
 	}
 }

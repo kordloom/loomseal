@@ -23,6 +23,27 @@
       "why": "An anchor matching only a head beyond the claims is reported but not counted as anchored."
     },
     {
+      "name": "attestation-keyid-mismatch",
+      "file": "attestation-keyid-mismatch.loomseal.json",
+      "must_verify": false,
+      "failing_check": "attestation",
+      "why": "A counterparty attestation whose key_id is not the digest of its public key is refused, so it cannot misname its signer."
+    },
+    {
+      "name": "attestation-role-swapped",
+      "file": "attestation-role-swapped.loomseal.json",
+      "must_verify": false,
+      "failing_check": "attestation",
+      "why": "A counterparty attestation whose role was changed after signing no longer verifies, because the counter-signature binds the role as well as the link."
+    },
+    {
+      "name": "attested-claim",
+      "file": "attested-claim.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A loomseal-chain-v1 claim carrying a counterparty attestation over its link verifies; the counter-signature is checked against the signer's own key and reported as vouched."
+    },
+    {
       "name": "chain-broken-prev",
       "file": "chain-broken-prev.loomseal.json",
       "must_verify": false,
@@ -266,6 +287,48 @@
       "must_verify": true,
       "level": "signed, chained (full), anchored by reference, spanned",
       "why": "Two beats whose counts recompute from the sequence numbers earn the spanned level."
+    },
+    {
+      "name": "swatch-attested",
+      "file": "swatch-attested.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A claim that is both selectively disclosable and counter-signed verifies, since disclosures and attestations are independent members outside the link."
+    },
+    {
+      "name": "swatch-foreign-disclosure",
+      "file": "swatch-foreign-disclosure.loomseal.json",
+      "must_verify": false,
+      "failing_check": "disclosure",
+      "why": "A disclosure for a field absent from the committed _sd set matches no digest and fails, so a holder cannot invent a field the producer never committed."
+    },
+    {
+      "name": "swatch-forged-value",
+      "file": "swatch-forged-value.loomseal.json",
+      "must_verify": false,
+      "failing_check": "disclosure",
+      "why": "A disclosed field whose value was changed after signing no longer hashes to its committed digest, so selective disclosure fails while the signature and chain still verify."
+    },
+    {
+      "name": "swatch-fully-redacted",
+      "file": "swatch-fully-redacted.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A claim that discloses none of its redactable fields still verifies; the _sd set is committed by the link and nothing is revealed."
+    },
+    {
+      "name": "swatch-selective",
+      "file": "swatch-selective.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A loomseal-chain-v1 claim commits three redactable fields as an _sd set and discloses two; each disclosure hashes to a committed digest and the withheld field stays sealed."
+    },
+    {
+      "name": "swatch-wrong-profile",
+      "file": "swatch-wrong-profile.loomseal.json",
+      "must_verify": false,
+      "failing_check": "disclosure",
+      "why": "Selective disclosure on switchtender-audit-v1 is refused, because that profile's fixed-field link does not commit the _sd set."
     },
     {
       "name": "switchtender-audit",

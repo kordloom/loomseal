@@ -522,6 +522,70 @@ held. A bundle in this profile whose inclusion proofs all verify has a confirmed
 linear window, whose head beyond the newest claim cannot be recomputed, a tree's root is confirmed by
 any single inclusion proof that folds to it.
 
+## Selective disclosure: LoomSwatch
+
+A record a subject carries between parties often needs to reveal some fields and withhold others while
+staying verifiable as a whole. LoomSwatch commits a claim's redactable fields as digests and lets the
+holder reveal any subset, so a stranger checks the revealed fields and the sealed whole without the
+producer or the platform in the loop. It applies to `loomseal-chain-v1` and `loomseal-merkle-v1`, the
+profiles whose link or leaf commits the whole claim; `switchtender-audit-v1`, whose link hashes a
+fixed field list, does not carry it, and a claim disclosing under that profile or under no chain is
+refused.
+
+**The `_sd` set.** A claim's payload carries an `_sd` member, an array of digests, one per redactable
+field. Each digest is `sha256` in lowercase hex over the RFC 8785 canonical array `[salt, name, value]`:
+a per-field salt of at least 128 bits of entropy, the field name, and the field value. The digests are
+sorted and unique. Because `_sd` lives in the payload, it is committed by the link and the leaf exactly
+like any other payload content, so it is fixed at signing time and cannot be added to or altered after.
+
+**Disclosures.** A claim may carry a `disclosures` member, an array of `[salt, name, value]` triples,
+one for each field the holder chooses to reveal. To reveal a field the holder includes its disclosure;
+the verifier recomputes the digest and requires it to be present in `_sd`, then reads the value. A
+withheld field appears only as its digest in `_sd`, with the salt and value absent, so it cannot be
+brute-forced. A disclosure whose digest is not in `_sd` is a foreign or tampered value and fails the
+bundle.
+
+**Disclosures are not signed.** The `disclosures` member is removed, along with the signatures array,
+before the canonical form a producer signature covers is computed, and it is likewise excluded from
+the link and the leaf. Only the `_sd` set is committed. This is what makes disclosure holder
+controlled: a holder attaches or withholds a disclosure, or hands one verifier fewer fields than
+another, without touching the signature, the link, or the leaf. A producer emits a fully disclosed
+bundle; a holder redacts by dropping disclosures; both verify.
+
+**Honest limits.** Withholding the salt is what protects a redacted field, so a salt is never reused
+across fields or records. The count of redactable fields is visible from the length of `_sd`. The
+value of a revealed field is proved to be the one committed; it is not proved to be true, which is the
+job of a counterparty signature, not of disclosure. Selective disclosure hides field values, not the
+fact that a holder presented a record, and correlation across presentations remains the holder's
+concern.
+
+## Counterparty attestation
+
+A complete, unaltered record of claims a producer made about itself is still only the producer's word.
+Counterparty attestation lets a party other than the producer counter-sign a claim, so a self-asserted
+record becomes one a second party vouches for. This is the difference between "I logged that this
+happened" and "the other side agrees it happened," and it is what raises the cost of a fabricated but
+internally consistent history.
+
+A claim may carry an `attestations` array. Each attestation is `key_id`, `public_key` (raw ed25519,
+base64), `alg` (`ed25519`), `role` (what the signer is to the claim, such as `counterparty` or
+`auditor`), and `sig`. The signature is over the RFC 8785 canonical object `{ "link": <the claim's
+chain.link>, "role": <role> }`, so it binds one specific claim and the role the signer claims. A
+verifier confirms `key_id` is the digest of `public_key`, then checks the signature; it reports each
+verified attestation as its role and key fingerprint and leaves whether that signer is worth trusting
+to the relying party, exactly as it does for the producer key and for anchor authorities.
+
+Attestations are added after the producer signs and are removed, along with disclosures and the
+signatures array, before the canonical form the producer signature covers is computed. They are
+likewise excluded from the link and the leaf. A counterparty therefore attests a claim without the
+producer re-signing anything, and without touching the link a later attestation or an inclusion proof
+depends on. Because the signature binds the link, an attestation cannot be moved to a different claim,
+and because it binds the role, the role cannot be changed after the fact.
+
+An attestation vouches only for the claim's existence and integrity as the signer saw it. It does not
+make the claim true, and the format takes no position on which roles or signers a relying party should
+accept. As with anchors, a verifier reports what it checked and lets the reader decide.
+
 ## Anchors
 
 An anchor fixes a chain link in time, in a place the producer cannot rewrite alone. An anchor
@@ -794,10 +858,37 @@ between anchors by an attacker holding both the database and the chain key (cade
 window). State these limits plainly everywhere the format is described. The credibility of the
 whole house rests on never claiming more than the verifier checks.
 
+## Presentations
+
+A bundle is evidence anyone can check. A presentation is how the subject of that evidence carries it
+to a particular verifier and shows only what they choose, bound so it cannot be replayed elsewhere. A
+presentation is a separate document that wraps one bundle.
+
+A presentation has `loomseal_presentation` (version `0.1`), `created_at` (RFC 3339 UTC), `audience`
+(who it is being shown to), `nonce` (a challenge the verifier issued), a `holder` block (`key_id`,
+`public_key`, `alg`), the `bundle` it presents, and a `sig`. The holder signature is over the RFC 8785
+canonical object `{ "audience", "bundle_sha256", "created_at", "nonce" }`, where `bundle_sha256` is the
+sha256 of the presented bundle's canonical form. It binds four things at once: the exact bundle shown,
+the verifier it is shown to, the challenge that verifier issued, and the time. A presentation therefore
+cannot be replayed to a different verifier, answered with a stale challenge, or altered without
+breaking the holder signature.
+
+The holder key is a key the subject controls. Binding that key to a real-world identity is a
+trust-establishment concern the format leaves to the relying party, exactly as it does for a producer
+key or an anchor authority. Before presenting, a holder reduces each claim's `disclosures` to the
+subset it wants to reveal; because disclosures sit outside the producer signature, the link, and the
+leaf, the reduced bundle still verifies, and the presentation commits to exactly the reduced form.
+
+A verifier checks the embedded bundle on its own terms, then the holder signature over the presented
+bundle, and finally that the `audience` and `nonce` match what it expected. It reports the holder
+fingerprint and both matches, and leaves whether the holder is who they claim to the relying party.
+
 ## Media type and file names
 
 Media type `application/vnd.kordloom.loomseal+json`. File name `<subject>-<date>.loomseal.json`. A
-bundle with sidecar evidence travels as a directory or archive; the bundle stays one file.
+bundle with sidecar evidence travels as a directory or archive; the bundle stays one file. A
+presentation uses `application/vnd.kordloom.loomseal-presentation+json` and
+`<subject>-<date>.loomseal-presentation.json`.
 
 ## Compatibility
 

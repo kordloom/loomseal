@@ -16,11 +16,36 @@ import (
 	"github.com/kordloom/loomseal/internal/verify"
 )
 
-// main registers the verify entry point and blocks, because a WebAssembly module that returns
+// main registers the verify entry points and blocks, because a WebAssembly module that returns
 // from main takes its exported functions with it.
 func main() {
 	js.Global().Set("loomsealVerify", js.FuncOf(verifyBundle))
+	js.Global().Set("loomsealVerifyPresentation", js.FuncOf(verifyPresentation))
 	select {}
+}
+
+// verifyPresentation verifies one holder presentation and returns the report as a JSON string. The
+// first argument is a Uint8Array of the file; the optional second and third are the audience and
+// nonce the verifier requires.
+func verifyPresentation(_ js.Value, args []js.Value) any {
+	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
+		return errorReport("no presentation supplied")
+	}
+	raw := make([]byte, args[0].Get("length").Int())
+	js.CopyBytesToGo(raw, args[0])
+
+	var opts verify.PresentationOptions
+	if len(args) > 1 && args[1].Type() == js.TypeString {
+		opts.Audience = args[1].String()
+	}
+	if len(args) > 2 && args[2].Type() == js.TypeString {
+		opts.Nonce = args[2].String()
+	}
+	out, err := json.Marshal(verify.RunPresentation(raw, opts))
+	if err != nil {
+		return errorReport("report could not be encoded: " + err.Error())
+	}
+	return string(out)
 }
 
 // verifyBundle verifies one bundle and returns the report as a JSON string.

@@ -72,11 +72,54 @@ type vector struct {
 	Why string `json:"why"`
 }
 
-// state carries the signing key and the accumulating manifest.
+// presentationManifest is the conformance document for holder presentations.
+type presentationManifest struct {
+	// Description says what the file is.
+	Description string `json:"description"`
+	// Vectors are the individual presentation cases.
+	Vectors []presentationVector `json:"vectors"`
+}
+
+// presentationVector is one presentation conformance case. Audience and nonce are the caller's
+// expectations, so the same file can appear more than once under different pins.
+type presentationVector struct {
+	// Name identifies the case.
+	Name string `json:"name"`
+	// File is the presentation file name within this directory.
+	File string `json:"file"`
+	// ExpectAudience is the audience the verifier is told to require, empty to skip the pin.
+	ExpectAudience string `json:"expect_audience,omitempty"`
+	// ExpectNonce is the challenge the verifier is told to require, empty to skip the pin.
+	ExpectNonce string `json:"expect_nonce,omitempty"`
+	// MustVerify is whether a conformant verifier must report the presentation verified.
+	MustVerify bool `json:"must_verify"`
+	// Why explains the case in one sentence.
+	Why string `json:"why"`
+}
+
+// state carries the signing key and the accumulating manifests.
 type state struct {
-	priv ed25519.PrivateKey
-	pub  ed25519.PublicKey
-	man  manifest
+	priv    ed25519.PrivateKey
+	pub     ed25519.PublicKey
+	man     manifest
+	presMan presentationManifest
+}
+
+// holderKey returns the deterministic ed25519 key that signs presentation vectors, distinct from the
+// producer and counterparty keys.
+func holderKey() (ed25519.PrivateKey, ed25519.PublicKey) {
+	priv := ed25519.NewKeyFromSeed(bytesRepeat(11))
+	pub, _ := priv.Public().(ed25519.PublicKey)
+	return priv, pub
+}
+
+// bytesRepeat returns a 32-byte seed of one repeated value.
+func bytesRepeat(b byte) []byte {
+	seed := make([]byte, ed25519.SeedSize)
+	for i := range seed {
+		seed[i] = b
+	}
+	return seed
 }
 
 func main() {
@@ -95,12 +138,18 @@ func main() {
 	s.negatives()
 	s.merkleNegatives()
 	s.spans()
+	s.presentations()
 
 	if err := s.write(); err != nil {
 		fmt.Fprintln(os.Stderr, "generate:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("wrote %d vectors and manifest to %s\n", len(s.man.Vectors), dir)
+	if err := s.writePresentations(); err != nil {
+		fmt.Fprintln(os.Stderr, "generate:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("wrote %d vectors, %d presentations, and manifests to %s\n",
+		len(s.man.Vectors), len(s.presMan.Vectors), dir)
 }
 
 // positives emits every vector that must verify.
@@ -242,6 +291,37 @@ func (s *state) positives() {
 	s.add("valid-surrogate-pair", true, "signed, chained (full)", "",
 		"An astral character encodes as a surrogate pair and verifies.", s.sign(m))
 
+	// LoomSwatch selective disclosure: two of three redactable fields revealed, one withheld. The
+	// link commits the _sd set, so the withheld field stays committed and the record verifies.
+	s.add("swatch-selective", true, "signed, chained (full)", "",
+		"A loomseal-chain-v1 claim commits three redactable fields as an _sd set and discloses two; "+
+			"each disclosure hashes to a committed digest and the withheld field stays sealed.",
+		s.sign(s.swatchBundle("title", "start_date")))
+
+	// LoomSwatch with every field withheld still verifies: the committed _sd set stands alone.
+	s.add("swatch-fully-redacted", true, "signed, chained (full)", "",
+		"A claim that discloses none of its redactable fields still verifies; the _sd set is "+
+			"committed by the link and nothing is revealed.",
+		s.sign(s.swatchBundle()))
+
+	// A claim counter-signed by a second party. The attestation signs the claim's link and role, and
+	// verifies against the counterparty key, turning a self-asserted claim into a two-party one.
+	s.add("attested-claim", true, "signed, chained (full)", "",
+		"A loomseal-chain-v1 claim carrying a counterparty attestation over its link verifies; the "+
+			"counter-signature is checked against the signer's own key and reported as vouched.",
+		s.sign(s.attestedBundle()))
+
+	// Selective disclosure and counterparty attestation compose on one claim: each is an independent
+	// member outside the link, so a redactable, counter-signed claim verifies.
+	m = s.swatchBundle("title")
+	sc := m["claims"].([]any)[0].(map[string]any)
+	scPriv, scPub := counterpartyKey()
+	sc["attestations"] = []any{attestation(scPriv, scPub,
+		sc["chain"].(map[string]any)["link"].(string), "counterparty")}
+	s.add("swatch-attested", true, "signed, chained (full)", "",
+		"A claim that is both selectively disclosable and counter-signed verifies, since disclosures "+
+			"and attestations are independent members outside the link.", s.sign(m))
+
 	// Evidence referenced but not supplied is reported, not verified, and does not fail.
 	m = s.v1(1, false)
 	claim = m["claims"].([]any)[0].(map[string]any)
@@ -377,6 +457,50 @@ func (s *state) negatives() {
 		"A linear window opening at seq 5 with an empty prev is refused: a slice of a longer chain "+
 			"must link to the entry before it, or it is claiming to be unrooted at an arbitrary point.",
 		s.sign(m))
+
+	// A disclosed value edited after signing. Disclosures sit outside the link and the signature, so
+	// the chain still verifies and the signature still checks; only the disclosure hash catches it.
+	forged := s.sign(s.swatchBundle("title", "salary"))
+	forged = []byte(strings.Replace(string(forged), `"value":185000`, `"value":1`, 1))
+	s.add("swatch-forged-value", false, "", "disclosure",
+		"A disclosed field whose value was changed after signing no longer hashes to its committed "+
+			"digest, so selective disclosure fails while the signature and chain still verify.", forged)
+
+	// A disclosure for a field the producer never committed. It matches no digest in the _sd set.
+	m = s.swatchBundle("title")
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["disclosures"] = append(claim["disclosures"].([]any), map[string]any{
+		"salt": "loomseal-vector-salt-ghost", "name": "clearance", "value": "top-secret",
+	})
+	s.add("swatch-foreign-disclosure", false, "", "disclosure",
+		"A disclosure for a field absent from the committed _sd set matches no digest and fails, so a "+
+			"holder cannot invent a field the producer never committed.", s.sign(m))
+
+	// An _sd set on a switchtender-audit-v1 chain, whose fixed-field link does not commit it. Refused
+	// rather than checked into a false sense of binding.
+	m = s.switchTender()
+	claim = m["claims"].([]any)[0].(map[string]any)
+	claim["payload"].(map[string]any)["_sd"] = []any{swatchDigest("loomseal-vector-salt-x", "x", "y")}
+	s.add("swatch-wrong-profile", false, "", "disclosure",
+		"Selective disclosure on switchtender-audit-v1 is refused, because that profile's fixed-field "+
+			"link does not commit the _sd set.", s.sign(m))
+
+	// An attestation whose role was changed after it was signed. The signature covers the link and
+	// role, so a changed role no longer verifies, while the producer signature is untouched.
+	m = s.attestedBundle()
+	m["claims"].([]any)[0].(map[string]any)["attestations"].([]any)[0].(map[string]any)["role"] = "auditor"
+	s.add("attestation-role-swapped", false, "", "attestation",
+		"A counterparty attestation whose role was changed after signing no longer verifies, because "+
+			"the counter-signature binds the role as well as the link.", s.sign(m))
+
+	// An attestation whose key_id does not match its own public key. It cannot be trusted to name its
+	// signer and is refused.
+	m = s.attestedBundle()
+	m["claims"].([]any)[0].(map[string]any)["attestations"].([]any)[0].(map[string]any)["key_id"] =
+		"sha256:" + strings.Repeat("00", 32)
+	s.add("attestation-keyid-mismatch", false, "", "attestation",
+		"A counterparty attestation whose key_id is not the digest of its public key is refused, so "+
+			"it cannot misname its signer.", s.sign(m))
 
 	// Wrong format version.
 	m = s.v1(1, false)
@@ -800,7 +924,7 @@ func (s *state) switchTenderNanos() map[string]any {
 func stripChain(claim map[string]any) map[string]any {
 	out := make(map[string]any, len(claim))
 	for k, v := range claim {
-		if k == "chain" {
+		if k == "chain" || k == "disclosures" || k == "attestations" {
 			continue
 		}
 		out[k] = v
@@ -871,6 +995,101 @@ func parseUnixNano(sVal string) int64 {
 	return tv.UnixNano()
 }
 
+// swatchDigest computes a LoomSwatch field commitment: SHA-256 over the JCS canonical array of the
+// salt, the field name, and the value, hex encoded. It matches what the verifier recomputes.
+func swatchDigest(salt, name string, value any) string {
+	b, err := jcs.Serialize([]any{salt, name, value})
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// swatchField is one redactable field for a LoomSwatch vector.
+type swatchField struct {
+	name  string
+	value any
+}
+
+// swatchBundle builds a loomseal-chain-v1 bundle whose single claim commits three redactable fields
+// as a sorted _sd digest set in its payload and discloses the named subset. The link commits the _sd
+// set, not the disclosures, so the same claim verifies whichever fields are revealed.
+func (s *state) swatchBundle(reveal ...string) map[string]any {
+	fields := []swatchField{
+		{"title", "Senior Platform Engineer"},
+		{"salary", int64(185000)},
+		{"start_date", "2021-03-01"},
+	}
+	revealSet := map[string]bool{}
+	for _, r := range reveal {
+		revealSet[r] = true
+	}
+	var digests []string
+	var disc []any
+	for _, f := range fields {
+		salt := "loomseal-vector-salt-" + f.name
+		digests = append(digests, swatchDigest(salt, f.name, f.value))
+		if revealSet[f.name] {
+			disc = append(disc, map[string]any{"salt": salt, "name": f.name, "value": f.value})
+		}
+	}
+	sort.Strings(digests)
+	sd := make([]any, len(digests))
+	for i, d := range digests {
+		sd[i] = d
+	}
+	m := s.base()
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["type"] = "example.person/1"
+	claim["payload"] = map[string]any{"record": "employment", "_sd": sd}
+	if len(disc) > 0 {
+		claim["disclosures"] = disc
+	}
+	s.relinkV1(m, false)
+	return m
+}
+
+// counterpartyKey returns a second deterministic ed25519 key, distinct from the producer, used to
+// counter-sign claims in attestation vectors.
+func counterpartyKey() (ed25519.PrivateKey, ed25519.PublicKey) {
+	seed := make([]byte, ed25519.SeedSize)
+	for i := range seed {
+		seed[i] = byte(200 - i)
+	}
+	priv := ed25519.NewKeyFromSeed(seed)
+	pub, _ := priv.Public().(ed25519.PublicKey)
+	return priv, pub
+}
+
+// attestation builds a counter-signature over a claim's link and role, the way a counterparty and the
+// verifier both compute it.
+func attestation(priv ed25519.PrivateKey, pub ed25519.PublicKey, link, role string) map[string]any {
+	preimage, err := jcs.Serialize(map[string]any{"link": link, "role": role})
+	if err != nil {
+		panic(err)
+	}
+	sig := ed25519.Sign(priv, preimage)
+	return map[string]any{
+		"key_id":     seal.KeyID(pub),
+		"public_key": base64.StdEncoding.EncodeToString(pub),
+		"alg":        "ed25519",
+		"role":       role,
+		"sig":        base64.StdEncoding.EncodeToString(sig),
+	}
+}
+
+// attestedBundle builds a loomseal-chain-v1 bundle whose claim carries a valid counterparty
+// counter-signature over its link.
+func (s *state) attestedBundle() map[string]any {
+	m := s.v1(1, false)
+	claim := m["claims"].([]any)[0].(map[string]any)
+	link := claim["chain"].(map[string]any)["link"].(string)
+	cpriv, cpub := counterpartyKey()
+	claim["attestations"] = []any{attestation(cpriv, cpub, link, "counterparty")}
+	return m
+}
+
 // gitAnchor builds a git anchor record at the given coordinates.
 func gitAnchor(seq int64, link string) map[string]any {
 	return map[string]any{
@@ -917,12 +1136,91 @@ func (s *state) write() error {
 	return os.WriteFile(filepath.Join(dir, "manifest.json"), out, 0o600)
 }
 
+// presentations emits the holder presentation conformance vectors: a valid one checked under several
+// pins, plus tampering and a corrupted holder signature.
+func (s *state) presentations() {
+	s.presMan.Description = "LoomSeal v0.1 presentation conformance vectors. Each entry declares the " +
+		"audience and nonce the verifier requires and whether the presentation must verify under " +
+		"them. A verifier is conformant when it agrees with every entry."
+
+	inner := s.sign(s.v1(1, false))
+	hpriv, _ := holderKey()
+	valid, err := seal.Present(inner, hpriv, "acme-verifier", "chal-1", at)
+	if err != nil {
+		panic(err)
+	}
+	vf := s.writePresentationFile("present-valid", valid)
+	s.addPresentation("present-valid", vf, "acme-verifier", "chal-1", true,
+		"A presentation bound to the verifier and nonce it declares verifies under those pins.")
+	s.addPresentation("present-no-pins", vf, "", "", true,
+		"The same presentation with no pins verifies: the pins are the caller's to require.")
+	s.addPresentation("present-wrong-audience", vf, "someone-else", "chal-1", false,
+		"The same presentation fails when the verifier requires a different audience, which is what "+
+			"stops it being replayed to another verifier.")
+	s.addPresentation("present-stale-nonce", vf, "acme-verifier", "old-nonce", false,
+		"The same presentation fails against a stale challenge, which is what stops a replay.")
+
+	tampered := []byte(strings.Replace(string(valid), "/api/runs", "/api/evil", 1))
+	tf := s.writePresentationFile("present-tampered-bundle", tampered)
+	s.addPresentation("present-tampered-bundle", tf, "acme-verifier", "chal-1", false,
+		"A presentation whose embedded bundle was changed fails: the bundle no longer verifies and its "+
+			"digest no longer matches the holder signature.")
+
+	var pm map[string]any
+	if err := json.Unmarshal(valid, &pm); err != nil {
+		panic(err)
+	}
+	sig := pm["sig"].(string)
+	first := "A"
+	if strings.HasPrefix(sig, "A") {
+		first = "B"
+	}
+	pm["sig"] = first + sig[1:]
+	badSig, err := json.Marshal(pm)
+	if err != nil {
+		panic(err)
+	}
+	bf := s.writePresentationFile("present-bad-holder-sig", badSig)
+	s.addPresentation("present-bad-holder-sig", bf, "acme-verifier", "chal-1", false,
+		"A presentation whose holder signature was altered does not verify.")
+}
+
+// writePresentationFile writes one presentation document and returns its file name.
+func (s *state) writePresentationFile(name string, data []byte) string {
+	file := name + ".loomseal-presentation.json"
+	if err := os.WriteFile(filepath.Join(dir, file), data, 0o600); err != nil {
+		panic(err)
+	}
+	return file
+}
+
+// addPresentation records one presentation conformance case, referencing an already-written file.
+func (s *state) addPresentation(name, file, audience, nonce string, mustVerify bool, why string) {
+	s.presMan.Vectors = append(s.presMan.Vectors, presentationVector{
+		Name: name, File: file, ExpectAudience: audience, ExpectNonce: nonce,
+		MustVerify: mustVerify, Why: why,
+	})
+}
+
+// writePresentations emits the presentation manifest, vectors sorted by name for a stable diff.
+func (s *state) writePresentations() error {
+	sort.Slice(s.presMan.Vectors, func(i, j int) bool {
+		return s.presMan.Vectors[i].Name < s.presMan.Vectors[j].Name
+	})
+	out, err := json.MarshalIndent(s.presMan, "", "  ")
+	if err != nil {
+		return err
+	}
+	out = append(out, '\n')
+	return os.WriteFile(filepath.Join(dir, "presentations.json"), out, 0o600)
+}
+
 // merkleLeafData builds one claim's leaf bytes under loomseal-merkle-v1: the canonical object of the
 // domain, the install, and the claim digest over the claim's content.
 func merkleLeafData(claim map[string]any) []byte {
 	content := map[string]any{}
 	for k, v := range claim {
-		if k == "chain" || k == "inclusion" {
+		if k == "chain" || k == "inclusion" || k == "disclosures" || k == "attestations" {
 			continue
 		}
 		content[k] = v

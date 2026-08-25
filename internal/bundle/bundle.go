@@ -130,6 +130,43 @@ type Claim struct {
 	// Inclusion is the audit path proving this claim is a leaf of the tree the head names. Tree
 	// profile only, required on every claim there.
 	Inclusion *Inclusion `json:"inclusion,omitempty"`
+	// Disclosures reveals redactable fields committed in the payload's _sd digest set. Each one is
+	// checked against a digest and never enters the link or leaf, so a holder reveals or withholds
+	// fields without changing what the producer signed. Selective disclosure profiles only.
+	Disclosures []Disclosure `json:"disclosures,omitempty"`
+	// Attestations are counter-signatures by parties other than the producer, each vouching for this
+	// claim by signing its link. They are added after the producer signs and never enter the link,
+	// leaf, or producer signature, so a counterparty attests without the producer re-signing.
+	Attestations []Attestation `json:"attestations,omitempty"`
+}
+
+// Attestation is a counter-signature over one claim by a party other than the producer, turning a
+// self-asserted claim into one a second party vouches for. The signature is over the RFC 8785
+// canonical object of the claim's link and the signer's role, so it binds this specific claim and
+// what the signer says they are.
+type Attestation struct {
+	// KeyID is sha256: over the raw public key that made the counter-signature.
+	KeyID string `json:"key_id"`
+	// PublicKey is the raw 32-byte ed25519 public key, base64 standard encoding.
+	PublicKey string `json:"public_key"`
+	// Alg is the signature algorithm, always ed25519.
+	Alg string `json:"alg"`
+	// Role is what the signer is to the claim, such as counterparty or auditor.
+	Role string `json:"role"`
+	// Sig is the base64 ed25519 signature over the canonical {link, role} object.
+	Sig string `json:"sig"`
+}
+
+// Disclosure reveals one redactable field of a claim. Its digest, SHA-256 over the RFC 8785 canonical
+// array of salt, name, and value, is what the claim's committed _sd set holds. Withholding a
+// disclosure leaves only its digest in the payload, which is not brute-forceable without the salt.
+type Disclosure struct {
+	// Salt is a high-entropy value unique to this field, at least 16 bytes of entropy recommended.
+	Salt string `json:"salt"`
+	// Name is the field name being revealed.
+	Name string `json:"name"`
+	// Value is the revealed field value, any JSON value.
+	Value json.RawMessage `json:"value"`
 }
 
 // Evidence references one artifact by content digest.
@@ -439,8 +476,8 @@ func checkTime(what, s string) error {
 	return nil
 }
 
-// CanonicalUnsigned returns the RFC 8785 canonical form of raw with signatures set to the
-// empty array. Signatures are computed and verified over exactly these bytes.
+// CanonicalUnsigned returns the RFC 8785 canonical form of raw with the members a producer signature
+// does not cover removed. Signatures are computed and verified over exactly these bytes.
 func CanonicalUnsigned(raw []byte) ([]byte, error) {
 	v, err := jcs.Parse(raw)
 	if err != nil {
@@ -450,12 +487,46 @@ func CanonicalUnsigned(raw []byte) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle is not a JSON object", ErrParse)
 	}
-	m["signatures"] = []any{}
+	StripUnsigned(m)
 	return jcs.Serialize(m)
+}
+
+// StripUnsigned removes from a parsed bundle tree the members a producer signature does not cover:
+// the signatures array is emptied, and every claim's holder-controlled disclosures and third-party
+// attestations are dropped. The signature commits to the _sd digest set inside each payload, never to
+// the disclosures that reveal those fields nor to the counter-signatures a third party later adds, so
+// a holder withholds a disclosure and a counterparty attaches an attestation without any of it
+// affecting the producer signature, the link, or the leaf.
+func StripUnsigned(m map[string]any) {
+	m["signatures"] = []any{}
+	claims, ok := m["claims"].([]any)
+	if !ok {
+		return
+	}
+	for _, c := range claims {
+		if obj, ok := c.(map[string]any); ok {
+			delete(obj, "disclosures")
+			delete(obj, "attestations")
+		}
+	}
 }
 
 // KeyID returns the sha256: fingerprint of a raw ed25519 public key.
 func KeyID(pub ed25519.PublicKey) string {
 	sum := sha256.Sum256(pub)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// PresentationSigningInput returns the bytes a holder signs and a verifier checks for a presentation:
+// the RFC 8785 canonical object binding the audience, the sha256 of the presented bundle's canonical
+// form, the assembly time, and the verifier's nonce. Sharing one definition keeps the holder and the
+// verifier from drifting on what a presentation signature covers.
+func PresentationSigningInput(audience, nonce, createdAt string, bundleCanon []byte) ([]byte, error) {
+	sum := sha256.Sum256(bundleCanon)
+	return jcs.Serialize(map[string]any{
+		"audience":      audience,
+		"bundle_sha256": hex.EncodeToString(sum[:]),
+		"created_at":    createdAt,
+		"nonce":         nonce,
+	})
 }

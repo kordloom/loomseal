@@ -73,6 +73,7 @@ jobs:
         run: |
           pip install -r reference/requirements.txt
           python3 reference/loomverify.py --vectors testdata/vectors
+          python3 reference/loomverify.py --presentations testdata/vectors
 
   browser:
     runs-on: ubuntu-latest

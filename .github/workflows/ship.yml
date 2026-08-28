@@ -1,0 +1,84 @@
+name: ship
+
+# One button in the Actions tab: run the core gate, then rebuild the browser verifier and
+# deploy the site only if everything passes. deploy-site still handles the automatic
+# on-push path; this is the deliberate, gated version of the same publish.
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_site:
+        description: "Deploy loomseal.com after the gate passes."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+
+  deploy-site:
+    needs: [gate, lint]
+    if: ${{ inputs.deploy_site }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The browser verifier is the command line's code compiled for the web. Building it here
+      # keeps a multi-megabyte binary out of the repository and out of its history, and means
+      # the page can never ship a verifier older than the source beside it.
+      - name: Build the browser verifier
+        run: |
+          mkdir -p site/public/verify
+          GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o site/public/verify/loomseal.wasm ./wasm
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/public/verify/
+
+      # A verifier that disagrees with the conformance vectors must never reach the site, so the
+      # verdicts are checked against the manifest before anything is published.
+      - name: Browser verifier agrees with the vectors
+        run: node wasm/selftest.mjs site/public/verify
+
+      - name: Deploy site to Cloudflare
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "37ed841c5c85edd1e669f0a22b9fb282"
+          wranglerVersion: "4.112.0"
+          workingDirectory: site
+          command: deploy
+
+      - name: Verify the site is answering
+        run: curl -fsS -o /dev/null "https://loomseal.com/?_=$(date +%s)"

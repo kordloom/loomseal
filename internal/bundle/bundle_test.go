@@ -254,3 +254,64 @@ func TestKeyIDShape(t *testing.T) {
 		t.Error("two different keys share a fingerprint, so pinning one accepts the other")
 	}
 }
+
+// TestParseFieldGuards pins validation rules whose guards are disjunction chains, which a
+// suite that only ever feeds complete documents leaves free to weaken one clause at a time.
+func TestParseFieldGuards(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		Mutate func(m map[string]any)
+		Want   error
+	}{{ // Test 0: An empty producer product is rejected on its own.
+		Mutate: func(m map[string]any) { producerOf(m)["product"] = "" }, Want: ErrSchema,
+	}, { // Test 1: An empty producer product_version is rejected on its own.
+		Mutate: func(m map[string]any) { producerOf(m)["product_version"] = "" }, Want: ErrSchema,
+	}, { // Test 2: An empty producer install_id is rejected on its own.
+		Mutate: func(m map[string]any) { producerOf(m)["install_id"] = "" }, Want: ErrSchema,
+	}, { // Test 3: A verdict missing only its decision is rejected.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["verdict"] = map[string]any{"policy": "p1", "decision": ""}
+		}, Want: ErrSchema,
+	}, { // Test 4: A verdict missing only its policy is rejected.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["verdict"] = map[string]any{"policy": "", "decision": "allow"}
+		}, Want: ErrSchema,
+	}, { // Test 5: A consistency prefix of zero entries is refused, since every log
+		// extends the empty log and such a proof establishes nothing.
+		Mutate: func(m map[string]any) {
+			m["chain"] = merkleChain(0)
+		}, Want: ErrSchema,
+	}, { // Test 6: A consistency prefix of exactly one entry is legal.
+		Mutate: func(m map[string]any) {
+			m["chain"] = merkleChain(1)
+		},
+	}, { // Test 7: A complete verdict is accepted.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["verdict"] = map[string]any{"policy": "p1", "decision": "allow"}
+		},
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			m := base()
+			test.Mutate(m)
+			_, err := Parse(mustJSON(t, m))
+			if !errors.Is(err, test.Want) {
+				t.Errorf("error mismatch: got %v, want %v", err, test.Want)
+			}
+		})
+	}
+}
+
+// merkleChain builds a tree-profile chain declaration whose consistency proof claims a
+// prefix of fromSize entries, for exercising the consistency guards.
+func merkleChain(fromSize int64) map[string]any {
+	link := strings.Repeat("ab", 32)
+	return map[string]any{
+		"profile": ProfileMerkle, "keyed": false,
+		"head": map[string]any{"seq": 2, "link": link},
+		"consistency": map[string]any{
+			"from_size": fromSize, "from_root": link, "path": []any{link},
+		},
+	}
+}

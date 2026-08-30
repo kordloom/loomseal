@@ -316,3 +316,66 @@ func TestSwitchTenderRejectsPositionalLink(t *testing.T) {
 		t.Errorf("a positional-form link verified as %v, want ErrBroken", err)
 	}
 }
+
+// TestVerifyStructuralContinuity pins the continuity rules in structural mode, where links
+// are keyed HMACs a third party cannot recompute and checkContinuity is the only integrity
+// guard. A keyed bundle that breaks the genesis rule, opens an unrooted window, or skips a
+// sequence must be refused on continuity alone, with no link recomputation to fall back on.
+func TestVerifyStructuralContinuity(t *testing.T) {
+	t.Parallel()
+	h := func(b string) string { return strings.Repeat(b, 32) }
+	claim := func(seq int64, prev, link string) any {
+		return map[string]any{
+			"type": "switchtender.audit/1", "at": at,
+			"payload": map[string]any{"actor": "amy", "method": "POST", "path": "/api/runs"},
+			"chain":   map[string]any{"seq": seq, "prev": prev, "link": link},
+		}
+	}
+	tests := []struct {
+		Claims     []any
+		Head       map[string]any
+		WantResult Result
+		Want       error
+	}{{ // Test 0: A keyed genesis chain verifies structurally.
+		Claims:     []any{claim(1, "", h("aa")), claim(2, h("aa"), h("bb"))},
+		Head:       map[string]any{"seq": 2, "link": h("bb")},
+		WantResult: Result{Mode: ModeStructural, Claims: 2, HeadMatched: true},
+	}, { // Test 1: A genesis entry carrying a prev link is refused on continuity alone.
+		Claims: []any{claim(1, h("ee"), h("aa"))},
+		Head:   map[string]any{"seq": 1, "link": h("aa")},
+		Want:   ErrBroken,
+	}, { // Test 2: A window opening past sequence one carries its prev and verifies.
+		Claims:     []any{claim(5, h("ee"), h("aa")), claim(6, h("aa"), h("bb"))},
+		Head:       map[string]any{"seq": 6, "link": h("bb")},
+		WantResult: Result{Mode: ModeStructural, Claims: 2, HeadMatched: true},
+	}, { // Test 3: A window opening past sequence one with an empty prev presents itself
+		// as unrooted and is refused.
+		Claims: []any{claim(5, "", h("aa"))},
+		Head:   map[string]any{"seq": 5, "link": h("aa")},
+		Want:   ErrBroken,
+	}, { // Test 4: A skipped sequence number is refused without recomputing links.
+		Claims: []any{claim(1, "", h("aa")), claim(3, h("aa"), h("bb"))},
+		Head:   map[string]any{"seq": 3, "link": h("bb")},
+		Want:   ErrBroken,
+	}, { // Test 5: A prev that contradicts the previous link is refused without keys.
+		Claims: []any{claim(1, "", h("aa")), claim(2, h("ee"), h("bb"))},
+		Head:   map[string]any{"seq": 2, "link": h("bb")},
+		Want:   ErrBroken,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			raw, b := wrap(t, bundle.ProfileV1, true, nil, test.Claims, test.Head)
+			got, err := Verify(raw, b)
+			if !errors.Is(err, test.Want) {
+				t.Fatalf("error mismatch: got %v, want %v", err, test.Want)
+			}
+			if test.Want != nil {
+				return
+			}
+			if diff := cmp.Diff(test.WantResult, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

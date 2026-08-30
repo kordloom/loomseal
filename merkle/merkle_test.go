@@ -3,6 +3,7 @@ package merkle
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -223,5 +224,122 @@ func TestConsistencyEdgeSizes(t *testing.T) {
 	}
 	if VerifyConsistency(5, 2, Root(leaves(5)), Root(leaves(2)), nil) {
 		t.Error("a shrinking log verified")
+	}
+}
+
+// TestProofBoundsAreRejected pins the index guards on proof generation. Both guards are
+// disjunctions, so a run that only ever exercises in-range indexes leaves the whole guard
+// free to rot into a conjunction that admits everything.
+func TestProofBoundsAreRejected(t *testing.T) {
+	t.Parallel()
+	leaves := [][]byte{[]byte("a"), []byte("b"), []byte("c")}
+	tests := []struct {
+		Name string
+		Err  error
+	}{
+		{Name: "inclusion below range", Err: inclusionErr(-1, leaves)},
+		{Name: "inclusion at size", Err: inclusionErr(3, leaves)},
+		{Name: "inclusion far past size", Err: inclusionErr(9, leaves)},
+		{Name: "consistency below one", Err: consistencyErr(0, leaves)},
+		{Name: "consistency past size", Err: consistencyErr(4, leaves)},
+	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			if !errors.Is(test.Err, ErrRange) {
+				t.Errorf("error mismatch: got %v, want %v", test.Err, ErrRange)
+			}
+		})
+	}
+	// The boundary indexes on the legal side must keep working.
+	if _, err := InclusionProof(0, leaves); err != nil {
+		t.Errorf("inclusion at 0: %v", err)
+	}
+	if _, err := InclusionProof(2, leaves); err != nil {
+		t.Errorf("inclusion at size-1: %v", err)
+	}
+	if _, err := ConsistencyProof(1, leaves); err != nil {
+		t.Errorf("consistency at 1: %v", err)
+	}
+	if _, err := ConsistencyProof(3, leaves); err != nil {
+		t.Errorf("consistency at size: %v", err)
+	}
+}
+
+// inclusionErr returns only the error of InclusionProof, for table brevity.
+func inclusionErr(m int64, leaves [][]byte) error {
+	_, err := InclusionProof(m, leaves)
+	return err
+}
+
+// consistencyErr returns only the error of ConsistencyProof, for table brevity.
+func consistencyErr(first int64, leaves [][]byte) error {
+	_, err := ConsistencyProof(first, leaves)
+	return err
+}
+
+// TestVerifyInclusionBounds pins the index guards of the relying-party fold, which can
+// be handed any coordinates by an untrusted bundle.
+func TestVerifyInclusionBounds(t *testing.T) {
+	t.Parallel()
+	all := leaves(4)
+	root := Root(all)
+	path, err := InclusionProof(0, all)
+	if err != nil {
+		t.Fatalf("InclusionProof: %v", err)
+	}
+	leaf := all[0]
+	tests := []struct {
+		Name        string
+		Index, Size int64
+		Want        bool
+	}{
+		{Name: "valid coordinates", Index: 0, Size: 4, Want: true},
+		{Name: "negative index", Index: -1, Size: 4},
+		{Name: "zero size", Index: 0, Size: 0},
+		{Name: "index at size", Index: 4, Size: 4},
+		{Name: "index past size", Index: 9, Size: 4},
+	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			if got := VerifyInclusion(leaf, test.Index, test.Size, path, root); got != test.Want {
+				t.Errorf("VerifyInclusion(%d, %d) = %t, want %t", test.Index, test.Size, got,
+					test.Want)
+			}
+		})
+	}
+}
+
+// TestVerifyConsistencyBounds pins the size guards of the relying-party consistency
+// fold, which an untrusted bundle can hand any coordinates.
+func TestVerifyConsistencyBounds(t *testing.T) {
+	t.Parallel()
+	all := leaves(4)
+	root := Root(all)
+	oldRoot := Root(all[:2])
+	proof, err := ConsistencyProof(2, all)
+	if err != nil {
+		t.Fatalf("ConsistencyProof: %v", err)
+	}
+	tests := []struct {
+		Name          string
+		First, Second int64
+		Want          bool
+	}{
+		{Name: "valid growth", First: 2, Second: 4, Want: true},
+		{Name: "negative first size", First: -1, Second: 4},
+		{Name: "negative second size", First: 2, Second: -1},
+		{Name: "shrinking log", First: 4, Second: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			got := VerifyConsistency(test.First, test.Second, oldRoot, root, proof)
+			if got != test.Want {
+				t.Errorf("VerifyConsistency(%d, %d) = %t, want %t", test.First, test.Second,
+					got, test.Want)
+			}
+		})
 	}
 }

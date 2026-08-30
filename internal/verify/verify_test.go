@@ -570,3 +570,117 @@ func TestRunAttestationAfterSigning(t *testing.T) {
 		t.Fatalf("forged attestation: ok %t signature %t", got.OK, got.SignatureOK)
 	}
 }
+
+// TestRunAnchorHeadLinkWrongSeq pins the declared-head anchor gate as a conjunction: an
+// anchor carrying the head's link under a different sequence matches nothing and must be
+// reported as a problem, not credited to the declared head.
+func TestRunAnchorHeadLinkWrongSeq(t *testing.T) {
+	t.Parallel()
+	invented := strings.Repeat("de", 32)
+	signed := signedBundle(t, func(m map[string]any) {
+		c, _ := m["chain"].(map[string]any)
+		c["head"] = map[string]any{"seq": 99, "link": invented}
+		anchors, _ := m["anchors"].([]any)
+		first, _ := anchors[0].(map[string]any)
+		first["seq"] = 50
+		first["link"] = invented
+	})
+	got := Run(signed, Options{})
+	if got.AnchorsMatched != 0 || got.AnchorsToDeclaredHead != 0 {
+		t.Errorf("anchor counts: matched %d, to declared head %d, want 0 and 0",
+			got.AnchorsMatched, got.AnchorsToDeclaredHead)
+	}
+	if !problemContains(got, "does not match") {
+		t.Errorf("problems %v do not mention the unmatched anchor", got.Problems)
+	}
+}
+
+// TestRunSwatchIncompleteDisclosure pins the disclosure shape guard: an entry that lost
+// its value is reported as incomplete, not folded into the digest comparison where it
+// would surface as a misleading mismatch.
+func TestRunSwatchIncompleteDisclosure(t *testing.T) {
+	t.Parallel()
+	full := swatchBundle(t, "title")
+	var doc map[string]any
+	if err := json.Unmarshal(full, &doc); err != nil {
+		t.Fatal(err)
+	}
+	claim := doc["claims"].([]any)[0].(map[string]any)
+	first := claim["disclosures"].([]any)[0].(map[string]any)
+	delete(first, "value")
+	broken, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Run(broken, Options{})
+	if got.OK {
+		t.Fatalf("incomplete disclosure verified: %v", got.Problems)
+	}
+	if !problemContains(got, "incomplete") {
+		t.Errorf("problems %v do not name the incomplete disclosure", got.Problems)
+	}
+}
+
+// TestRunGuardArms pins three guards at the arm my other tests leave open: a counterparty
+// key that decodes to the wrong length, a disclosure that lost only its salt, and the
+// proofs-validated flag on a bundle whose anchor carries no proof, which must never read
+// as validated.
+func TestRunGuardArms(t *testing.T) {
+	t.Parallel()
+
+	// Test 0: a short counterparty key is a named problem, not a computed key id.
+	signed := swatchBundle(t)
+	var doc map[string]any
+	if err := json.Unmarshal(signed, &doc); err != nil {
+		t.Fatal(err)
+	}
+	claim := doc["claims"].([]any)[0].(map[string]any)
+	claim["attestations"] = []any{map[string]any{
+		"key_id": "sha256:" + strings.Repeat("ab", 32),
+		"public_key": base64Std(make([]byte, 16)), "alg": "ed25519",
+		"role": "counterparty", "sig": base64Std(make([]byte, 64)),
+	}}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Run(raw, Options{})
+	if got.OK || got.AttestationsVerified != 0 {
+		t.Errorf("short counterparty key: ok %t verified %d", got.OK, got.AttestationsVerified)
+	}
+	if !problemContains(got, "32 byte") {
+		t.Errorf("problems %v do not name the key size", got.Problems)
+	}
+
+	// Test 1: a disclosure that lost only its salt is incomplete on its own.
+	full := swatchBundle(t, "title")
+	if err := json.Unmarshal(full, &doc); err != nil {
+		t.Fatal(err)
+	}
+	claim = doc["claims"].([]any)[0].(map[string]any)
+	first := claim["disclosures"].([]any)[0].(map[string]any)
+	first["salt"] = ""
+	raw, err = json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = Run(raw, Options{})
+	if got.OK || !problemContains(got, "incomplete") {
+		t.Errorf("saltless disclosure: ok %t problems %v", got.OK, got.Problems)
+	}
+
+	// Test 2: an anchor without a proof never reads as proofs validated.
+	bare := signedBundle(t, func(m map[string]any) {
+		anchors, _ := m["anchors"].([]any)
+		first, _ := anchors[0].(map[string]any)
+		delete(first, "proof")
+	})
+	got = Run(bare, Options{})
+	if !got.OK {
+		t.Fatalf("proofless anchor did not verify: %v", got.Problems)
+	}
+	if got.AnchorProofsCarried != 0 || got.AnchorProofsValidated {
+		t.Errorf("carried %d validated %t, want 0 and false", got.AnchorProofsCarried,
+			got.AnchorProofsValidated)
+	}
+}

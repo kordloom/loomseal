@@ -392,3 +392,74 @@ func TestMerkleConsistencyCatchesARewrite(t *testing.T) {
 		t.Errorf("problems = %q, want the append-only failure named", joined)
 	}
 }
+
+// TestMerkleConsistencyEdges pins two tree-profile corners: a consistency proof from the
+// current size, which proves no growth and must still verify, and an anchor placed on the
+// proof's from coordinates, which is the strongest truncation evidence the format carries
+// and must be credited as a matched anchor rather than dismissed.
+func TestMerkleConsistencyEdges(t *testing.T) {
+	t.Parallel()
+	priv := testKey(t)
+
+	// Test 0: a proof from the tree's own size carries no path and verifies.
+	log := newTreeLog("in_test", 6)
+	same := log.bundleFor(t, priv, []int{0, 5}, 6)
+	rep := verify.Run(same, verify.Options{})
+	if !rep.OK || !rep.ConsistencyOK || rep.ConsistencyFrom != 6 {
+		t.Fatalf("same-size consistency: ok=%v consistency=%v from=%d problems=%v", rep.OK,
+			rep.ConsistencyOK, rep.ConsistencyFrom, rep.Problems)
+	}
+
+	// Test 1: an anchor over the verified from root counts as matched by coordinates.
+	grown := log.bundleFor(t, priv, []int{0, 5}, 4)
+	var doc map[string]any
+	if err := json.Unmarshal(grown, &doc); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	consistency := doc["chain"].(map[string]any)["consistency"].(map[string]any)
+	doc["anchors"] = []any{map[string]any{
+		"type": "git", "seq": consistency["from_size"], "link": consistency["from_root"],
+		"at": "2026-07-27T12:00:00Z", "ref": "https://github.com/acme/anchors/commit/abc",
+	}}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	resigned, err := seal.SignBundle(raw, priv)
+	if err != nil {
+		t.Fatalf("SignBundle: %v", err)
+	}
+	rep = verify.Run(resigned, verify.Options{})
+	if !rep.OK || !rep.ConsistencyOK {
+		t.Fatalf("anchored consistency did not verify: %v", rep.Problems)
+	}
+	if rep.AnchorsMatched != 1 {
+		t.Errorf("anchors matched %d, want 1: the verified from root is a recomputed "+
+			"coordinate and an anchor over it is the strongest truncation evidence",
+			rep.AnchorsMatched)
+	}
+
+	// Test 2: an inclusion path element that is valid hex of the wrong length is
+	// refused at the schema layer before any folding.
+	short := log.bundleFor(t, priv, []int{0}, 0)
+	if err := json.Unmarshal(short, &doc); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	c := doc["claims"].([]any)[0].(map[string]any)
+	c["inclusion"].(map[string]any)["path"].([]any)[0] = "abcd"
+	raw, err = json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	resigned, err = seal.SignBundle(raw, priv)
+	if err != nil {
+		t.Fatalf("SignBundle: %v", err)
+	}
+	rep = verify.Run(resigned, verify.Options{})
+	if rep.OK {
+		t.Fatal("short path element verified")
+	}
+	if !strings.Contains(strings.Join(rep.Problems, " "), "64 hex characters") {
+		t.Errorf("problems %v do not name the short hash", rep.Problems)
+	}
+}

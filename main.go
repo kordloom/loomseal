@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"github.com/kordloom/loomseal/cmd"
+	"github.com/kordloom/loomseal/internal/cmd"
 )
 
 // main dispatches to the command layer and exits with its code.

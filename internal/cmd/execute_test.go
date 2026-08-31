@@ -181,7 +181,7 @@ func TestExecutePresentRoundTrip(t *testing.T) {
 // on a bundle where it is zero, so a gate cannot quietly widen or narrow.
 func TestExecuteVerifyVerdictLines(t *testing.T) {
 	t.Parallel()
-	vectors := "../testdata/vectors/"
+	vectors := "../../testdata/vectors/"
 	tests := []struct {
 		File string
 		Want []string
@@ -277,7 +277,7 @@ func TestExecutePresentGuards(t *testing.T) {
 func TestExecuteVerifyPresentationLines(t *testing.T) {
 	t.Parallel()
 	code, stdout, stderr := run("verify", "--audience", "acme-verifier", "--nonce", "chal-1",
-		"../testdata/vectors/present-valid.loomseal-presentation.json")
+		"../../testdata/vectors/present-valid.loomseal-presentation.json")
 	if code != CodeOK {
 		t.Fatalf("code %d stderr %q stdout %q", code, stderr, stdout)
 	}
@@ -299,7 +299,7 @@ func TestExecuteVerifyPresentationLines(t *testing.T) {
 // chain prints FAILED, never the healthy summary with its claim count and head state.
 func TestExecuteVerifyBrokenChainLine(t *testing.T) {
 	t.Parallel()
-	code, stdout, _ := run("verify", "../testdata/vectors/chain-broken-prev.loomseal.json")
+	code, stdout, _ := run("verify", "../../testdata/vectors/chain-broken-prev.loomseal.json")
 	if code != CodeFailed {
 		t.Fatalf("code %d", code)
 	}
@@ -321,7 +321,7 @@ func TestExecutePresentReveal(t *testing.T) {
 	if err := os.WriteFile(keyPath, []byte(seed), 0o600); err != nil {
 		t.Fatalf("write seed: %v", err)
 	}
-	bundle := "../testdata/vectors/swatch-attested.loomseal.json"
+	bundle := "../../testdata/vectors/swatch-attested.loomseal.json"
 
 	// Test 0: revealing a present field keeps it, with the explicit timestamp.
 	code, stdout, stderr := run("present", bundle, "--holder-key", keyPath,

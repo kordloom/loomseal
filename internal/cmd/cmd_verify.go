@@ -91,6 +91,9 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	if report.OK {
 		return CodeOK
 	}
+	if report.Unsupported {
+		return CodeUnsupported
+	}
 	return CodeFailed
 }
 
@@ -124,6 +127,16 @@ func renderPresentation(w io.Writer, r *verify.PresentationReport) {
 
 // renderReport writes the human-readable report.
 func renderReport(w io.Writer, r *verify.Report) {
+	// An unsupported bundle was never judged, so no interior line may imply it was: printing
+	// "signature FAILED" above an unsupported verdict is exactly the confusion the verdict
+	// exists to prevent.
+	if r.Unsupported {
+		for _, p := range r.Problems {
+			fmt.Fprintf(w, "problem    %s\n", p)
+		}
+		fmt.Fprintln(w, "UNSUPPORTED  this verifier does not implement what the bundle declares; not judged")
+		return
+	}
 	if r.BundleID != "" {
 		fmt.Fprintf(w, "bundle     %s from %s\n", r.BundleID, r.Producer)
 		fmt.Fprintf(w, "subject    %s\n", r.Subject)
@@ -251,6 +264,12 @@ func renderReport(w io.Writer, r *verify.Report) {
 		r.EvidenceVerified, r.EvidenceMissing, r.EvidenceReferenced)
 	for _, t := range r.UnknownClaimTypes {
 		fmt.Fprintf(w, "note       unknown claim type %s, not checked against a registry entry\n", t)
+	}
+	for _, a := range r.HeadAttestors {
+		fmt.Fprintf(w, "head att.  %s vouches for the chain head\n", a)
+	}
+	if r.UnknownSubjectType != "" {
+		fmt.Fprintf(w, "note       subject type %s is outside this verifier's vocabulary\n", r.UnknownSubjectType)
 	}
 	for _, p := range r.Problems {
 		fmt.Fprintf(w, "problem    %s\n", p)

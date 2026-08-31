@@ -173,7 +173,7 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 		if !r.SignatureOK {
 			t.Errorf("attestation case failed before the signature: %v", r.Problems)
 		}
-		if !(r.AttestationsPresent || r.HeadAttestationsPresent) || !hasProblem(r, "attestation") {
+		if (!r.AttestationsPresent && !r.HeadAttestationsPresent) || !hasProblem(r, "attestation") {
 			t.Errorf("attestation case did not fail on an attestation: claim %t head %t problems %v",
 				r.AttestationsPresent, r.HeadAttestationsPresent, r.Problems)
 		}

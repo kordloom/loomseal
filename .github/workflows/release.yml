@@ -11,8 +11,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,16 +64,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" dist/* --clobber
 
-      # Regenerate the Homebrew cask in kordloom/homebrew-tap from this release's checksums. It
-      # skips quietly until the HOMEBREW_TAP_GITHUB_TOKEN secret exists, so a release never fails
-      # just because the tap is not set up yet.
+      # Regenerate the Homebrew cask in kordloom/homebrew-tap from this release's checksums.
+      #
+      # A cask failure costs the cask and nothing else. The release is already published and
+      # complete by the time this runs, so continue-on-error is the whole point: this step failed
+      # the v1.0.0 release while every artifact had uploaded correctly, which is a red badge on a
+      # good release and an alarm that means nothing.
+      #
+      # The token is read from HOMEBREW_TAP_TOKEN first. An empty-string guard cannot catch the
+      # failure that actually happens, which is a secret that exists and holds a stale token: the
+      # guard passes and the push 401s. Fine-grained tokens also pass any permissions probe,
+      # because that field reflects the owner's rights rather than the token's, so only a real
+      # write proves a token. That is why this step must never be load-bearing.
       - name: Update the Homebrew cask
-        if: github.event_name == 'release' && env.HOMEBREW_TAP_GITHUB_TOKEN != ''
+        if: github.event_name == 'release'
+        continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' && secrets.HOMEBREW_TAP_TOKEN || secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "no tap token configured, so the cask is left alone" >&2
+            exit 0
+          fi
           version="${TAG#v}"
           sha() { awk -v f="loomseal_${version}_$1" '$2 == f {print $1}' dist/SHA256SUMS; }
           for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do

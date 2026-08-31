@@ -207,12 +207,13 @@ func checkSwitchTender(b *bundle.Bundle) error {
 		if _, err := time.Parse(time.RFC3339, claim.At); err != nil {
 			return fmt.Errorf("%w: claim %d at: %w", ErrClaim, i, err)
 		}
-		// Held as a map because the link commits to the canonical JSON object of the claim's
-		// fields, not to a fixed list in a fixed order. That is what makes the record extensible: a
-		// verifier canonicalizes whatever fields an entry carries, so an entry written before a field
-		// existed and one written after both recompute, and adding a field is not a revision that
-		// invalidates existing bundles. The previous construction hashed six values positionally,
-		// which made every new field a breaking change to this profile and to every implementation.
+		// Held as a map because the link commits to the canonical JSON object of the entry's
+		// defined fields, empty ones omitted, not to a fixed list in a fixed order. An entry from
+		// before an optional field existed therefore hashes identically to one that does not use
+		// it. The field set itself is closed per profile: a new bound field takes a successor
+		// profile name, which this construction makes cheap, since entries lacking the field hash
+		// the same under both. The previous construction hashed six values positionally, which
+		// made even the successor path a breaking change for every implementation.
 		fields := map[string]any{
 			"seq":    claim.Chain.Seq,
 			"at":     claim.At,
@@ -279,15 +280,10 @@ func checkV1(raw []byte, b *bundle.Bundle) error {
 		if !ok {
 			return fmt.Errorf("%w: claim %d is not an object", ErrClaim, i)
 		}
-		delete(obj, "chain")
-		// disclosures are holder-controlled and travel outside the committed claim, so they never
-		// enter the link. The redactable fields they reveal are committed through the payload's _sd
-		// digest set instead, which stays in the link whether a field is revealed or withheld.
-		delete(obj, "disclosures")
-		// attestations are counter-signatures a third party adds after signing, so they too stay out
-		// of the link; each attestation instead signs the link it vouches for.
-		delete(obj, "attestations")
-		link, err := LinkV1(nil, installID, claim.Chain.Seq, claim.Chain.Prev, obj)
+		// The one committed-content rule: see ClaimContent. Evidence packaging (present, location)
+		// is excluded here exactly as it is from a merkle leaf, so repackaging a bundle's evidence
+		// never breaks a link.
+		link, err := LinkV1(nil, installID, claim.Chain.Seq, claim.Chain.Prev, ClaimContent(obj))
 		if err != nil {
 			return fmt.Errorf("%w: claim %d: %w", ErrClaim, i, err)
 		}
@@ -296,6 +292,45 @@ func checkV1(raw []byte, b *bundle.Bundle) error {
 		}
 	}
 	return nil
+}
+
+// ClaimContent returns the members of a claim that a link or leaf commits to. This is the one
+// committed-content rule both hashing profiles share: chain and inclusion describe position and
+// proof, disclosures and attestations are holder- and third-party-controlled and travel outside
+// the commitment, and an evidence entry's present and location are packaging details, whether and
+// where the artifact travels beside this copy of the bundle. All are excluded, so the same log
+// entry disclosed in two bundles that package their evidence differently commits identically.
+// Redactable fields stay committed through the payload's _sd digest set either way.
+func ClaimContent(claim map[string]any) map[string]any {
+	content := make(map[string]any, len(claim))
+	for k, v := range claim {
+		if k == "chain" || k == "inclusion" || k == "disclosures" || k == "attestations" {
+			continue
+		}
+		content[k] = v
+	}
+	ev, ok := content["evidence"].([]any)
+	if !ok {
+		return content
+	}
+	stripped := make([]any, 0, len(ev))
+	for _, e := range ev {
+		obj, ok := e.(map[string]any)
+		if !ok {
+			stripped = append(stripped, e)
+			continue
+		}
+		cp := make(map[string]any, len(obj))
+		for k, v := range obj {
+			if k == "present" || k == "location" {
+				continue
+			}
+			cp[k] = v
+		}
+		stripped = append(stripped, cp)
+	}
+	content["evidence"] = stripped
+	return content
 }
 
 // LinkV1 computes a loomseal-chain-v1 link for a claim value tree that carries no chain

@@ -537,7 +537,7 @@ func TestRunAttestationAfterSigning(t *testing.T) {
 
 	cpriv := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, 32))
 	cpub, _ := cpriv.Public().(ed25519.PublicKey)
-	preimage, err := jcs.Serialize(map[string]any{"link": link, "role": "counterparty"})
+	preimage, err := jcs.Serialize(map[string]any{"loomseal": "attestation/1", "link": link, "role": "counterparty"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -636,7 +636,7 @@ func TestRunGuardArms(t *testing.T) {
 	}
 	claim := doc["claims"].([]any)[0].(map[string]any)
 	claim["attestations"] = []any{map[string]any{
-		"key_id": "sha256:" + strings.Repeat("ab", 32),
+		"key_id":     "sha256:" + strings.Repeat("ab", 32),
 		"public_key": base64Std(make([]byte, 16)), "alg": "ed25519",
 		"role": "counterparty", "sig": base64Std(make([]byte, 64)),
 	}}

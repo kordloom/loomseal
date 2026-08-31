@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -311,6 +312,55 @@ func (s *state) positives() {
 			"counter-signature is checked against the signer's own key and reported as vouched.",
 		s.sign(s.attestedBundle()))
 
+	// An attestation carrying its signing time: the time is inside the signed bytes, which is
+	// what lets an external approver's sign-off say when it happened, tamper-evidently.
+	m = s.v1(1, false)
+	tc := m["claims"].([]any)[0].(map[string]any)
+	tPriv, tPub := counterpartyKey()
+	tc["attestations"] = []any{attestationAt(tPriv, tPub,
+		tc["chain"].(map[string]any)["link"].(string), "approver", "2026-08-30T12:00:00Z")}
+	s.add("attestation-with-time", true, "signed, chained (full)", "",
+		"An attestation whose at member is set carries the signing time inside the signed bytes; "+
+			"altering the time after the fact breaks the counter-signature.", s.sign(m))
+
+	// A witness countersigns the chain head after the producer signed: the exact artifact a
+	// hosted witness mints and the custody record re-anchoring needs, living inside the format.
+	s.add("head-attested", true, "signed, chained (full)", "",
+		"A head-level attestation added after signing verifies over the chain head and is "+
+			"reported as vouching for it; the producer signature is untouched because the "+
+			"member is stripped from its preimage.",
+		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			hPriv, hPub := counterpartyKey()
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			m["attestations"] = []any{headAttestation(hPriv, hPub,
+				head["link"].(string), head["seq"], "witness", "2026-08-30T12:00:00Z")}
+		}))
+	// Evidence packaging never enters the commitment: the same claim with present and location
+	// toggled after signing still recomputes its link, in both hashing profiles.
+	m = s.v1(1, false)
+	claim = m["claims"].([]any)[0].(map[string]any)
+	claim["evidence"] = []any{map[string]any{
+		"role": "snapshot", "digest": "sha256:" + strings.Repeat("cd", 32),
+		"media_type": "text/html", "present": true, "location": "evidence/snap.html",
+	}}
+	s.relinkV1(m, false)
+	s.add("chain-v1-evidence-packaging", true, "signed, chained (full)", "",
+		"An evidence entry's present and location are packaging details outside the committed "+
+			"content, so a chain-v1 link recomputes whatever way this copy packages its evidence.",
+		s.sign(m))
+
+	s.add("head-attestation-role-swapped", false, "", "attestation",
+		"A head attestation whose role is rewritten after signing fails, because the role sits "+
+			"inside the signed preimage.",
+		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			hPriv, hPub := counterpartyKey()
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			att := headAttestation(hPriv, hPub, head["link"].(string), head["seq"],
+				"witness", "")
+			att["role"] = "auditor"
+			m["attestations"] = []any{att}
+		}))
+
 	// Selective disclosure and counterparty attestation compose on one claim: each is an independent
 	// member outside the link, so a redactable, counter-signed claim verifies.
 	m = s.swatchBundle("title")
@@ -505,8 +555,9 @@ func (s *state) negatives() {
 	// Wrong format version.
 	m = s.v1(1, false)
 	m["loomseal"] = "0.2"
-	s.add("wrong-version", false, "", "parse",
-		"A verifier speaks one format version and rejects others.", s.sign(m))
+	s.add("wrong-version", false, "", "unsupported",
+		"A loomseal version this verifier does not implement is refused as unsupported without "+
+			"judging the signature. Fail closed, but never worded as a verification failure.", s.sign(m))
 
 	// Producer key_id does not match the embedded public key.
 	m = s.v1(1, false)
@@ -521,6 +572,86 @@ func (s *state) negatives() {
 	s.add("signature-alg-rewritten", false, "", "signature",
 		"alg is outside the signed bytes, so a verifier rejects a foreign value rather than "+
 			"dispatching on it.", rewriteAlg(s.sign(s.v1(1, false)), "rsa-pss-sha256"))
+
+	// Strict parsing pinned from every side: nothing unspecified rides inside an accepted
+	// bundle, and the surfaces outside the signed bytes are exactly where member strictness is
+	// the only guard.
+	s.add("unknown-envelope-member", false, "", "parse",
+		"A bundle member the schema does not define fails at parse. Strict rejection of the "+
+			"unknown is the design: nothing unspecified rides inside an accepted bundle.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["extra"] = true
+		}))
+	s.add("unknown-claim-member", false, "", "parse",
+		"A claim member the schema does not define fails at parse, before the signature is "+
+			"examined.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["extra"] = "x"
+		}))
+	s.add("signature-unknown-member", false, "", "parse",
+		"An unknown member inside a signature object fails at parse. Signature objects sit "+
+			"outside the signed bytes, so member strictness is the only thing keeping unsigned "+
+			"data out of them.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["signatures"].([]any)[0].(map[string]any)["note"] = "rider"
+		}))
+	s.add("signature-foreign-keyid", false, "", "signature",
+		"A signatures entry naming a key the producer block does not hold fails the bundle. The "+
+			"array sits outside the signed bytes, so a foreign entry is a rider nothing vouches "+
+			"for, and it must not travel inside a green verdict.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["signatures"] = append(m["signatures"].([]any), map[string]any{
+				"key_id": "sha256:" + strings.Repeat("ab", 32), "alg": "ed25519",
+				"sig": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 64)),
+			})
+		}))
+	// A token that does not parse is a failed anchor, not a missing one: the bundle carried a
+	// proof and the proof is garbage, which must never read the same as carrying no proof at all.
+	m = s.switchTenderProof()
+	anch := m["anchors"].([]any)[0].(map[string]any)
+	tok, err := base64.StdEncoding.DecodeString(anch["proof"].(string))
+	if err != nil {
+		panic(err)
+	}
+	tok[len(tok)/2] ^= 0xFF
+	anch["proof"] = base64.StdEncoding.EncodeToString(tok)
+	s.add("anchor-corrupt-token", false, "", "anchor",
+		"An rfc3161 proof that does not open as a timestamp token fails the anchor check: a "+
+			"carried proof that is garbage must never grade the same as no proof.", s.sign(m))
+
+	s.add("unknown-chain-profile", false, "", "unsupported",
+		"A chain profile this verifier does not implement is refused as unsupported, a "+
+			"fail-closed verdict distinct from verification failure, so a legitimate newer "+
+			"bundle never reads as forged.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["chain"].(map[string]any)["profile"] = "acme-chain-v9"
+		}))
+
+	// The one positive in this block: an unknown subject type is vocabulary, not structure. The
+	// bundle verifies and the type is reported, which is what lets a Governed evidence pack name
+	// a subject this release never heard of.
+	subj := s.v1(1, false)
+	subj["subject"] = map[string]any{"type": "control", "id": "CC8.1"}
+	s.add("subject-unknown-type", true, "signed, chained (full)", "",
+		"A subject type outside the known vocabulary is reported and never failed: subject "+
+			"types are informational, and a frozen verifier must not call a newer producer's "+
+			"subject a schema error.", s.sign(subj))
+}
+
+// mutateSigned applies fn to the decoded signed document and re-marshals it, for vectors that
+// exercise post-signing tampering and strictness. Go's json.Marshal orders keys, so the output
+// is deterministic.
+func mutateSigned(signed []byte, fn func(map[string]any)) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(signed, &m); err != nil {
+		panic(err)
+	}
+	fn(m)
+	out, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	return out
 }
 
 // spanEntry describes one claim in a span vector chain.
@@ -801,7 +932,7 @@ func (s *state) relinkV1(m map[string]any, keyed bool) {
 				seq = sq
 			}
 		}
-		link, err := seal.LinkV1(nil, installID, seq, prev, stripChain(claim))
+		link, err := seal.LinkV1(nil, installID, seq, prev, seal.ClaimContent(claim))
 		if err != nil {
 			panic(err)
 		}
@@ -918,18 +1049,6 @@ func (s *state) switchTenderNanos() map[string]any {
 		"head": map[string]any{"seq": int64(1), "link": link},
 	}
 	return m
-}
-
-// stripChain returns a copy of the claim without its chain member, as the v1 link digest wants.
-func stripChain(claim map[string]any) map[string]any {
-	out := make(map[string]any, len(claim))
-	for k, v := range claim {
-		if k == "chain" || k == "disclosures" || k == "attestations" {
-			continue
-		}
-		out[k] = v
-	}
-	return out
 }
 
 // switchTenderLink recomputes a switchtender-audit-v1 link with no install binding, the pre-binding
@@ -1065,18 +1184,57 @@ func counterpartyKey() (ed25519.PrivateKey, ed25519.PublicKey) {
 // attestation builds a counter-signature over a claim's link and role, the way a counterparty and the
 // verifier both compute it.
 func attestation(priv ed25519.PrivateKey, pub ed25519.PublicKey, link, role string) map[string]any {
-	preimage, err := jcs.Serialize(map[string]any{"link": link, "role": role})
+	return attestationAt(priv, pub, link, role, "")
+}
+
+// attestationAt counter-signs the domain-tagged attestation object, carrying the signed time when
+// at is set, so an approver's sign-off time travels inside the signature.
+// headAttestation counter-signs the domain-tagged head object, binding link, seq, role, and the
+// signed time when carried.
+func headAttestation(priv ed25519.PrivateKey, pub ed25519.PublicKey, link string, seq any, role, at string) map[string]any {
+	obj := map[string]any{"loomseal": "head-attestation/1", "link": link, "seq": seq, "role": role}
+	if at != "" {
+		obj["at"] = at
+	}
+	preimage, err := jcs.Serialize(obj)
 	if err != nil {
 		panic(err)
 	}
 	sig := ed25519.Sign(priv, preimage)
-	return map[string]any{
+	out := map[string]any{
 		"key_id":     seal.KeyID(pub),
 		"public_key": base64.StdEncoding.EncodeToString(pub),
 		"alg":        "ed25519",
 		"role":       role,
 		"sig":        base64.StdEncoding.EncodeToString(sig),
 	}
+	if at != "" {
+		out["at"] = at
+	}
+	return out
+}
+
+func attestationAt(priv ed25519.PrivateKey, pub ed25519.PublicKey, link, role, at string) map[string]any {
+	obj := map[string]any{"loomseal": "attestation/1", "link": link, "role": role}
+	if at != "" {
+		obj["at"] = at
+	}
+	preimage, err := jcs.Serialize(obj)
+	if err != nil {
+		panic(err)
+	}
+	sig := ed25519.Sign(priv, preimage)
+	out := map[string]any{
+		"key_id":     seal.KeyID(pub),
+		"public_key": base64.StdEncoding.EncodeToString(pub),
+		"alg":        "ed25519",
+		"role":       role,
+		"sig":        base64.StdEncoding.EncodeToString(sig),
+	}
+	if at != "" {
+		out["at"] = at
+	}
+	return out
 }
 
 // attestedBundle builds a loomseal-chain-v1 bundle whose claim carries a valid counterparty

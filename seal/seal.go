@@ -3,7 +3,9 @@
 package seal
 
 import (
+	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -19,10 +21,14 @@ func KeyID(pub ed25519.PublicKey) string {
 	return bundle.KeyID(pub)
 }
 
-// SignBundle signs an unsigned or previously signed bundle document with priv and returns
+// SignBundle signs an unsigned or previously signed bundle document with signer and returns
 // the canonical signed bundle. Any existing signatures are replaced. The producer fields
 // must already carry the matching public key; SignBundle does not edit them.
-func SignBundle(raw []byte, priv ed25519.PrivateKey) ([]byte, error) {
+//
+// The signer must hold an ed25519 key, which is the only algorithm format 1.0 fixes, but it may
+// live anywhere crypto.Signer reaches: an in-memory ed25519.PrivateKey works unchanged, and a
+// KMS- or HSM-backed signer works without the key ever leaving its module.
+func SignBundle(raw []byte, signer crypto.Signer) ([]byte, error) {
 	v, err := jcs.Parse(raw)
 	if err != nil {
 		return nil, err
@@ -38,11 +44,14 @@ func SignBundle(raw []byte, priv ed25519.PrivateKey) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	pub, ok := priv.Public().(ed25519.PublicKey)
+	pub, ok := signer.Public().(ed25519.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("%w: private key has no ed25519 public key", ErrBundle)
+		return nil, fmt.Errorf("%w: signer has no ed25519 public key", ErrBundle)
 	}
-	sig := ed25519.Sign(priv, canonical)
+	sig, err := signer.Sign(rand.Reader, canonical, crypto.Hash(0))
+	if err != nil {
+		return nil, fmt.Errorf("%w: sign: %w", ErrBundle, err)
+	}
 	m["signatures"] = []any{map[string]any{
 		"key_id": bundle.KeyID(pub),
 		"alg":    "ed25519",
@@ -56,7 +65,7 @@ func SignBundle(raw []byte, priv ed25519.PrivateKey) ([]byte, error) {
 // a chosen subset presents only those. The holder signature binds the audience, the presented
 // bundle's digest, the time, and the nonce, so the presentation cannot be replayed to another
 // verifier or with a stale challenge. createdAt is RFC 3339 UTC.
-func Present(bundleRaw []byte, holderPriv ed25519.PrivateKey, audience, nonce, createdAt string) ([]byte, error) {
+func Present(bundleRaw []byte, holder crypto.Signer, audience, nonce, createdAt string) ([]byte, error) {
 	canonical, err := jcs.Canonicalize(bundleRaw)
 	if err != nil {
 		return nil, err
@@ -65,11 +74,14 @@ func Present(bundleRaw []byte, holderPriv ed25519.PrivateKey, audience, nonce, c
 	if err != nil {
 		return nil, err
 	}
-	pub, ok := holderPriv.Public().(ed25519.PublicKey)
+	pub, ok := holder.Public().(ed25519.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("%w: private key has no ed25519 public key", ErrBundle)
+		return nil, fmt.Errorf("%w: holder signer has no ed25519 public key", ErrBundle)
 	}
-	sig := ed25519.Sign(holderPriv, preimage)
+	sig, err := holder.Sign(rand.Reader, preimage, crypto.Hash(0))
+	if err != nil {
+		return nil, fmt.Errorf("%w: holder sign: %w", ErrBundle, err)
+	}
 	m := map[string]any{
 		"loomseal_presentation": "0.1",
 		"created_at":            createdAt,
@@ -92,4 +104,11 @@ func Present(bundleRaw []byte, holderPriv ed25519.PrivateKey, audience, nonce, c
 // anyone can recompute.
 func LinkV1(key []byte, installID string, seq int64, prev string, claim any) (string, error) {
 	return chain.LinkV1(key, installID, seq, prev, claim)
+}
+
+// ClaimContent returns the members of a claim a link or leaf commits to: the one committed-content
+// rule both hashing profiles share. Producers and mirror verifiers use it so their commitments can
+// never drift from the reference by reimplementing the strip list.
+func ClaimContent(claim map[string]any) map[string]any {
+	return chain.ClaimContent(claim)
 }

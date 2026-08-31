@@ -51,6 +51,10 @@ type Bundle struct {
 	Claims []Claim `json:"claims"`
 	// Anchors are external anchor records binding chain links outside the producer.
 	Anchors []Anchor `json:"anchors,omitempty"`
+	// Attestations are head-level counter-signatures: a witness or custodian vouching for the
+	// chain head after the producer signed. Added post-signing and stripped from the producer
+	// preimage, exactly like claim attestations.
+	Attestations []Attestation `json:"attestations,omitempty"`
 	// Signatures are producer signatures over the canonical unsigned bundle.
 	Signatures []Signature `json:"signatures"`
 }
@@ -153,7 +157,10 @@ type Attestation struct {
 	Alg string `json:"alg"`
 	// Role is what the signer is to the claim, such as counterparty or auditor.
 	Role string `json:"role"`
-	// Sig is the base64 ed25519 signature over the canonical {link, role} object.
+	// At is when the signer counter-signed, RFC 3339 UTC, optional. When present it sits inside
+	// the signed preimage, so an approver's sign-off time cannot be altered after the fact.
+	At string `json:"at,omitempty"`
+	// Sig is the base64 ed25519 signature over the domain-tagged canonical attestation object.
 	Sig string `json:"sig"`
 }
 
@@ -232,7 +239,9 @@ var (
 
 // Allowed enum values from the schema.
 var (
-	subjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true, "agent": true,
+	reSubjectType = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+	// subjectTypes is the known vocabulary. Membership is reported, never enforced.
+	SubjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true, "agent": true,
 		"host": true, "run": true}
 	profiles    = map[string]bool{ProfileSwitchTender: true, ProfileV1: true, ProfileMerkle: true}
 	anchorTypes = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
@@ -259,7 +268,7 @@ func Parse(raw []byte) (*Bundle, error) {
 // validate enforces the schema's structural rules.
 func (b *Bundle) validate() error {
 	if b.Version != Version {
-		return fmt.Errorf("%w: loomseal version %q, want %q", ErrSchema, b.Version, Version)
+		return fmt.Errorf("%w: loomseal version %q, this verifier implements %q", ErrUnsupported, b.Version, Version)
 	}
 	if b.BundleID == "" {
 		return fmt.Errorf("%w: bundle_id is empty", ErrSchema)
@@ -270,7 +279,10 @@ func (b *Bundle) validate() error {
 	if err := b.Producer.validate(); err != nil {
 		return err
 	}
-	if !subjectTypes[b.Subject.Type] {
+	// Subject types are vocabulary, not structure: the pattern is enforced, membership in the
+	// known set is reported by the verifier and never failed, so a newer producer's subject
+	// does not read as a schema error to a frozen verifier.
+	if !reSubjectType.MatchString(b.Subject.Type) {
 		return fmt.Errorf("%w: subject type %q", ErrSchema, b.Subject.Type)
 	}
 	if b.Subject.ID == "" {
@@ -341,7 +353,7 @@ func (p Producer) validate() error {
 // validate enforces chain declaration rules.
 func (c Chain) validate() error {
 	if !profiles[c.Profile] {
-		return fmt.Errorf("%w: unknown chain profile %q", ErrSchema, c.Profile)
+		return fmt.Errorf("%w: chain profile %q is not one this verifier implements", ErrUnsupported, c.Profile)
 	}
 	if err := c.Head.validate("chain head"); err != nil {
 		return err
@@ -455,7 +467,7 @@ func (s Signature) validate(i int) error {
 		return fmt.Errorf("%w: signature %d key_id", ErrSchema, i)
 	}
 	if s.Alg != "ed25519" {
-		return fmt.Errorf("%w: signature %d alg %q, want ed25519", ErrSchema, i, s.Alg)
+		return fmt.Errorf("%w: signature %d alg %q, this verifier implements ed25519", ErrUnsupported, i, s.Alg)
 	}
 	sig, err := base64.StdEncoding.DecodeString(s.Sig)
 	if err != nil {
@@ -492,13 +504,14 @@ func CanonicalUnsigned(raw []byte) ([]byte, error) {
 }
 
 // StripUnsigned removes from a parsed bundle tree the members a producer signature does not cover:
-// the signatures array is emptied, and every claim's holder-controlled disclosures and third-party
-// attestations are dropped. The signature commits to the _sd digest set inside each payload, never to
+// the signatures array is emptied, head-level attestations are dropped, and every claim's
+// holder-controlled disclosures and third-party attestations are dropped. The signature commits to the _sd digest set inside each payload, never to
 // the disclosures that reveal those fields nor to the counter-signatures a third party later adds, so
 // a holder withholds a disclosure and a counterparty attaches an attestation without any of it
 // affecting the producer signature, the link, or the leaf.
 func StripUnsigned(m map[string]any) {
 	m["signatures"] = []any{}
+	delete(m, "attestations")
 	claims, ok := m["claims"].([]any)
 	if !ok {
 		return
@@ -523,7 +536,10 @@ func KeyID(pub ed25519.PublicKey) string {
 // verifier from drifting on what a presentation signature covers.
 func PresentationSigningInput(audience, nonce, createdAt string, bundleCanon []byte) ([]byte, error) {
 	sum := sha256.Sum256(bundleCanon)
+	// The domain tag keeps a holder signature meaningless anywhere else an audience-and-digest
+	// shaped object might be signed, the same rule every other signature in the format follows.
 	return jcs.Serialize(map[string]any{
+		"loomseal":      "presentation/1",
 		"audience":      audience,
 		"bundle_sha256": hex.EncodeToString(sum[:]),
 		"created_at":    createdAt,

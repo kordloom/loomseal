@@ -147,7 +147,9 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 		if !r.SignatureOK || !r.ChainOK {
 			t.Errorf("anchor case failed earlier than the anchor step: %v", r.Problems)
 		}
-		if r.AnchorsMatched != 0 || !hasProblem(r, "anchor") {
+		// An anchor failure is any recorded anchor problem: matching nothing and matching but
+		// carrying a garbage proof are both anchor failures, and only the first has matched == 0.
+		if !hasProblem(r, "anchor") {
 			t.Errorf("anchor case did not fail on an anchor: matched %d problems %v",
 				r.AnchorsMatched, r.Problems)
 		}
@@ -171,9 +173,16 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 		if !r.SignatureOK {
 			t.Errorf("attestation case failed before the signature: %v", r.Problems)
 		}
-		if !r.AttestationsPresent || !hasProblem(r, "attestation") {
-			t.Errorf("attestation case did not fail on an attestation: present %t problems %v",
-				r.AttestationsPresent, r.Problems)
+		if !(r.AttestationsPresent || r.HeadAttestationsPresent) || !hasProblem(r, "attestation") {
+			t.Errorf("attestation case did not fail on an attestation: claim %t head %t problems %v",
+				r.AttestationsPresent, r.HeadAttestationsPresent, r.Problems)
+		}
+	case "unsupported":
+		if !r.Unsupported {
+			t.Errorf("unsupported case did not set the unsupported verdict: %v", r.Problems)
+		}
+		if r.SignatureOK {
+			t.Errorf("unsupported case judged the signature: %v", r.Problems)
 		}
 	default:
 		t.Fatalf("manifest names an unknown failing_check %q", check)

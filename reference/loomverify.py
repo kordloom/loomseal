@@ -13,6 +13,7 @@ Usage:
 import base64
 import hashlib
 import json
+import re
 import os
 import sys
 from datetime import datetime, timezone
@@ -31,7 +32,7 @@ V1 = "loomseal-chain-v1"
 SWITCHTENDER = "switchtender-audit-v1"
 MERKLE = "loomseal-merkle-v1"
 
-KNOWN_TYPES = {"switchtender.audit/1", "switchtender.run/1", "loomseal.span/1", "loomseal.agentrun/1"}
+KNOWN_TYPES = {"switchtender.audit/1", "loomseal.span/1", "loomseal.agentrun/1"}
 
 
 class VError(Exception):
@@ -293,7 +294,12 @@ def _verify_timestamp(token, link, index):
     signer_count = sum(1 for t, _b, _f in _children(signer_infos) if t == 0x30)
     if signer_count != 1:
         raise VError("anchor", f"anchor {index} proof carries {signer_count} signers, want one")
-    certs = pkcs7.load_der_pkcs7_certificates(token)
+    try:
+        certs = pkcs7.load_der_pkcs7_certificates(token)
+    except Exception as exc:
+        # A token that does not open as PKCS#7 is a failed anchor, never a crash: the bundle
+        # carried a proof and the proof is garbage.
+        raise VError("anchor", f"anchor {index} proof is not a parseable timestamp token: {exc}")
     signer_cert = None
     for cert in certs:
         try:
@@ -386,42 +392,109 @@ def _verify_cert_signature(cert, signature, signed, digest_name):
 
 def verify(raw_bytes, evidence_dir=None):
     """Verify one bundle and return a report dict. Failure is a report, never an exception."""
-    report = {"ok": False, "level": "not verified", "problems": [],
+    report = {"ok": False, "level": "not verified", "unsupported": False, "problems": [],
               "signature_ok": False, "chain_present": False, "chain_ok": False,
               "chain_mode": "", "head_matched": False, "anchors_matched": 0,
               "anchor_proofs_carried": 0, "anchor_proofs_verified": 0,
               "anchor_proofs_validated": False, "anchor_attestations": [],
-              "anchors_to_declared_head": 0, "unknown_types": [],
+              "anchors_to_declared_head": 0, "unknown_types": [], "unknown_subject_type": "",
               "span_present": False, "span_ok": False, "span_beats": 0,
               "span_counts_verified": 0, "span_counts_carried": 0,
               "span_gaps": [], "span_longest_gap": "", "span_coverage": "",
               "disclosures_present": False, "fields_revealed": 0, "fields_redacted": 0,
               "revealed_fields": [], "attestations_present": False, "attestations_verified": 0,
+              "head_attestations_verified": 0, "head_attestors": [],
               "attestors": []}
     try:
         b = parse_strict(raw_bytes)
         _schema_check(b)
         _check_signature(raw_bytes, b, report)
+        _KNOWN_SUBJECTS = {"url", "fleet", "repo", "agent", "host", "run"}
+        if b["subject"].get("type") not in _KNOWN_SUBJECTS:
+            report["unknown_subject_type"] = b["subject"].get("type")
         _check_chain(b, report)
         _check_disclosures(b, report)
         _check_attestations(b, report)
+        _check_head_attestations(b, report)
         _check_anchors(b, report)
         _check_span(b, report)
         _check_evidence(b, evidence_dir, report)
     except VError as e:
         report["problems"].append(f"{e.check}: {e.msg}")
-        report["level"] = "not verified"
+        if e.check == "unsupported":
+            report["unsupported"] = True
+            report["level"] = "unsupported"
+        else:
+            report["level"] = "not verified"
         return report
     report["ok"] = len(report["problems"]) == 0
     report["level"] = _level(report)
     return report
 
 
+
+# _MEMBERS mirrors the schema's additionalProperties: false, object for object. The Go verifier
+# gets this for free from DisallowUnknownFields; the reference implementation must be exactly as
+# strict, because a member the producer signature does not cover (anything under signatures, and
+# every stripped surface) would otherwise ride inside a green verdict.
+_MEMBERS = {
+    "root": {"anchors", "attestations", "bundle_id", "chain", "claims", "created_at",
+             "loomseal", "producer", "signatures", "subject"},
+    "producer": {"install_id", "key_id", "product", "product_version", "public_key"},
+    "subject": {"id", "type"},
+    "chain": {"consistency", "head", "keyed", "params", "profile"},
+    "consistency": {"from_root", "from_size", "path"},
+    "coords": {"link", "prev", "seq"},
+    "claim": {"at", "attestations", "chain", "disclosures", "evidence", "inclusion", "payload",
+              "type", "verdict"},
+    "inclusion": {"path"},
+    "attestation": {"alg", "at", "key_id", "public_key", "role", "sig"},
+    "disclosure": {"name", "salt", "value"},
+    "evidence": {"digest", "location", "media_type", "present", "role"},
+    "verdict": {"decision", "detail", "inputs_digest", "policy", "policy_digest"},
+    "anchor": {"at", "link", "proof", "ref", "seq", "type"},
+    "signature": {"alg", "key_id", "sig"},
+}
+
+
+def _require_members(obj, kind, where):
+    if not isinstance(obj, dict):
+        return
+    extra = set(obj) - _MEMBERS[kind]
+    if extra:
+        raise VError("parse", f"{where}: unknown member {sorted(extra)[0]!r}")
+
+
+def _members_check(b):
+    _require_members(b, "root", "bundle")
+    _require_members(b.get("producer"), "producer", "producer")
+    _require_members(b.get("subject"), "subject", "subject")
+    _require_members(b.get("chain"), "chain", "chain")
+    if isinstance(b.get("chain"), dict):
+        _require_members(b["chain"].get("consistency"), "consistency", "chain.consistency")
+    for i, c in enumerate(b.get("claims") or []):
+        _require_members(c, "claim", f"claim {i}")
+        if isinstance(c, dict):
+            _require_members(c.get("chain"), "coords", f"claim {i} chain")
+            _require_members(c.get("inclusion"), "inclusion", f"claim {i} inclusion")
+            _require_members(c.get("verdict"), "verdict", f"claim {i} verdict")
+            for j, a in enumerate(c.get("attestations") or []):
+                _require_members(a, "attestation", f"claim {i} attestation {j}")
+            for j, d in enumerate(c.get("disclosures") or []):
+                _require_members(d, "disclosure", f"claim {i} disclosure {j}")
+            for j, e in enumerate(c.get("evidence") or []):
+                _require_members(e, "evidence", f"claim {i} evidence {j}")
+    for i, s in enumerate(b.get("signatures") or []):
+        _require_members(s, "signature", f"signature {i}")
+    for i, a in enumerate(b.get("anchors") or []):
+        _require_members(a, "anchor", f"anchor {i}")
+
+
 def _schema_check(b):
     if not isinstance(b, dict):
         raise VError("parse", "bundle is not an object")
     if b.get("loomseal") != "0.1":
-        raise VError("parse", f"loomseal version {b.get('loomseal')!r}, want 0.1")
+        raise VError("unsupported", f"loomseal version {b.get('loomseal')!r}, this verifier implements 0.1")
     for req in ("bundle_id", "created_at", "producer", "subject", "claims", "signatures"):
         if req not in b:
             raise VError("parse", f"missing required member {req}")
@@ -429,6 +502,22 @@ def _schema_check(b):
         raise VError("parse", "claims must be a non-empty array")
     if not isinstance(b["signatures"], list) or not b["signatures"]:
         raise VError("parse", "signatures must be a non-empty array")
+    _members_check(b)
+    subj = b.get("subject")
+    if isinstance(subj, dict):
+        st = subj.get("type")
+        if not isinstance(st, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", st):
+            raise VError("parse", f"subject type {st!r} does not match the type pattern")
+    # Unsupported declarations surface at parse, before the signature is touched, so both
+    # reference implementations reach the same verdict on the same bytes regardless of what
+    # else is wrong with the bundle.
+    if isinstance(b.get("chain"), dict):
+        profile = b["chain"].get("profile")
+        if profile not in ("switchtender-audit-v1", "loomseal-chain-v1", "loomseal-merkle-v1"):
+            raise VError("unsupported", f"chain profile {profile!r} is not one this verifier implements")
+    for i, sig in enumerate(b["signatures"]):
+        if isinstance(sig, dict) and sig.get("alg") != "ed25519":
+            raise VError("unsupported", f"signature {i} alg {sig.get('alg')!r}, this verifier implements ed25519")
 
 
 def _key_id(pub_bytes):
@@ -441,6 +530,7 @@ def _check_signature(raw_bytes, b, report):
     # holder-controlled disclosures. The signature commits to the _sd digest set, not to the
     # disclosures, so a holder withholds a field without breaking it.
     parsed["signatures"] = []
+    parsed.pop("attestations", None)
     for claim in parsed.get("claims", []):
         if isinstance(claim, dict):
             claim.pop("disclosures", None)
@@ -456,14 +546,18 @@ def _check_signature(raw_bytes, b, report):
     if _key_id(pub_bytes) != prod.get("key_id"):
         raise VError("signature", "producer key_id does not match the public key")
     pub = Ed25519PublicKey.from_public_bytes(pub_bytes)
-    for sig in b["signatures"]:
+    # Every entry is checked before any is verified: the producer entry verifying first must
+    # not return past a foreign rider sitting behind it in the array.
+    for i, sig in enumerate(b["signatures"]):
         if sig.get("key_id") != prod["key_id"]:
-            continue
+            raise VError("signature",
+                         f"signature {i} names a key the producer block does not hold")
+    for sig in b["signatures"]:
         # alg sits outside the signed bytes, so an attacker rewrites it for free. It is read
         # only to reject a bundle that declares something this format does not fix, never to
         # choose which algorithm to verify with.
         if sig.get("alg") != "ed25519":
-            raise VError("signature", f"signature alg {sig.get('alg')!r}, want ed25519")
+            raise VError("unsupported", f"signature alg {sig.get('alg')!r}, this verifier implements ed25519")
         try:
             pub.verify(base64.b64decode(sig["sig"], validate=True), canonical)
             report["signature_ok"] = True
@@ -537,20 +631,27 @@ def _node_hash(left, right):
     return hashlib.sha256(b"\x01" + left + right).digest()
 
 
+def _claim_content(claim):
+    """The one committed-content rule both hashing profiles share: position (chain), proof
+    (inclusion), holder and third-party members (disclosures, attestations), and evidence
+    packaging (present, location) stay out of every link and leaf."""
+    content = {k: v for k, v in claim.items()
+               if k not in ("chain", "inclusion", "disclosures", "attestations")}
+    if isinstance(content.get("evidence"), list):
+        content["evidence"] = [
+            {k: v for k, v in e.items() if k not in ("present", "location")}
+            if isinstance(e, dict) else e
+            for e in content["evidence"]
+        ]
+    return content
+
+
 def _merkle_leaf_data(claim, install):
     """Leaf bytes for one claim: the canonical object of the domain, the install, and the claim
     digest. The digest covers the claim's content with the members describing its position, its
     proof, and how this bundle packages its evidence removed, so the same log entry disclosed in two
     bundles yields one leaf."""
-    content = {k: v for k, v in claim.items()
-               if k not in ("chain", "inclusion", "disclosures", "attestations")}
-    if isinstance(content.get("evidence"), list):
-        # present and location are packaging details, dropped so the same entry disclosed in two
-        # bundles that package their evidence differently still yields one leaf.
-        content["evidence"] = [
-            {k: v for k, v in e.items() if k not in ("present", "location")}
-            for e in content["evidence"]
-        ]
+    content = _claim_content(claim)
     digest = "sha256:" + hashlib.sha256(canon(content)).hexdigest()
     return canon({"domain": MERKLE, "install_id": install, "claim": digest})
 
@@ -699,7 +800,7 @@ def _recompute_links(b):
     elif profile == SWITCHTENDER:
         _links_switchtender(b)
     else:
-        raise VError("chain", f"unknown profile {profile}")
+        raise VError("unsupported", f"chain profile {profile!r} is not one this verifier implements")
 
 
 def _links_v1(b):
@@ -713,9 +814,9 @@ def _links_v1(b):
     if install != b["producer"].get("install_id"):
         raise VError("chain", f"{V1} params.install_id does not match producer.install_id")
     for i, c in enumerate(b["claims"]):
-        # disclosures are holder-controlled and travel outside the committed claim, so they never
-        # enter the link. Redactable fields are committed through the payload's _sd digest set.
-        bare = {k: v for k, v in c.items() if k not in ("chain", "disclosures", "attestations")}
+        # The one committed-content rule, shared with the merkle leaf: position, proof, holder
+        # and third-party members, and evidence packaging all stay out of the commitment.
+        bare = _claim_content(c)
         claim_digest = "sha256:" + hashlib.sha256(canon(bare)).hexdigest()
         link_input = canon({"domain": V1, "install_id": install,
                              "seq": c["chain"]["seq"], "prev": c["chain"].get("prev", ""),
@@ -893,7 +994,20 @@ def _check_attestations(b, report):
                 sig = base64.b64decode(a.get("sig", ""), validate=True)
             except Exception:
                 raise VError("attestation", f"claim {i} attestation {j} sig is not base64")
-            preimage = canon({"link": chain["link"], "role": role})
+            obj = {"loomseal": "attestation/1", "link": chain["link"], "role": role}
+            at = a.get("at")
+            if at is not None:
+                bad = not isinstance(at, str) or not at.endswith("Z")
+                if not bad:
+                    body = at[:-1].split(".", 1)[0]
+                    try:
+                        datetime.strptime(body, "%Y-%m-%dT%H:%M:%S")
+                    except ValueError:
+                        bad = True
+                if bad:
+                    raise VError("attestation", f"claim {i} attestation {j} at is not RFC 3339 UTC")
+                obj["at"] = at
+            preimage = canon(obj)
             try:
                 Ed25519PublicKey.from_public_bytes(pub).verify(sig, preimage)
             except Exception:
@@ -901,6 +1015,60 @@ def _check_attestations(b, report):
                                             "not verify over the claim link")
             report["attestations_verified"] += 1
             report["attestors"].append(f"{role} {a.get('key_id')}")
+
+
+
+def _check_head_attestations(b, report):
+    atts = b.get("attestations") or []
+    if not atts:
+        return
+    chain = b.get("chain")
+    if not isinstance(chain, dict) or not isinstance(chain.get("head"), dict):
+        raise VError("attestation", "bundle carries head attestations but no chain head to vouch for")
+    head = chain["head"]
+    for j, a in enumerate(atts):
+        if a.get("alg") != "ed25519":
+            raise VError("attestation", f"head attestation {j} alg {a.get('alg')!r}, want ed25519")
+        try:
+            pub = base64.b64decode(a.get("public_key", ""), validate=True)
+        except Exception:
+            raise VError("attestation", f"head attestation {j} public_key is not base64")
+        if len(pub) != 32:
+            raise VError("attestation", f"head attestation {j} public_key is not 32 bytes")
+        if _key_id(pub) != a.get("key_id"):
+            raise VError("attestation", f"head attestation {j} key_id does not match its public key")
+        role = a.get("role")
+        if not role:
+            raise VError("attestation", f"head attestation {j} role is empty")
+        try:
+            sig = base64.b64decode(a.get("sig", ""), validate=True)
+        except Exception:
+            raise VError("attestation", f"head attestation {j} sig is not base64")
+        obj = {"loomseal": "head-attestation/1", "link": head["link"], "seq": head["seq"],
+               "role": role}
+        at = a.get("at")
+        if at is not None:
+            bad = not isinstance(at, str) or not at.endswith("Z")
+            if not bad:
+                body = at[:-1].split(".", 1)[0]
+                try:
+                    datetime.strptime(body, "%Y-%m-%dT%H:%M:%S")
+                except ValueError:
+                    bad = True
+            if bad:
+                raise VError("attestation", f"head attestation {j} at is not RFC 3339 UTC")
+            obj["at"] = at
+        preimage = canon(obj)
+        try:
+            Ed25519PublicKey.from_public_bytes(pub).verify(sig, preimage)
+        except Exception:
+            raise VError("attestation", f"head attestation {j} by {a.get('key_id')} does not "
+                                        "verify over the chain head")
+        report["head_attestations_verified"] += 1
+        entry = f"{role} {a.get('key_id')}"
+        if at:
+            entry += f" at {at}"
+        report["head_attestors"].append(entry)
 
 
 def _check_anchors(b, report):
@@ -1120,7 +1288,7 @@ def failing_check_error(check, r):
     elif check == "anchor":
         if not r["signature_ok"] or not r["chain_ok"]:
             return "anchor case failed earlier than the anchor step"
-        if r["anchors_matched"] != 0 or not any("anchor" in p for p in r["problems"]):
+        if not any("anchor" in p for p in r["problems"]):
             return f"anchor case did not fail on an anchor: matched {r['anchors_matched']}"
     elif check == "span":
         if not r["signature_ok"] or not r["chain_ok"]:
@@ -1135,8 +1303,16 @@ def failing_check_error(check, r):
     elif check == "attestation":
         if not r["signature_ok"]:
             return "attestation case failed before the signature"
-        if not r["attestations_present"] or not any("attestation" in p for p in r["problems"]):
+        present = r["attestations_present"] or bool(r.get("head_attestations_verified") is not None
+                                                    and (r.get("head_attestors") or
+                                                         any("head attestation" in p for p in r["problems"])))
+        if not present or not any("attestation" in p for p in r["problems"]):
             return f"attestation case did not fail on an attestation: {r['problems']}"
+    elif check == "unsupported":
+        if not r.get("unsupported"):
+            return f"unsupported case did not set the unsupported verdict: {r['problems']}"
+        if r["signature_ok"]:
+            return "unsupported case judged the signature"
     else:
         return f"manifest names an unknown failing_check {check!r}"
     return None
@@ -1227,7 +1403,8 @@ def _check_presentation_sig(p, bundle_obj, report):
     if _rfc3339_epoch(p.get("created_at")) is None:
         raise VError("presentation", "presentation created_at is not RFC 3339")
     bundle_sha = hashlib.sha256(canon(bundle_obj)).hexdigest()
-    preimage = canon({"audience": p.get("audience", ""), "bundle_sha256": bundle_sha,
+    preimage = canon({"loomseal": "presentation/1",
+                      "audience": p.get("audience", ""), "bundle_sha256": bundle_sha,
                       "created_at": p.get("created_at", ""), "nonce": p.get("nonce", "")})
     try:
         sig = base64.b64decode(p.get("sig", ""), validate=True)
@@ -1272,7 +1449,9 @@ def main(argv):
         return 2
     report = verify(open(argv[1], "rb").read(), argv[2] if len(argv) > 2 else None)
     print(json.dumps(report, indent=2))
-    return 0 if report["ok"] else 1
+    if report["ok"]:
+        return 0
+    return 3 if report.get("unsupported") else 1
 
 
 if __name__ == "__main__":

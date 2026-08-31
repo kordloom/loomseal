@@ -1,6 +1,6 @@
 # LoomSeal: The KordLoom Attestation Format
 
-Status: v0.1 draft, 2026-07-27. This file is the canonical LoomSeal specification. The
+Status: canonical specification, 2026-08-31, release candidate for LoomSeal 1.0. The
 machine-readable schema is schema/loomseal-bundle.schema.json. The name is the claim: a seal
 does not prevent tampering, it reveals it, and that is exactly what verification checks.
 
@@ -30,8 +30,61 @@ ed25519 for offline verification. LoomSeal is the shared envelope around those p
 4. Deterministic. Same bundle, same verifier, same verdict, forever.
 5. Honest claims. The format documents exactly what verification proves and what it cannot
    prove. Tamper-evident, not tamper-proof. See "What a bundle proves."
-6. Shipped reality wins. Where this spec and released product behavior diverge, the product is
-   the reference for its own chain profile and the spec updates.
+6. Shipped vectors win. Where this spec and a released verifier diverge, the divergence is a
+   bug, and fixing it never changes the verdict of any bundle a conforming producer could have
+   emitted. Behavior that cannot be reconciled under that rule is new behavior, and new behavior
+   takes a new profile name or a new wire version.
+
+## Compatibility
+
+This section is the contract a 1.0 verifier and a 1.0 producer hold each other to. It governs
+every release from 1.0 onward.
+
+**What 1.0 freezes.** The bundle schema, the canonical form (JCS with the integer-only number
+profile), the signature preimages, the three chain profiles as specified here, the anchor and
+attestation constructions, and every conformance vector shipped at the tag. A shipped vector is
+never invalidated: a change that would flip any existing vector's verdict is not a revision of
+this format, it is a different format under a different version string.
+
+**The wire version.** The `loomseal` member reads `0.1` and stays `0.1` for the life of format
+1.0. It is an identifier, not a semver: the 1.x releases of this specification and the libraries
+evolve around an unchanging wire format. Incompatible evolution, a new canonicalization, a new
+signature algorithm, a widened number profile, takes a different version string, and a 1.0
+verifier refuses it as unsupported rather than judging it.
+
+**Strict parsing is the design.** A bundle member, claim member, or signature member this
+specification does not define is rejected at parse by a conforming verifier, exactly as the
+schema's `additionalProperties: false` states, and a conforming producer under version `0.1`
+never emits one. Rejecting the unknown is what makes a verified verdict mean something: nothing
+unsigned and nothing unspecified can ride inside a bundle a verifier has accepted.
+
+**Unsupported is not forged.** A verifier that meets an unknown `loomseal` version, an unknown
+`chain.profile`, or a signature `alg` it does not implement reports the bundle as unsupported
+and exits nonzero without judging the signature. Unsupported is fail-closed and never becomes a green
+verdict, but it is a verdict distinct from verification failure, because "this verifier is too
+old for this bundle" and "this bundle did not verify" must never share a message.
+
+**How each surface grows.**
+
+- Claim types are an open namespace. A type a verifier does not recognize is reported, never
+  failed. Product types enter through the registry in this document.
+- Claim payloads are open objects. New members ride under the digests that commit them.
+- Subject types and anchor types are informational vocabularies: a verifier reports an unknown
+  value and continues.
+- Chain profiles are closed per name. A profile's bound field set is complete as specified, and
+  a new bound field takes a new profile name. The canonical-object link makes the successor
+  cheap: entries lacking the new field hash identically under both.
+- Signature algorithms and the canonical form are fixed for format 1.0. A change takes a new
+  wire version.
+
+**One experimental surface.** The presentation document ("Presentations", below) is outside
+this contract until it stabilizes in a later 1.x release. Everything else in this specification
+is inside it.
+
+**Verdict stability.** A 1.x release never changes the verdict of a bundle a conforming
+producer could have emitted: what verifies stays verified, byte for byte, forever. Tightening
+only ever applies to inputs no conforming producer produces, and each such tightening ships
+with a must-not-verify vector pinning it.
 
 ## The bundle
 
@@ -43,14 +96,18 @@ A bundle is a JSON object with these members:
 | `bundle_id`  | yes      | Producer-assigned identifier for this bundle         |
 | `created_at` | yes      | RFC 3339 UTC time the bundle was assembled           |
 | `producer`   | yes      | Who emitted it: product, version, install, key       |
-| `subject`    | yes      | What the claims are about: a `type` from the schema's|
-|              |          | enum and an `id`                                     |
+| `subject`    | yes      | What the claims are about: a lowercase `type` token  |
+|              |          | and an `id`. Types are vocabulary, not structure: a  |
+|              |          | verifier reports one it does not know and continues  |
 | `chain`      | no       | Chain profile, parameters, and head (level 2 and up) |
 | `claims`     | yes      | The claims, each with payload, evidence, chain coords|
 | `anchors`    | no       | External anchor records (level 3)                    |
+| `attestations`| no      | Head-level counter-signatures over the chain head    |
 | `signatures` | yes      | At least one producer signature over the bundle      |
 
-Example, a bundle at level 3 on the generic profile (digests are illustrative):
+Example, the shape of a bundle on the generic profile. Digests, keys, and the signature are
+illustrative placeholders, so this exact document does not verify; the conformance vectors are
+the documents that do:
 
 ```json
 {
@@ -73,8 +130,8 @@ Example, a bundle at level 3 on the generic profile (digests are illustrative):
     "keyed": true,
     "params": { "install_id": "in_7f3a9b2c" },
     "head": {
-      "seq": 18211,
-      "link": "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9"
+      "seq": 18209,
+      "link": "6b23c0d5f35d1b11f9b683f0b0a617355deb11277d91ae091d399c655b87940d"
     }
   },
   "claims": [
@@ -113,9 +170,9 @@ Example, a bundle at level 3 on the generic profile (digests are illustrative):
   "anchors": [
     {
       "type": "git",
-      "seq": 18000,
-      "link": "1f2d3c4b5a69788766554433221100ffeeddccbbaa99887766554433221100ff",
-      "at": "2026-07-26T00:00:00Z",
+      "seq": 18209,
+      "link": "6b23c0d5f35d1b11f9b683f0b0a617355deb11277d91ae091d399c655b87940d",
+      "at": "2026-07-27T15:00:00Z",
       "ref": "https://github.com/acme/audit-anchors/commit/8f14e45fceea167a"
     }
   ],
@@ -162,8 +219,10 @@ base64 ed25519 signature, verified per RFC 8032 with the rules that implementati
 explicitly: a signature whose `S` component is not canonically reduced is rejected, a public key or `R`
 component of small order is rejected, and cofactorless verification is used. Left unpinned, one shipped
 verifier accepts a signature another rejects on the same bundle, which is the one outcome a
-deterministic format cannot tolerate. A bundle carries at least one signature whose `key_id` matches
-`producer.key_id`. A verifier recomputes `producer.key_id` from `producer.public_key` and rejects a
+deterministic format cannot tolerate. Every entry in `signatures` names `producer.key_id`, and at least one of them
+verifies; an entry naming any other key fails the bundle, because the array sits outside the
+signed bytes and a foreign entry is a rider nothing vouches for. Counter-signatures travel as
+attestations, which are defined and domain-bound, never as extra signature entries. A verifier recomputes `producer.key_id` from `producer.public_key` and rejects a
 bundle whose declared fingerprint does not match the key it carries; the fingerprint is a convenience
 for readers, never an input to a decision. Verifiers compare that recomputed fingerprint, not the
 declared one, against a pinned value when the caller provides one. Pinning against a value the bundle
@@ -190,7 +249,26 @@ signature algorithm beside it. External anchoring already bounds that risk: a si
 years from now cannot rewrite history whose heads were anchored outside the producer's control
 before such forgery was possible.
 
+**Install identity and key rotation.** `producer.install_id` is a stable installation
+identifier. A producer may mint it from its first public key, and the switchtender profile
+historically derives it that way, but the id names the install, not the key: it survives key
+changes and is never re-derived after rotation. Rotation itself is out of format 1.0's scope; a
+producer that rotates either starts a new install identity or records the succession as a claim,
+and the type `loomseal.rotation/1` is reserved in the registry for that statement. A relying
+party's trust is pin-based: it pins the key it has verified for an install, and a new key
+claiming an existing install id is a rotation event to accept explicitly, never silently.
+
 ## Chain profiles
+
+**What a link or leaf commits to.** Every hashing profile shares one committed-content rule: a
+claim's `chain` and `inclusion` members describe position and proof, `disclosures` and
+`attestations` are holder- and third-party-controlled and travel outside the commitment, and an
+evidence entry's `present` and `location` are packaging, whether and where the artifact travels
+beside this particular copy. All of these are excluded from every link and leaf, so the same log
+entry disclosed in two bundles that package their evidence differently commits identically, and
+repackaging never breaks a chain. The exclusion list is fixed for format 1.0; the reference
+libraries export it as one function (`seal.ClaimContent`) so a mirror implementation cannot
+drift from it by rewriting the strip by hand.
 
 A chain fixes claims in an append-only order. Products already have chains with different
 constructions, so LoomSeal names each construction as a profile and the verifier implements the
@@ -232,10 +310,13 @@ string in the claim payload: `actor_type` (how the actor authenticated), `on_beh
 whose authority the actor used), `content_digest` (`sha256:` and the hex digest of the canonical,
 redacted change payload), and `install_id` (the producing installation's identifier). An empty field
 is omitted from the object rather than written as an empty string, so an entry recorded before a
-field existed and one that simply does not use it hash identically. Because the link commits to a
-canonical object rather than a fixed positional array, a field added later is committed without
-changing how any earlier entry hashes, which is what lets this profile carry new evidence without a
-new profile version. A verifier hashes exactly the fields present and no others.
+field existed and one that simply does not use it hash identically. These four are the profile's
+complete bound field set: a verifier hashes exactly the defined fields an entry carries and no
+others, and a member this profile does not define is no part of the link. A future bound field
+takes a new profile name, as the design rules require, and the canonical-object link is what makes
+that successor cheap: an entry without the new field hashes identically under the old profile and
+the new one, so a chain adopts the successor mid-life without invalidating a single link it has
+already published.
 
 `install_id` binds an entry to its producer, and when an entry carries it a verifier **requires it to
 equal `producer.install_id`**. The reason is the one the tree and generic profiles state: a link that
@@ -569,8 +650,13 @@ internally consistent history.
 
 A claim may carry an `attestations` array. Each attestation is `key_id`, `public_key` (raw ed25519,
 base64), `alg` (`ed25519`), `role` (what the signer is to the claim, such as `counterparty` or
-`auditor`), and `sig`. The signature is over the RFC 8785 canonical object `{ "link": <the claim's
-chain.link>, "role": <role> }`, so it binds one specific claim and the role the signer claims. A
+`auditor`), an optional `at` (RFC 3339 UTC, when the signer counter-signed), and `sig`. The
+signature is over the RFC 8785 canonical object `{ "loomseal": "attestation/1", "link": <the
+claim's chain.link>, "role": <role> }`, with `"at"` included exactly when the attestation carries
+it. The `loomseal` member is a domain tag: it keeps this signature meaningless anywhere else a
+link-and-role shaped object might be signed. The binding covers one specific claim, the role the
+signer claims, and, when carried, the time they signed, which cannot be altered afterward without
+breaking the counter-signature. A
 verifier confirms `key_id` is the digest of `public_key`, then checks the signature; it reports each
 verified attestation as its role and key fingerprint and leaves whether that signer is worth trusting
 to the relying party, exactly as it does for the producer key and for anchor authorities.
@@ -582,11 +668,40 @@ producer re-signing anything, and without touching the link a later attestation 
 depends on. Because the signature binds the link, an attestation cannot be moved to a different claim,
 and because it binds the role, the role cannot be changed after the fact.
 
+A bundle may also carry a top-level `attestations` array: head-level counter-signatures over
+the chain head rather than over one claim. The object shape is the same; the signature is over
+`{ "loomseal": "head-attestation/1", "link": <chain.head.link>, "seq": <chain.head.seq>,
+"role": <role> }`, with `"at"` included exactly when carried. The distinct domain tag means a
+head attestation can never be replayed as a claim attestation or against a different head. This
+is the artifact a witness mints when it counter-signs a published head, and the custody record a
+re-anchoring service signs when it takes responsibility for a chain's continuity: both attach to
+an already-signed bundle, because head-level attestations are stripped from the producer
+preimage exactly as claim attestations are.
+
 An attestation vouches only for the claim's existence and integrity as the signer saw it. It does not
 make the claim true, and the format takes no position on which roles or signers a relying party should
 accept. As with anchors, a verifier reports what it checked and lets the reader decide.
 
 ## Anchors
+
+**Anchor verdicts are stable.** A 1.x release never changes the anchor verdict of an
+already-emitted bundle: a token that opened and verified keeps opening and verifying, byte for
+byte. Tightening only ever applies to tokens no conforming authority issues, and each such
+tightening ships with a must-not-verify vector. A carried proof that does not open as a
+timestamp token fails the anchor check outright, because garbage must never grade the same as
+carrying no proof at all.
+
+**Signer resolution.** A timestamp token carries exactly one SignerInfo; zero is malformed and
+more than one is ambiguous, and both fail. The signer certificate is the one the SignerInfo's
+signer identifier names, by issuer and serial number or by subject key identifier; certificate
+order inside the token carries no meaning. A token whose named signer certificate is absent
+fails rather than falling back to any other certificate the token happens to carry.
+
+**Self-attestation.** An anchor or attestation signed by the producer's own key verifies
+mechanically like any other, and a verifier reports the signer's fingerprint exactly so a
+relying party can see that it is the producer vouching for itself. The format takes no position
+beyond making the self-reference visible: a producer's own countersignature adds no independence,
+and whether it counts for anything is the relying party's call, never the verifier's.
 
 An anchor fixes a chain link in time, in a place the producer cannot rewrite alone. An anchor
 record carries the anchored `seq` and `link`, the anchor time, a `ref` locating the anchor, and
@@ -747,8 +862,9 @@ one: signed, chained, anchored, spanned. No other adjectives.
 The verifier performs these steps in order and fails closed:
 
 1. Parse the document, require `loomseal` version `0.1`, validate against the schema.
-2. Reconstruct the canonical form with `signatures` emptied and verify at least one signature
-   against `producer.public_key`. If the caller pinned a fingerprint, require `key_id` match.
+2. Require every `signatures` entry to name `producer.key_id`, reconstruct the canonical form
+   with `signatures` emptied, and verify at least one entry against `producer.public_key`. If
+   the caller pinned a fingerprint, require `key_id` match.
 3. If `chain` is present: require the profile known and the claims sorted by `seq`. For a linear
    profile require the claims contiguous, then recompute every link for an unkeyed profile or check
    continuity for a keyed one. For the tree profile require `keyed` false, `params.install_id`
@@ -789,8 +905,10 @@ emitting product and documented there; this registry fixes the names and require
 | Type                   | Emitted by   | Status   | Payload minimum                       |
 |------------------------|--------------|----------|---------------------------------------|
 | `switchtender.audit/1` | SwitchTender | v0.1     | actor, method, path                   |
-| `switchtender.run/1`   | SwitchTender | reserved | not emitted yet, see below            |
+| `switchtender.run/1`   | SwitchTender | reserved | not emitted yet, not in any verifier's |
+|                        |              |          | known set until something emits it    |
 | `loomseal.span/1`      | Any producer | v0.1     | stream, cadence_s, beat, count        |
+| `loomseal.rotation/1`  | reserved     |          | key succession statement, unspecified |
 | `loomseal.agentrun/1`  | Any producer | v0.1     | session, tool, args, outcome          |
 
 `switchtender.run/1` is reserved and nothing emits it. A run's record travels today as
@@ -860,6 +978,13 @@ whole house rests on never claiming more than the verifier checks.
 
 ## Presentations
 
+**Status: experimental.** The presentation document is the one surface outside the 1.0 freeze:
+it is newer than everything else here, has no integrator mileage yet, and stabilizes in a later
+1.x release with its own vectors and its own compatibility note. Until then this section may
+change, and a verifier should treat presentation verdicts as provisional in a way bundle
+verdicts never are. Bundles inside presentations are ordinary bundles and keep every 1.0
+guarantee.
+
 A bundle is evidence anyone can check. A presentation is how the subject of that evidence carries it
 to a particular verifier and shows only what they choose, bound so it cannot be replayed elsewhere. A
 presentation is a separate document that wraps one bundle.
@@ -890,7 +1015,7 @@ bundle with sidecar evidence travels as a directory or archive; the bundle stays
 presentation uses `application/vnd.kordloom.loomseal-presentation+json` and
 `<subject>-<date>.loomseal-presentation.json`.
 
-## Compatibility
+## Interoperability
 
 A bundle may be wrapped in a DSSE envelope with payload type
 `application/vnd.kordloom.loomseal+json` for tooling that expects DSSE. Mapping claims onto in-toto

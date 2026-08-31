@@ -73,7 +73,7 @@ func TestParse(t *testing.T) {
 	}, { // Test 1: Unknown top-level fields are rejected.
 		Mutate: func(m map[string]any) { m["extra"] = 1 }, Want: ErrParse,
 	}, { // Test 2: A wrong format version is rejected.
-		Mutate: func(m map[string]any) { m["loomseal"] = "0.2" }, Want: ErrSchema,
+		Mutate: func(m map[string]any) { m["loomseal"] = "0.2" }, Want: ErrUnsupported,
 	}, { // Test 3: An empty bundle_id is rejected.
 		Mutate: func(m map[string]any) { m["bundle_id"] = "" }, Want: ErrSchema,
 	}, { // Test 4: A malformed created_at is rejected.
@@ -84,9 +84,10 @@ func TestParse(t *testing.T) {
 		}, Want: ErrSchema,
 	}, { // Test 6: A malformed producer key_id is rejected.
 		Mutate: func(m map[string]any) { producerOf(m)["key_id"] = "abc" }, Want: ErrSchema,
-	}, { // Test 7: An unknown subject type is rejected.
+	}, { // Test 7: A subject type outside the token pattern is rejected; an unknown token is
+		// vocabulary and passes, which the subject-unknown-type vector pins from the other side.
 		Mutate: func(m map[string]any) {
-			m["subject"] = map[string]any{"type": "planet", "id": "x"}
+			m["subject"] = map[string]any{"type": "Not A Token!", "id": "x"}
 		}, Want: ErrSchema,
 	}, { // Test 8: A bundle without claims is rejected.
 		Mutate: func(m map[string]any) { m["claims"] = []any{} }, Want: ErrSchema,
@@ -104,7 +105,7 @@ func TestParse(t *testing.T) {
 				"profile": "mystery-v9", "keyed": false,
 				"head": map[string]any{"seq": 1, "link": strings.Repeat("ab", 32)},
 			}
-		}, Want: ErrSchema,
+		}, Want: ErrUnsupported,
 	}, { // Test 13: A chain head with a bad link is rejected.
 		Mutate: func(m map[string]any) {
 			m["chain"] = map[string]any{
@@ -130,7 +131,7 @@ func TestParse(t *testing.T) {
 			s, _ := m["signatures"].([]any)
 			first, _ := s[0].(map[string]any)
 			first["alg"] = "rsa"
-		}, Want: ErrSchema,
+		}, Want: ErrUnsupported,
 	}, { // Test 18: A wrong-size signature is rejected.
 		Mutate: func(m map[string]any) {
 			s, _ := m["signatures"].([]any)

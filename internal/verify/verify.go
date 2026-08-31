@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -23,9 +24,11 @@ import (
 
 // knownClaimTypes is the registry of claim types this verifier understands. Unknown types
 // are reported, never failed, so newer producers stay verifiable.
+// Reserved rows stay out until something emits them: a type in this set reads as "checked
+// against a registry entry", and claiming that for a type nothing produces is a false statement
+// in every report that mentions it.
 var knownClaimTypes = map[string]bool{
 	"switchtender.audit/1": true,
-	"switchtender.run/1":   true,
 	"loomseal.span/1":      true,
 	"loomseal.agentrun/1":  true,
 }
@@ -43,6 +46,12 @@ type Options struct {
 type Report struct {
 	// OK reports whether every check passed.
 	OK bool `json:"ok"`
+	// Unsupported reports that the bundle declares a version, profile, or algorithm this
+	// verifier does not implement. Fail-closed, and distinct from a verification failure.
+	Unsupported bool `json:"unsupported,omitempty"`
+	// UnknownSubjectType carries a subject type outside the known vocabulary. Informational:
+	// subject types are vocabulary, not structure, and never fail a bundle.
+	UnknownSubjectType string `json:"unknown_subject_type,omitempty"`
 	// Level is the conformance wording achieved, such as "signed, chained (structural)".
 	Level string `json:"level"`
 	// BundleID echoes the bundle's identifier.
@@ -148,6 +157,13 @@ type Report struct {
 	AttestationsPresent bool `json:"attestations_present,omitempty"`
 	// AttestationsVerified is how many counter-signatures were checked and held.
 	AttestationsVerified int `json:"attestations_verified,omitempty"`
+	// HeadAttestationsPresent reports whether the bundle carries head-level counter-signatures.
+	HeadAttestationsPresent bool `json:"head_attestations_present,omitempty"`
+	// HeadAttestationsVerified is how many head-level counter-signatures held.
+	HeadAttestationsVerified int `json:"head_attestations_verified,omitempty"`
+	// HeadAttestors lists each verified head attestation as role and key, with its signed time
+	// when carried.
+	HeadAttestors []string `json:"head_attestors,omitempty"`
 	// Attestors lists each verified counter-signer as its role and key fingerprint, so a reader can
 	// decide whether the vouching party is worth trusting.
 	Attestors []string `json:"attestors,omitempty"`
@@ -183,6 +199,12 @@ func Run(raw []byte, opts Options) *Report {
 	r := &Report{}
 	b, err := bundle.Parse(raw)
 	if err != nil {
+		if errors.Is(err, bundle.ErrUnsupported) {
+			r.Unsupported = true
+			r.problem("%v", err)
+			r.Level = "unsupported"
+			return r
+		}
 		r.problem("parse: %v", err)
 		r.Level = "not verified"
 		return r
@@ -192,10 +214,14 @@ func Run(raw []byte, opts Options) *Report {
 	r.Subject = b.Subject.Type + " " + b.Subject.ID
 
 	r.checkSignature(raw, b, opts.Fingerprint)
+	if !bundle.SubjectTypes[b.Subject.Type] {
+		r.UnknownSubjectType = b.Subject.Type
+	}
 	r.checkClaimTypes(b)
 	r.checkChain(raw, b)
 	r.checkDisclosures(raw, b)
 	r.checkAttestations(b)
+	r.checkHeadAttestations(b)
 	r.checkAnchors(b)
 	r.checkSpan(b)
 	r.checkEvidence(b, opts.EvidenceDir)
@@ -223,11 +249,18 @@ func (r *Report) checkSignature(raw []byte, b *bundle.Bundle, pin string) {
 		r.problem("producer key_id does not match the embedded public key")
 		return
 	}
+	// The producer block holds exactly one key, so every entry in signatures must name it. The
+	// array sits outside the signed bytes, which is what lets the producer sign at all, and that
+	// same fact means a foreign entry is a rider nothing vouches for: accepted, it would travel
+	// inside a green verdict. Attestation is the defined path for counter-signatures.
 	var sig *bundle.Signature
 	for i := range b.Signatures {
-		if b.Signatures[i].KeyID == b.Producer.KeyID {
+		if b.Signatures[i].KeyID != b.Producer.KeyID {
+			r.problem("signature %d names a key the producer block does not hold", i)
+			return
+		}
+		if sig == nil {
 			sig = &b.Signatures[i]
-			break
 		}
 	}
 	if sig == nil {

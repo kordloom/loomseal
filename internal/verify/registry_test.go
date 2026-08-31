@@ -28,3 +28,32 @@ func TestEveryKnownClaimTypeIsInTheFormatRegistry(t *testing.T) {
 		}
 	}
 }
+
+// TestReservedRegistryRowsStayOutOfTheKnownSet pins the other direction: a row FORMAT.md marks
+// reserved must not sit in the verifier's known set, because "known" reads in every report as
+// "checked against a registry entry", and claiming that for a type nothing emits is false. The
+// row enters the set the day something emits it, never before.
+func TestReservedRegistryRowsStayOutOfTheKnownSet(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../FORMAT.md")
+	if err != nil {
+		t.Fatalf("read FORMAT.md: %v", err)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !strings.Contains(line, "reserved") || !strings.Contains(line, "`") {
+			continue
+		}
+		start := strings.Index(line, "`")
+		end := strings.Index(line[start+1:], "`")
+		if end < 0 {
+			continue
+		}
+		name := line[start+1 : start+1+end]
+		if !strings.Contains(name, "/") {
+			continue
+		}
+		if knownClaimTypes[name] {
+			t.Errorf("%s is marked reserved in FORMAT.md but sits in the verifier's known set", name)
+		}
+	}
+}

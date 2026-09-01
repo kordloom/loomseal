@@ -106,6 +106,44 @@ func LinkV1(key []byte, installID string, seq int64, prev string, claim any) (st
 	return chain.LinkV1(key, installID, seq, prev, claim)
 }
 
+// BundleContent returns the bundle members a producer signature covers, with every unsigned surface
+// removed: the signatures array emptied, head-level attestations dropped, and each claim's
+// holder-controlled disclosures and third-party attestations dropped.
+//
+// It is the bundle-level counterpart of ClaimContent, and it exists for the same reason. A mirror
+// implementation that rewrites this list by hand falls behind it the moment the list grows, and the
+// symptom is the worst kind: the mirror refuses bundles the reference accepts, so a valid receipt
+// reads as a forgery. That has already happened once to a downstream verifier that had no way to
+// import this.
+//
+// The argument is not modified. The returned tree shares the values it did not have to rewrite.
+func BundleContent(doc map[string]any) map[string]any {
+	out := make(map[string]any, len(doc))
+	for k, v := range doc {
+		out[k] = v
+	}
+	// The claim maps are copied too, because the strip reaches inside them and a shallow copy would
+	// let this quietly rewrite the caller's own bundle.
+	if claims, ok := out["claims"].([]any); ok {
+		copied := make([]any, 0, len(claims))
+		for _, c := range claims {
+			obj, ok := c.(map[string]any)
+			if !ok {
+				copied = append(copied, c)
+				continue
+			}
+			cp := make(map[string]any, len(obj))
+			for k, v := range obj {
+				cp[k] = v
+			}
+			copied = append(copied, cp)
+		}
+		out["claims"] = copied
+	}
+	bundle.StripUnsigned(out)
+	return out
+}
+
 // ClaimContent returns the members of a claim a link or leaf commits to: the one committed-content
 // rule both hashing profiles share. Producers and mirror verifiers use it so their commitments can
 // never drift from the reference by reimplementing the strip list.

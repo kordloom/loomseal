@@ -1,13 +1,15 @@
-// Package rfc3161 verifies the timestamp tokens an anchor may carry as an embedded proof.
+// Package rfc3161 reads and checks RFC 3161 timestamp tokens.
 //
-// An anchor fixes a chain link in time somewhere the producer cannot rewrite alone. Most anchor
-// types are checked by going and fetching what they point at, which needs a network and a place that
-// still exists. An RFC 3161 token is different: it is signed by a timestamp authority over the link
-// itself and carries its own certificates, so a relying party checks it offline, years later, with
-// nothing but the bundle.
+// It is public because a producer needs it. LoomSeal's own CLI only verifies bundles, so anything
+// that writes anchors, including SwitchTender, lives outside this module and could not reach this
+// code while it sat under internal. The result was a second, independent implementation of the same
+// ASN.1 in the producer, which drifted: it hardcoded SHA-256 for the payload digest and rejected
+// every token from an authority that answers in SHA-512, while this package accepted them. Two
+// parsers that must agree, with no way to test that they do, is the shape of that bug.
 //
-// The format has always said so. Nothing verified it, so a bundle carrying a real signed timestamp
-// was reported at the same strength as one carrying a URL.
+// Verify deliberately does not decide whether an authority is trustworthy. That is the relying
+// party's call, made by looking at the signer this returns.
+
 package rfc3161
 
 import (
@@ -262,25 +264,52 @@ func signerCertificate(sd signedData, sid asn1.RawValue) (*x509.Certificate, err
 	if err != nil {
 		return nil, fmt.Errorf("%w: certificates: %w", ErrParse, err)
 	}
-	var named issuerAndSerial
-	if _, e := asn1.Unmarshal(sid.FullBytes, &named); e == nil && named.SerialNumber != nil {
+	match, err := certificateNamedBy(certs, sid)
+	if err != nil {
+		return nil, err
+	}
+	// The named certificate has to be the one that verifies. Falling back to another certificate the
+	// token happens to carry would make the outcome depend on the order they appear in, which the
+	// format states carries no meaning, and would let a token be graded against a certificate its
+	// signer identifier never named.
+	if match == nil {
+		return nil, fmt.Errorf("%w: the token names a signer certificate it does not carry", ErrParse)
+	}
+	if !hasTimestamping(match) {
+		return nil, fmt.Errorf("%w: the certificate the token names is not marked for timestamping",
+			ErrParse)
+	}
+	return match, nil
+}
+
+// certificateNamedBy returns the carried certificate a CMS signer identifier names, or nil when the
+// token carries no such certificate.
+//
+// A signer identifier is a choice: an issuer and serial number, or a subject key identifier tagged
+// [0]. Both forms are read, because an authority may use either and a verifier that understands only
+// one would report a conforming token as unresolvable.
+func certificateNamedBy(certs []*x509.Certificate, sid asn1.RawValue) (*x509.Certificate, error) {
+	if sid.Class == asn1.ClassContextSpecific && sid.Tag == 0 {
+		ski := sid.Bytes
 		for _, c := range certs {
-			if c.SerialNumber.Cmp(named.SerialNumber) == 0 &&
-				bytes.Equal(c.RawIssuer, named.Issuer.FullBytes) {
-				if !hasTimestamping(c) {
-					return nil, fmt.Errorf("%w: the certificate the token names is not marked for "+
-						"timestamping", ErrParse)
-				}
+			if len(c.SubjectKeyId) > 0 && bytes.Equal(c.SubjectKeyId, ski) {
 				return c, nil
 			}
 		}
+		return nil, nil
+	}
+	var named issuerAndSerial
+	if _, err := asn1.Unmarshal(sid.FullBytes, &named); err != nil || named.SerialNumber == nil {
+		return nil, fmt.Errorf("%w: the token's signer identifier is neither an issuer and serial "+
+			"number nor a subject key identifier", ErrParse)
 	}
 	for _, c := range certs {
-		if hasTimestamping(c) {
+		if c.SerialNumber.Cmp(named.SerialNumber) == 0 &&
+			bytes.Equal(c.RawIssuer, named.Issuer.FullBytes) {
 			return c, nil
 		}
 	}
-	return nil, fmt.Errorf("%w: no certificate in the token is marked for timestamping", ErrParse)
+	return nil, nil
 }
 
 // hasTimestamping reports whether a certificate carries the timestamping extended key usage, which

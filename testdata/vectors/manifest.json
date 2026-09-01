@@ -184,6 +184,13 @@
       "why": "A log that changed an entry it had already published cannot produce a consistency proof from the root the world saw before the change. Every disclosed leaf here still recomputes, so only the append-only check catches it."
     },
     {
+      "name": "merkle-evidence-packaging",
+      "file": "merkle-evidence-packaging.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 4)",
+      "why": "An evidence entry's present and location are packaging details outside the committed content, so a merkle leaf recomputes whatever way this copy packages its evidence. Every other member of the entry, the digest included, is inside the leaf."
+    },
+    {
       "name": "merkle-foreign-install",
       "file": "merkle-foreign-install.loomseal.json",
       "must_verify": false,

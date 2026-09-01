@@ -160,3 +160,56 @@ func TestLinkV1KeyedAndUnkeyed(t *testing.T) {
 		t.Error("two installs produce the same link for the same claim")
 	}
 }
+
+// TestBundleContentLeavesTheCallerAlone covers the property the copy exists for.
+//
+// The strip reaches inside each claim. A shallow copy would share those claim maps, so a caller who
+// asked what the signature covers would find its own bundle silently rewritten, its disclosures and
+// attestations gone. A verifier doing this mid-check would then verify a document it had itself
+// damaged, and a producer doing it would sign one thing and publish another.
+func TestBundleContentLeavesTheCallerAlone(t *testing.T) {
+	t.Parallel()
+	doc := map[string]any{
+		"signatures":   []any{map[string]any{"key_id": "k", "sig": "s"}},
+		"attestations": []any{map[string]any{"role": "witness"}},
+		"claims": []any{map[string]any{
+			"type":         "x/1",
+			"disclosures":  []any{"d"},
+			"attestations": []any{"a"},
+		}},
+	}
+	out := seal.BundleContent(doc)
+
+	// The caller's tree is untouched, top level and inside the claim.
+	if len(doc["signatures"].([]any)) != 1 {
+		t.Error("the caller's signatures were emptied")
+	}
+	if _, ok := doc["attestations"]; !ok {
+		t.Error("the caller's head attestations were dropped")
+	}
+	claim := doc["claims"].([]any)[0].(map[string]any)
+	if _, ok := claim["disclosures"]; !ok {
+		t.Error("the caller's claim disclosures were dropped")
+	}
+	if _, ok := claim["attestations"]; !ok {
+		t.Error("the caller's claim attestations were dropped")
+	}
+
+	// And the returned tree really is stripped.
+	if len(out["signatures"].([]any)) != 0 {
+		t.Error("the returned signatures were not emptied")
+	}
+	if _, ok := out["attestations"]; ok {
+		t.Error("the returned head attestations were not dropped")
+	}
+	outClaim := out["claims"].([]any)[0].(map[string]any)
+	if _, ok := outClaim["disclosures"]; ok {
+		t.Error("the returned claim kept its disclosures")
+	}
+	if _, ok := outClaim["attestations"]; ok {
+		t.Error("the returned claim kept its attestations")
+	}
+	if outClaim["type"] != "x/1" {
+		t.Error("the returned claim lost a member the signature does cover")
+	}
+}

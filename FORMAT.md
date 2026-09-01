@@ -268,7 +268,9 @@ beside this particular copy. All of these are excluded from every link and leaf,
 entry disclosed in two bundles that package their evidence differently commits identically, and
 repackaging never breaks a chain. The exclusion list is fixed for format 1.0; the reference
 libraries export it as one function (`seal.ClaimContent`) so a mirror implementation cannot
-drift from it by rewriting the strip by hand.
+drift from it by rewriting the strip by hand. The bundle-level strip a producer signature
+covers is exported the same way, as `seal.BundleContent`, for the same reason: a mirror that
+rewrote that list by hand fell behind it and began refusing bundles the reference accepted.
 
 A chain fixes claims in an append-only order. Products already have chains with different
 constructions, so LoomSeal names each construction as a profile and the verifier implements the
@@ -695,7 +697,11 @@ carrying no proof at all.
 more than one is ambiguous, and both fail. The signer certificate is the one the SignerInfo's
 signer identifier names, by issuer and serial number or by subject key identifier; certificate
 order inside the token carries no meaning. A token whose named signer certificate is absent
-fails rather than falling back to any other certificate the token happens to carry.
+fails rather than falling back to any other certificate the token happens to carry. The named
+certificate must itself carry the timestamping extended key usage: a certificate its issuer never
+authorized to timestamp cannot attest to a time, whatever its signature verifies against. A token
+naming a certificate that lacks that usage fails, and so does one naming a certificate it does not
+carry, even when some other certificate inside it would have been a valid signer.
 
 **Self-attestation.** An anchor or attestation signed by the producer's own key verifies
 mechanically like any other, and a verifier reports the signer's fingerprint exactly so a
@@ -910,6 +916,7 @@ emitting product and documented there; this registry fixes the names and require
 | `loomseal.span/1`      | Any producer | v0.1     | stream, cadence_s, beat, count        |
 | `loomseal.rotation/1`  | reserved     |          | key succession statement, unspecified |
 | `loomseal.agentrun/1`  | Any producer | v0.1     | session, tool, args, outcome          |
+| `whodar.knowledge-risk/1` | Whodar    | v0.1     | finding, topics_scored, critical      |
 
 `switchtender.run/1` is reserved and nothing emits it. A run's record travels today as
 `switchtender.audit/1` claims: the request that created it, any approval or rejection, and an outcome

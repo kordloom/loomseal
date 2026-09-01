@@ -19,7 +19,7 @@ import (
 
 	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/internal/chain"
-	"github.com/kordloom/loomseal/internal/rfc3161"
+	"github.com/kordloom/loomseal/rfc3161"
 )
 
 // knownClaimTypes is the registry of claim types this verifier understands. Unknown types
@@ -28,9 +28,10 @@ import (
 // against a registry entry", and claiming that for a type nothing produces is a false statement
 // in every report that mentions it.
 var knownClaimTypes = map[string]bool{
-	"switchtender.audit/1": true,
-	"loomseal.span/1":      true,
-	"loomseal.agentrun/1":  true,
+	"switchtender.audit/1":    true,
+	"loomseal.span/1":         true,
+	"loomseal.agentrun/1":     true,
+	"whodar.knowledge-risk/1": true,
 }
 
 // Options carries the caller's verification inputs.

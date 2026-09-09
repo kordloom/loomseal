@@ -262,6 +262,12 @@ func renderReport(w io.Writer, r *verify.Report) {
 	}
 	fmt.Fprintf(w, "evidence   %d verified, %d missing, %d referenced only\n",
 		r.EvidenceVerified, r.EvidenceMissing, r.EvidenceReferenced)
+	// An altered artifact is the case a reader most needs to see, so it gets its own line
+	// rather than a share of a count that also holds artifacts nobody supplied.
+	if r.EvidenceMismatched > 0 {
+		fmt.Fprintf(w, "ALTERED    %d artifact(s) present but not matching the sealed digest\n",
+			r.EvidenceMismatched)
+	}
 	for _, t := range r.UnknownClaimTypes {
 		fmt.Fprintf(w, "note       unknown claim type %s, not checked against a registry entry\n", t)
 	}

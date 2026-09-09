@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
@@ -139,6 +140,10 @@ type Report struct {
 	EvidenceVerified int `json:"evidence_verified"`
 	// EvidenceMissing is how many digests had no artifact in the supplied directory.
 	EvidenceMissing int `json:"evidence_missing"`
+	// EvidenceMismatched is how many artifacts were present at their declared location but
+	// hashed to something other than the sealed digest. Each one is also a problem, so a
+	// bundle carrying an altered artifact does not verify.
+	EvidenceMismatched int `json:"evidence_mismatched"`
 	// EvidenceReferenced is how many digests were not checked because no directory was
 	// supplied.
 	EvidenceReferenced int `json:"evidence_referenced"`
@@ -511,15 +516,52 @@ func (r *Report) checkEvidence(b *bundle.Bundle, dir string) {
 		r.problem("evidence directory: %v", err)
 		return
 	}
+	mismatched := map[string]bool{}
 	for _, c := range b.Claims {
 		for _, e := range c.Evidence {
 			if supplied[e.Digest] {
 				r.EvidenceVerified++
-			} else {
-				r.EvidenceMissing++
+				continue
 			}
+			// An artifact that was never supplied is a holder disclosing less than the
+			// whole set, which the format allows. An artifact sitting at its declared
+			// location whose bytes no longer hash to the sealed digest is a different
+			// thing entirely, and counting both as missing let an altered artifact pass
+			// with a clean verdict.
+			if e.Location != "" && withinDir(dir, e.Location) {
+				if _, err := os.Stat(filepath.Join(dir, e.Location)); err == nil {
+					// Several claims may rest on one artifact. Report the artifact once
+					// rather than once per reference, so the count is a count of files.
+					if !mismatched[e.Location] {
+						mismatched[e.Location] = true
+						r.EvidenceMismatched++
+						r.problem("evidence %s at %s does not match its sealed digest %s",
+							e.Role, e.Location, e.Digest)
+					}
+					continue
+				}
+			}
+			r.EvidenceMissing++
 		}
 	}
+}
+
+// withinDir reports whether rel stays inside dir once cleaned. A location is a hint carried
+// in the bundle, so it is attacker-controlled and must not be able to reach outside the
+// directory the verifier was pointed at.
+func withinDir(dir, rel string) bool {
+	if filepath.IsAbs(rel) {
+		return false
+	}
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	full, err := filepath.Abs(filepath.Join(dir, rel))
+	if err != nil {
+		return false
+	}
+	return full == base || strings.HasPrefix(full, base+string(filepath.Separator))
 }
 
 // hashFile streams a file into a SHA-256 hasher and returns its sha256: digest. Evidence artifacts

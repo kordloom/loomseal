@@ -115,7 +115,7 @@ func renderPresentation(w io.Writer, r *verify.PresentationReport) {
 	// not pass --nonce had no way to notice they were holding last quarter's presentation.
 	// Show what the presentation carries and say plainly that nothing compared it, the same
 	// way the evidence and pin lines announce a check that did not happen.
-	if r.PresentationOK && (r.AudienceMatch == nil || r.NonceMatch == nil) {
+	if r.OK && (r.AudienceMatch == nil || r.NonceMatch == nil) {
 		if r.NonceMatch == nil {
 			fmt.Fprintf(w, "nonce      %q, NOT CHECKED, so a presentation made for an older\n",
 				r.Nonce)
@@ -167,7 +167,12 @@ func renderReport(w io.Writer, r *verify.Report) {
 	// whom. Without a pin the reader sees "signature ok" and a key id they have nothing to
 	// compare against, which reads as confirmation rather than as the open question it is.
 	// The evidence line already says when it checked nothing; this one has to as well.
-	if r.SignatureOK && !r.ProducerPinned {
+	// Gated on the whole verdict, not just the signature. A bundle that fails for any other
+	// reason has already answered the question this notice raises, and printed above a
+	// failure the words "the bundle was signed" read as partial reassurance rather than as
+	// the open question they are. A disclosure written for one outcome must not appear in
+	// another where it argues the opposite way.
+	if r.OK && !r.ProducerPinned {
 		fmt.Fprintln(w, "pin        NONE, so this says the bundle was signed, not who signed it")
 		fmt.Fprintln(w, "           pass --fingerprint sha256:<hex> from the producer's trust page")
 	}

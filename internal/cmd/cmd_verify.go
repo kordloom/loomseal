@@ -149,6 +149,14 @@ func renderReport(w io.Writer, r *verify.Report) {
 	if r.FingerprintMatch != nil {
 		fmt.Fprintf(w, "pin        match %t\n", *r.FingerprintMatch)
 	}
+	// Any key signs its own bundle, so a valid signature says a bundle was signed, never by
+	// whom. Without a pin the reader sees "signature ok" and a key id they have nothing to
+	// compare against, which reads as confirmation rather than as the open question it is.
+	// The evidence line already says when it checked nothing; this one has to as well.
+	if r.SignatureOK && !r.ProducerPinned {
+		fmt.Fprintln(w, "pin        NONE, so this says the bundle was signed, not who signed it")
+		fmt.Fprintln(w, "           pass --fingerprint sha256:<hex> from the producer's trust page")
+	}
 	switch {
 	case r.ChainPresent && r.ChainOK:
 		fmt.Fprintf(w, "chain      %s, %s, %d claims, head matched %t\n", r.ChainProfile,

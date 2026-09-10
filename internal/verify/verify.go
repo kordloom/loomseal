@@ -68,6 +68,12 @@ type Report struct {
 	SignatureOK bool `json:"signature_ok"`
 	// FingerprintMatch reports the pin comparison when a fingerprint was supplied.
 	FingerprintMatch *bool `json:"fingerprint_match,omitempty"`
+	// ProducerPinned reports whether the run compared the producer key against a fingerprint
+	// the caller supplied. False means the signature was checked but the signer was not: any
+	// key produces a valid signature over its own bundle, so an unpinned run establishes that
+	// a bundle was signed, never by whom. Always emitted, because a reader deciding what a
+	// verdict is worth needs to see the absence, not infer it from a missing field.
+	ProducerPinned bool `json:"producer_pinned"`
 	// ChainPresent reports whether the bundle declares a chain.
 	ChainPresent bool `json:"chain_present"`
 	// ChainProfile is the declared chain profile.
@@ -284,6 +290,7 @@ func (r *Report) checkSignature(raw []byte, b *bundle.Bundle, pin string) {
 	}
 	r.SignatureOK = true
 	if pin != "" {
+		r.ProducerPinned = true
 		match := r.KeyID == pin
 		r.FingerprintMatch = &match
 		if !match {

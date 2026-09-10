@@ -1,0 +1,134 @@
+package verify
+
+import (
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
+	"testing"
+
+	"github.com/kordloom/loomseal/seal"
+)
+
+// TestUnpinnedRunSaysTheSignerWasNotChecked pins that an unpinned verification reports the
+// absence of a pin rather than leaving a reader to infer it.
+//
+// Any key produces a valid signature over its own bundle, so "signature ok" establishes that
+// a bundle was signed and never by whom. A forged bundle carrying another producer's product
+// name, bundle id and claim shapes, signed with a key minted a minute earlier, reaches the
+// same VERIFIED verdict and the same exit code as the genuine article. That is correct
+// behavior for a signature check and dangerous behavior for a reader, because nothing on the
+// output distinguishes the two. The evidence line already announces when it checked nothing;
+// this makes the signature line do the same.
+func TestUnpinnedRunSaysTheSignerWasNotChecked(t *testing.T) {
+	t.Parallel()
+	raw, pub := signedBundleForTest(t, 0x42)
+	keyID := seal.KeyID(pub)
+
+	tests := []struct {
+		Name       string
+		Pin        string
+		WantPinned bool
+		WantOK     bool
+	}{{ // Test 0: No pin, so the signer is unchecked and the report must say so.
+		Name: "no pin reports unpinned", Pin: "",
+		WantPinned: false, WantOK: true,
+	}, { // Test 1: Correct pin, so the signer is established.
+		Name: "matching pin reports pinned", Pin: keyID,
+		WantPinned: true, WantOK: true,
+	}, { // Test 2: Wrong pin is a failure, not a note.
+		Name: "mismatched pin fails the bundle", Pin: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000ff",
+		WantPinned: true, WantOK: false,
+	}}
+
+	for testNum, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			r := Run(raw, Options{Fingerprint: test.Pin})
+			if r.ProducerPinned != test.WantPinned {
+				t.Errorf("test %d: ProducerPinned = %v, want %v", testNum, r.ProducerPinned, test.WantPinned)
+			}
+			if r.OK != test.WantOK {
+				t.Errorf("test %d: OK = %v, want %v (problems: %v)", testNum, r.OK, test.WantOK, r.Problems)
+			}
+			if !r.SignatureOK {
+				t.Errorf("test %d: signature should verify in every case here", testNum)
+			}
+		})
+	}
+}
+
+// TestForgedBundleIsIndistinguishableWithoutAPin pins the reason the notice above has to
+// exist. Two bundles with the same producer strings and different keys both verify, and the
+// only thing that separates them is a fingerprint the caller supplies.
+func TestForgedBundleIsIndistinguishableWithoutAPin(t *testing.T) {
+	t.Parallel()
+	genuine, genuinePub := signedBundleForTest(t, 0x42)
+	forged, forgedPub := signedBundleForTest(t, 0x9e)
+
+	gr := Run(genuine, Options{})
+	fr := Run(forged, Options{})
+	if !gr.OK || !fr.OK {
+		t.Fatalf("both should verify unpinned: genuine=%v forged=%v", gr.OK, fr.OK)
+	}
+	if gr.ProducerPinned || fr.ProducerPinned {
+		t.Error("neither run was pinned, so neither may report that it was")
+	}
+
+	// Pinning the genuine key is the only thing that separates them.
+	if r := Run(forged, Options{Fingerprint: seal.KeyID(genuinePub)}); r.OK {
+		t.Error("a forged bundle pinned to the genuine key must not verify")
+	}
+	if r := Run(genuine, Options{Fingerprint: seal.KeyID(genuinePub)}); !r.OK {
+		t.Errorf("the genuine bundle pinned to its own key must verify: %v", r.Problems)
+	}
+	if seal.KeyID(genuinePub) == seal.KeyID(forgedPub) {
+		t.Fatal("test keys collided, so the comparison proves nothing")
+	}
+}
+
+// signedBundleForTest builds a minimal single-claim bundle signed by a key derived from the
+// given seed byte, so two callers can produce bundles that differ only in who signed them.
+func signedBundleForTest(t *testing.T, seedByte byte) ([]byte, ed25519.PublicKey) {
+	t.Helper()
+	seed := make([]byte, ed25519.SeedSize)
+	for i := range seed {
+		seed[i] = seedByte
+	}
+	priv := ed25519.NewKeyFromSeed(seed)
+	pub := priv.Public().(ed25519.PublicKey)
+
+	install := "in_test"
+	claim := map[string]any{
+		"type": "test.claim/1", "at": "2026-09-09T21:45:00Z",
+		"payload": map[string]any{"score": "65.5"},
+	}
+	link, err := seal.LinkV1(nil, install, 1, "", seal.ClaimContent(claim))
+	if err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+
+	doc := map[string]any{
+		"loomseal": "0.1", "bundle_id": "lsb_test_0001", "created_at": "2026-09-09T21:45:00Z",
+		"producer": map[string]any{
+			"product": "assay", "product_version": "1.0.0", "install_id": install,
+			"public_key": base64.StdEncoding.EncodeToString(pub), "key_id": seal.KeyID(pub),
+		},
+		"subject": map[string]any{"type": "measurement-set", "id": "s1"},
+		"chain": map[string]any{
+			"profile": "loomseal-chain-v1", "keyed": false,
+			"params": map[string]any{"install_id": install},
+			"head":   map[string]any{"seq": int64(1), "link": link},
+		},
+		"claims": []any{claim},
+	}
+	body, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	signed, err := seal.SignBundle(body, priv)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return signed, pub
+}

@@ -18,6 +18,10 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	evidence := fs.String("evidence", "", "directory of evidence artifacts to check")
 	fingerprint := fs.String("fingerprint", "", "required producer key fingerprint, sha256:<hex>")
+	// Repeatable, because a bundle can legitimately carry counter-signatures from several
+	// parties and a relying party usually knows all of them by fingerprint.
+	var attestors stringList
+	fs.Var(&attestors, "attestor", "acceptable counter-signer fingerprint, sha256:<hex>, repeatable")
 	audience := fs.String("audience", "", "for a presentation, the verifier it must be addressed to")
 	nonce := fs.String("nonce", "", "for a presentation, the challenge it must echo")
 	jsonOut := fs.Bool("json", false, "emit the report as JSON on stdout")
@@ -55,7 +59,8 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "loomseal verify: %v\n", err)
 		return CodeUsage
 	}
-	bundleOpts := verify.Options{EvidenceDir: *evidence, Fingerprint: *fingerprint}
+	bundleOpts := verify.Options{EvidenceDir: *evidence, Fingerprint: *fingerprint,
+		Attestors: attestors}
 	// One command accepts either a bundle or a holder presentation that wraps one, told apart by the
 	// presentation version member.
 	if verify.LooksLikePresentation(raw) {
@@ -286,6 +291,15 @@ func renderReport(w io.Writer, r *verify.Report) {
 		for _, a := range r.Attestors {
 			fmt.Fprintf(w, "vouched    %s\n", a)
 		}
+		// An attestation sits outside the producer signature so a counterparty can add one
+		// after the fact. That also means any holder can attach one, signed by a key minted
+		// for the purpose, under any role they like, and it verifies. "Vouched" then reads as
+		// third-party endorsement when nothing established the third party.
+		if r.OK && !r.AttestorsPinned {
+			fmt.Fprintln(w, "           NOT CHECKED against expected signers: a counter-signature")
+			fmt.Fprintln(w, "           proves a key signed this, not whose key it was. Anyone")
+			fmt.Fprintln(w, "           holding the bundle can add one. Pass --attestor sha256:<hex>")
+		}
 	}
 	fmt.Fprintf(w, "evidence   %d verified, %d missing, %d referenced only\n",
 		r.EvidenceVerified, r.EvidenceMissing, r.EvidenceReferenced)
@@ -312,4 +326,16 @@ func renderReport(w io.Writer, r *verify.Report) {
 	} else {
 		fmt.Fprintln(w, "NOT VERIFIED")
 	}
+}
+
+// stringList collects a repeatable string flag in the order it was given.
+type stringList []string
+
+// String renders the collected values for flag package output.
+func (s *stringList) String() string { return strings.Join(*s, ",") }
+
+// Set appends one occurrence of the flag.
+func (s *stringList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
 }

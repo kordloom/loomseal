@@ -152,6 +152,21 @@ In `--json` the same distinction is `producer_pinned`, always emitted, so a pipe
 gates on `ok` can also see whether the signer was established. Treat an unpinned `ok` as
 "this document is internally consistent," never as "this document is from who it says."
 
+A counter-signature needs the same treatment, and needs it more. An attestation sits outside
+the producer signature, deliberately, so a counterparty can vouch for a claim after the
+producer signed it. That also means anyone holding a bundle can attach one, signed by a key
+minted for the purpose, under any role they choose. It verifies, and the report reads:
+
+    attested   1 counter-signature(s) verified
+    vouched    independent-auditor sha256:ef765a58...
+
+Nobody vouched for anything. Name the signers you accept and a stranger's counter-signature
+fails instead of reading as an endorsement:
+
+    loomseal verify bundle.loomseal.json --attestor sha256:c25c49a1... --attestor sha256:...
+
+Repeatable, since a bundle can carry several. `attestors_pinned` in `--json`.
+
 The same applies to a presentation. It carries the audience it was cut for and the nonce it
 echoes, and neither is compared unless you say what you expect:
 

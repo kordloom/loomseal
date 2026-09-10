@@ -21,6 +21,9 @@ Usage:
 Verify flags:
   --evidence <dir>       Directory of evidence artifacts to check against the bundle digests.
   --fingerprint <id>     Require the producer key to match this sha256:<hex> fingerprint.
+  --attestor <id>        Require every counter-signature to be signed by one of these
+                         sha256:<hex> fingerprints. Repeatable. Without it a verified
+                         counter-signature proves a key signed the claim, not whose.
   --audience <id>        For a presentation, the verifier it must be addressed to.
   --nonce <id>           For a presentation, the challenge it must echo.
   --json                 Emit the verification report as JSON on stdout.

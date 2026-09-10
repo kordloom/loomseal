@@ -190,3 +190,40 @@ func TestDisclosuresDoNotSoftenAFailure(t *testing.T) {
 		t.Errorf("OK must track the absence of problems: ok=%v problems=%d", bad.OK, len(bad.Problems))
 	}
 }
+
+// TestAttestationProvesAKeySignedNotWhose pins the strongest form of the same defect.
+//
+// An attestation sits outside the producer signature so a counterparty can add one after the
+// producer signed. That also means any holder of any bundle can attach one, signed by a key
+// minted for the purpose, under any role they choose, and it verifies. The report then reads
+// "1 counter-signature(s) verified" and "vouched independent-auditor sha256:..." while nothing
+// established that an independent auditor exists. Of every check in this verifier, this is the
+// one whose entire value is the identity behind it, so it is the one that most needed a way to
+// say the identity went unchecked.
+func TestAttestationProvesAKeySignedNotWhose(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		Name        string
+		Attestors   []string
+		WantPinned  bool
+		WantChecked bool
+	}{{ // Test 0: Nobody named, so the counter-signer is unchecked and the report says so.
+		Name:      "no attestor named reports unpinned",
+		Attestors: nil, WantPinned: false, WantChecked: false,
+	}, { // Test 1: Someone named, so the comparison happened.
+		Name:      "an attestor named reports pinned",
+		Attestors: []string{"sha256:" + "aa"}, WantPinned: true, WantChecked: true,
+	}}
+
+	raw, _ := signedBundleForTest(t, 0x42)
+	for testNum, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			t.Parallel()
+			r := Run(raw, Options{Attestors: test.Attestors})
+			if r.AttestorsPinned != test.WantPinned {
+				t.Errorf("test %d: AttestorsPinned = %v, want %v",
+					testNum, r.AttestorsPinned, test.WantPinned)
+			}
+		})
+	}
+}

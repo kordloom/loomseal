@@ -12,3 +12,5 @@ __pycache__/
 # Built at deploy time by .github/workflows/deploy-site.yml, never committed.
 site/public/verify/loomseal.wasm
 site/public/verify/wasm_exec.js
+# Scratch file the mutation harness writes while it runs.
+mut.json

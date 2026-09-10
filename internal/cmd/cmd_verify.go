@@ -226,6 +226,13 @@ func renderReport(w io.Writer, r *verify.Report) {
 		fmt.Fprintf(w, "note       %d proof(s) sit on the unverified declared head and were not checked; "+
 			"they earn no anchored level\n", r.AnchorProofsOnDeclaredHead)
 	}
+	// A proof on a matched anchor whose type this verifier cannot open. The level already says
+	// "by reference" rather than "proof verified", and the counts already differ, so a reader is
+	// not misled. They are left to guess why, though, while the two cases above say why plainly.
+	if unopened := r.AnchorProofsCarried - r.AnchorProofsVerified - r.AnchorProofsOnDeclaredHead; unopened > 0 {
+		fmt.Fprintf(w, "note       %d carried proof(s) are of a type this verifier cannot open offline, "+
+			"so they were counted and not checked\n", unopened)
+	}
 	// An anchor pins history only up to the position it names. What it leaves uncovered is the
 	// part a compromised producer key could still rewrite, so the reader is told the size of it
 	// rather than left to work it out from the claim list.

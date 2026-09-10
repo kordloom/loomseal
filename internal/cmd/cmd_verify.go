@@ -111,6 +111,20 @@ func renderPresentation(w io.Writer, r *verify.PresentationReport) {
 	if r.NonceMatch != nil {
 		fmt.Fprintf(w, "nonce      match %t\n", *r.NonceMatch)
 	}
+	// The nonce is the whole replay defense, and it was never printed, so a verifier who did
+	// not pass --nonce had no way to notice they were holding last quarter's presentation.
+	// Show what the presentation carries and say plainly that nothing compared it, the same
+	// way the evidence and pin lines announce a check that did not happen.
+	if r.PresentationOK && (r.AudienceMatch == nil || r.NonceMatch == nil) {
+		if r.NonceMatch == nil {
+			fmt.Fprintf(w, "nonce      %q, NOT CHECKED, so a presentation made for an older\n",
+				r.Nonce)
+			fmt.Fprintln(w, "           challenge replays freely: pass --nonce with the one you issued")
+		}
+		if r.AudienceMatch == nil {
+			fmt.Fprintln(w, "audience   NOT CHECKED: pass --audience with the identifier you expect")
+		}
+	}
 	for _, p := range r.Problems {
 		fmt.Fprintf(w, "problem    %s\n", p)
 	}

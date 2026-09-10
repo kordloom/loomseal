@@ -152,6 +152,15 @@ In `--json` the same distinction is `producer_pinned`, always emitted, so a pipe
 gates on `ok` can also see whether the signer was established. Treat an unpinned `ok` as
 "this document is internally consistent," never as "this document is from who it says."
 
+The same applies to a presentation. It carries the audience it was cut for and the nonce it
+echoes, and neither is compared unless you say what you expect:
+
+    loomseal verify presentation.json --audience acme-auditors --nonce chal-12345
+
+Without them, verification prints what the presentation claims and says the comparison did
+not happen. The nonce is the replay defense, so a presentation cut for one reviewer and one
+challenge is good against anyone who runs the bare command.
+
 ## What verification proves
 
 Run `loomseal verify` on one file and, seconds later, offline, with no account and no trust in

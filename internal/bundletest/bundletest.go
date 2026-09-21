@@ -52,6 +52,36 @@ type Claim struct {
 	Evidence []map[string]any
 	// AttestSeeds counter-signs the claim once per seed byte under the role attestor.
 	AttestSeeds []byte
+	// Fields are selectively disclosable values. Their digests are committed as the
+	// payload's _sd set, inside what the link covers, and each field marked Reveal travels
+	// as a disclosure outside it.
+	Fields []Field
+}
+
+// Field is one selectively disclosable value on a claim.
+type Field struct {
+	// Name is the field name.
+	Name string
+	// Value is the field's JSON value.
+	Value any
+	// Reveal includes the disclosure in the bundle; false commits the digest and withholds
+	// the value, which is the redaction case.
+	Reveal bool
+}
+
+// Salt returns the deterministic salt a builder uses for a named field. Deterministic so a
+// test can independently recompute a genuine digest, or construct a lying one.
+func Salt(name string) string { return "salt-" + name }
+
+// FieldDigest returns the hex digest the _sd set commits for one field, SHA-256 over the
+// RFC 8785 canonical [salt, name, value] array.
+func FieldDigest(name string, value any) string {
+	ser, err := jcs.Serialize([]any{Salt(name), name, value})
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(ser)
+	return hex.EncodeToString(sum[:])
 }
 
 // Builder assembles one loomseal-chain-v1 bundle. The zero value plus Build yields a
@@ -101,7 +131,21 @@ func (b Builder) Build() ([]byte, error) {
 		if c.Payload == nil {
 			c.Payload = map[string]any{"n": int64(i + 1)}
 		}
+		if len(c.Fields) > 0 {
+			sd := make([]any, 0, len(c.Fields))
+			for _, fd := range c.Fields {
+				sd = append(sd, FieldDigest(fd.Name, fd.Value))
+			}
+			c.Payload["_sd"] = sd
+		}
 		claim := map[string]any{"type": c.Type, "at": At, "payload": c.Payload}
+		for _, fd := range c.Fields {
+			if !fd.Reveal {
+				continue
+			}
+			claim["disclosures"] = append(asSlice(claim["disclosures"]),
+				map[string]any{"salt": Salt(fd.Name), "name": fd.Name, "value": fd.Value})
+		}
 		if len(c.Evidence) > 0 {
 			ev := make([]any, 0, len(c.Evidence))
 			for _, e := range c.Evidence {

@@ -595,9 +595,43 @@
       <p>SwitchTender is the first shipping producer. The example bundle and the
       <code>seal</code> package are the reference implementations. The chain profiles in the spec were derived from software KordLoom already
       ships, so the format describes real constructions rather than hypothetical ones.</p>
-      <p>If you build software that should prove what it did, import
-      <code>github.com/kordloom/loomseal/seal</code> to sign bundles and compute chain links,
-      follow the bundle shape in the spec, and register your claim types through the registry.</p>
+      <p>If you build software that should prove what it did, the Go SDK is the
+      <code>seal</code> package: it computes chain links, strips exactly the members a
+      signature covers, and signs bundles, so a producer's commitments can never drift from
+      what the verifier recomputes. Emitting your first bundle is this whole program:</p>
+      <pre><code>import "github.com/kordloom/loomseal/seal"
+
+claim := map[string]any{
+    "type": "acme.deploy/1", "at": "2026-09-20T12:00:00Z",
+    "payload": map[string]any{"service": "api", "version": "1.4.2"},
+}
+link, _ := seal.LinkV1(nil, "in_yourinstall", 1, "", seal.ClaimContent(claim))
+claim["chain"] = map[string]any{"seq": 1, "prev": "", "link": link}
+
+doc := map[string]any{
+    "loomseal": "0.1", "bundle_id": "lsb_first", "created_at": "2026-09-20T12:00:01Z",
+    "producer": map[string]any{
+        "product": "acme", "product_version": "1.0.0", "install_id": "in_yourinstall",
+        "public_key": base64.StdEncoding.EncodeToString(pub), "key_id": seal.KeyID(pub),
+    },
+    "subject": map[string]any{"type": "run", "id": "deploy-1042"},
+    "chain": map[string]any{
+        "profile": "loomseal-chain-v1", "keyed": false,
+        "params": map[string]any{"install_id": "in_yourinstall"},
+        "head":   map[string]any{"seq": 1, "link": link},
+    },
+    "claims": []any{claim},
+}
+raw, _ := json.Marshal(doc)
+signed, _ := seal.SignBundle(raw, priv)   // priv is your ed25519 key</code></pre>
+      <p>That output already passes <code>loomseal verify</code>, and the fingerprint to pin
+      is <code>seal.KeyID</code> of your public key, published at
+      <code>/.well-known/loomseal.json</code> on a domain you control. Register your claim
+      types through the registry so a verifier can say more than "unknown type". Other
+      languages: the spec plus the conformance vectors are the contract, and the Python
+      verifier was written from them alone, so a producer in any language can be checked
+      against the same vectors. Wrappers are the community's to write; the reference stays
+      small on purpose.</p>
       <p>The envelope, chain profiles, and verification stay common, so one verifier checks every
       producer. The format is Apache-2.0, so adopting it needs no negotiation and no
       permission.</p>

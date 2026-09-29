@@ -32,6 +32,18 @@ type Result struct {
 	// HeadMatched reports whether the declared head coincided with the newest claim and
 	// matched it. A head beyond the bundled claims cannot be tied to them and stays false.
 	HeadMatched bool
+	// TreeSize is how many leaves the signed head names, which in the tree profile is the size of
+	// the whole log rather than of the disclosed window. It stays zero under a linear profile.
+	TreeSize int64
+	// InclusionProofs is how many audit paths were folded and reproduced the head root. It stays
+	// zero under a linear profile, which has no per-claim proofs.
+	InclusionProofs int
+	// ConsistencyFrom is the earlier log size a verified consistency proof grew from. It stays zero
+	// when the bundle carried no such proof.
+	ConsistencyFrom int64
+	// ConsistencyOK reports whether that proof recomputed both roots, so the log is proved to have
+	// grown from the earlier one by appending only.
+	ConsistencyOK bool
 }
 
 // Verify checks the bundle's chain: coordinates on every claim, contiguous ascending
@@ -41,6 +53,12 @@ func Verify(raw []byte, b *bundle.Bundle) (Result, error) {
 	var res Result
 	if b.Chain == nil {
 		return res, fmt.Errorf("%w: bundle declares no chain", ErrClaim)
+	}
+	// The tree profile is checked before the linear rules below, which it legitimately violates: a
+	// tree has no per-entry predecessor for continuity to follow, its head is a root rather than the
+	// newest claim's link, and disclosing a non-contiguous subset of leaves is the whole point.
+	if b.Chain.Profile == bundle.ProfileMerkle {
+		return verifyMerkle(raw, b)
 	}
 	for i := range b.Claims {
 		if b.Claims[i].Chain == nil {
@@ -202,6 +220,14 @@ func checkV1(raw []byte, b *bundle.Bundle) error {
 	installID := b.Chain.Params["install_id"]
 	if installID == "" {
 		return fmt.Errorf("%w: %s requires params.install_id", ErrProfile, bundle.ProfileV1)
+	}
+	// The id has to be the signer's, not merely present. An id a bundle states but nothing ties to
+	// the producer is something a copier can restate, so a link bound to it is bound to nothing they
+	// cannot also claim. The tree profile has always required this; the linear one described it and
+	// did not check it.
+	if installID != b.Producer.InstallID {
+		return fmt.Errorf("%w: %s params.install_id %q does not match producer.install_id %q",
+			ErrProfile, bundle.ProfileV1, installID, b.Producer.InstallID)
 	}
 	tree, err := jcs.Parse(raw)
 	if err != nil {

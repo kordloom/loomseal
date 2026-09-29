@@ -28,6 +28,9 @@ const (
 	ProfileSwitchTender = "switchtender-audit-v1"
 	// ProfileV1 is the generic construction new producers use.
 	ProfileV1 = "loomseal-chain-v1"
+	// ProfileMerkle is the RFC 6962 tree construction, which proves one claim's membership without
+	// disclosing the others and proves the log only ever appended.
+	ProfileMerkle = "loomseal-merkle-v1"
 )
 
 // Bundle is one portable proof document.
@@ -82,8 +85,22 @@ type Chain struct {
 	Keyed bool `json:"keyed"`
 	// Params carries profile parameters such as install_id.
 	Params map[string]string `json:"params,omitempty"`
-	// Head is the newest chain coordinates the producer attests.
+	// Head is the newest chain coordinates the producer attests. In the tree profile its Seq is the
+	// tree size and its Link is the root.
 	Head Coords `json:"head"`
+	// Consistency proves the log grew from an earlier root by appending only. Tree profile only.
+	Consistency *Consistency `json:"consistency,omitempty"`
+}
+
+// Consistency proves that a log of FromSize leaves whose root was FromRoot is a prefix of the log
+// this bundle heads, so the log only ever appended.
+type Consistency struct {
+	// FromSize is the earlier log size, at least one.
+	FromSize int64 `json:"from_size"`
+	// FromRoot is the root at that size, lowercase hex.
+	FromRoot string `json:"from_root"`
+	// Path is the proof's hashes, empty only when FromSize equals the head size.
+	Path []string `json:"path"`
 }
 
 // Coords fixes an entry's position and link in the chain.
@@ -110,6 +127,9 @@ type Claim struct {
 	Verdict *Verdict `json:"verdict,omitempty"`
 	// Chain is this claim's position in the declared chain.
 	Chain *Coords `json:"chain,omitempty"`
+	// Inclusion is the audit path proving this claim is a leaf of the tree the head names. Tree
+	// profile only, required on every claim there.
+	Inclusion *Inclusion `json:"inclusion,omitempty"`
 }
 
 // Evidence references one artifact by content digest.
@@ -175,9 +195,10 @@ var (
 
 // Allowed enum values from the schema.
 var (
-	subjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true, "agent": true}
-	profiles     = map[string]bool{ProfileSwitchTender: true, ProfileV1: true}
-	anchorTypes  = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
+	subjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true, "agent": true,
+		"host": true, "run": true}
+	profiles    = map[string]bool{ProfileSwitchTender: true, ProfileV1: true, ProfileMerkle: true}
+	anchorTypes = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
 )
 
 // Parse decodes raw strictly, rejecting unknown fields and trailing data, then validates
@@ -231,6 +252,20 @@ func (b *Bundle) validate() error {
 			return err
 		}
 	}
+	// An inclusion proof beside a claim tells a reader some verifier checked it, so a proof that no
+	// profile would check is refused rather than ignored. The same rule covers a bundle with no chain
+	// at all, whose claims are unproved by construction.
+	tree := b.Chain != nil && b.Chain.Profile == ProfileMerkle
+	for i := range b.Claims {
+		if b.Claims[i].Inclusion != nil && !tree {
+			return fmt.Errorf("%w: claim %d carries an inclusion proof, which belongs to %s",
+				ErrSchema, i, ProfileMerkle)
+		}
+		if b.Chain == nil && b.Claims[i].Chain != nil {
+			return fmt.Errorf("%w: claim %d carries chain coordinates but the bundle declares no chain",
+				ErrSchema, i)
+		}
+	}
 	for i, a := range b.Anchors {
 		if err := a.validate(i); err != nil {
 			return err
@@ -271,7 +306,35 @@ func (c Chain) validate() error {
 	if !profiles[c.Profile] {
 		return fmt.Errorf("%w: unknown chain profile %q", ErrSchema, c.Profile)
 	}
-	return c.Head.validate("chain head")
+	if err := c.Head.validate("chain head"); err != nil {
+		return err
+	}
+	if c.Consistency == nil {
+		return nil
+	}
+	if c.Profile != ProfileMerkle {
+		return fmt.Errorf("%w: a consistency proof belongs to %s, not %s", ErrSchema, ProfileMerkle,
+			c.Profile)
+	}
+	return c.Consistency.validate()
+}
+
+// validate enforces consistency proof rules that hold whatever the proof later proves. A prefix of
+// zero entries is refused here rather than folded, because every log extends the empty log and such
+// a proof would look like evidence while establishing nothing.
+func (c Consistency) validate() error {
+	if c.FromSize < 1 {
+		return fmt.Errorf("%w: consistency from_size %d, want at least 1", ErrSchema, c.FromSize)
+	}
+	if !reLink.MatchString(c.FromRoot) {
+		return fmt.Errorf("%w: consistency from_root is not 64 hex characters", ErrSchema)
+	}
+	for i, h := range c.Path {
+		if !reLink.MatchString(h) {
+			return fmt.Errorf("%w: consistency path %d is not 64 hex characters", ErrSchema, i)
+		}
+	}
+	return nil
 }
 
 // validate enforces coordinate rules.
@@ -311,6 +374,14 @@ func (c Claim) validate(i int) error {
 	if c.Verdict != nil {
 		if c.Verdict.Policy == "" || c.Verdict.Decision == "" {
 			return fmt.Errorf("%w: claim %d verdict is incomplete", ErrSchema, i)
+		}
+	}
+	if c.Inclusion != nil {
+		for j, h := range c.Inclusion.Path {
+			if !reLink.MatchString(h) {
+				return fmt.Errorf("%w: claim %d inclusion path %d is not 64 hex characters",
+					ErrSchema, i, j)
+			}
 		}
 	}
 	if c.Chain != nil {

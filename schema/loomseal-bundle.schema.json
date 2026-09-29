@@ -4,144 +4,372 @@
   "title": "LoomSeal bundle",
   "description": "A portable, offline-verifiable attestation bundle. See FORMAT.md.",
   "type": "object",
-  "required": ["loomseal", "bundle_id", "created_at", "producer", "subject", "claims", "signatures"],
+  "required": [
+    "loomseal",
+    "bundle_id",
+    "created_at",
+    "producer",
+    "subject",
+    "claims",
+    "signatures"
+  ],
   "additionalProperties": false,
   "properties": {
-    "loomseal": { "const": "0.1" },
-    "bundle_id": { "type": "string", "minLength": 1 },
-    "created_at": { "$ref": "#/$defs/time" },
-    "producer": { "$ref": "#/$defs/producer" },
-    "subject": { "$ref": "#/$defs/subject" },
-    "chain": { "$ref": "#/$defs/chain" },
+    "loomseal": {
+      "const": "0.1"
+    },
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "$ref": "#/$defs/time"
+    },
+    "producer": {
+      "$ref": "#/$defs/producer"
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "chain": {
+      "$ref": "#/$defs/chain"
+    },
     "claims": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/claim" }
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
     },
     "anchors": {
       "type": "array",
-      "items": { "$ref": "#/$defs/anchor" }
+      "items": {
+        "$ref": "#/$defs/anchor"
+      }
     },
     "signatures": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/signature" }
+      "items": {
+        "$ref": "#/$defs/signature"
+      }
     }
   },
   "$defs": {
-    "time": { "type": "string", "format": "date-time" },
-    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-    "link": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "link": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "producer": {
       "type": "object",
-      "required": ["product", "product_version", "install_id", "public_key", "key_id"],
+      "required": [
+        "product",
+        "product_version",
+        "install_id",
+        "public_key",
+        "key_id"
+      ],
       "additionalProperties": false,
       "properties": {
-        "product": { "type": "string", "minLength": 1 },
-        "product_version": { "type": "string", "minLength": 1 },
-        "install_id": { "type": "string", "minLength": 1 },
-        "public_key": { "type": "string", "contentEncoding": "base64" },
-        "key_id": { "$ref": "#/$defs/digest" }
+        "product": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "install_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "public_key": {
+          "type": "string",
+          "contentEncoding": "base64"
+        },
+        "key_id": {
+          "$ref": "#/$defs/digest"
+        }
       }
     },
     "subject": {
       "type": "object",
-      "required": ["type", "id"],
+      "required": [
+        "type",
+        "id"
+      ],
       "additionalProperties": false,
       "properties": {
-        "type": { "enum": ["url", "fleet", "repo", "agent"] },
-        "id": { "type": "string", "minLength": 1 }
+        "type": {
+          "enum": [
+            "url",
+            "fleet",
+            "repo",
+            "agent",
+            "host",
+            "run"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "chain": {
       "type": "object",
-      "required": ["profile", "keyed", "head"],
+      "required": [
+        "profile",
+        "keyed",
+        "head"
+      ],
       "additionalProperties": false,
       "properties": {
         "profile": {
-          "enum": ["switchtender-audit-v1", "loomseal-chain-v1"]
+          "enum": [
+            "switchtender-audit-v1",
+            "loomseal-chain-v1",
+            "loomseal-merkle-v1"
+          ]
         },
-        "keyed": { "type": "boolean" },
+        "keyed": {
+          "type": "boolean"
+        },
         "params": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
-        "head": { "$ref": "#/$defs/coords" }
+        "head": {
+          "$ref": "#/$defs/coords"
+        },
+        "consistency": {
+          "$ref": "#/$defs/consistency"
+        }
       }
     },
     "coords": {
       "type": "object",
-      "required": ["seq", "link"],
+      "required": [
+        "seq",
+        "link"
+      ],
       "additionalProperties": false,
       "properties": {
-        "seq": { "type": "integer", "minimum": 1 },
-        "prev": {
-          "anyOf": [{ "$ref": "#/$defs/link" }, { "const": "" }]
+        "seq": {
+          "type": "integer",
+          "minimum": 1
         },
-        "link": { "$ref": "#/$defs/link" }
+        "prev": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/link"
+            },
+            {
+              "const": ""
+            }
+          ]
+        },
+        "link": {
+          "$ref": "#/$defs/link"
+        }
       }
     },
     "claim": {
       "type": "object",
-      "required": ["type", "at", "payload"],
+      "required": [
+        "type",
+        "at",
+        "payload"
+      ],
       "additionalProperties": false,
       "properties": {
-        "type": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_-]*/[0-9]+$" },
-        "at": { "$ref": "#/$defs/time" },
-        "payload": { "type": "object" },
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_-]*/[0-9]+$"
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "payload": {
+          "type": "object"
+        },
         "evidence": {
           "type": "array",
-          "items": { "$ref": "#/$defs/evidence" }
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
         },
-        "verdict": { "$ref": "#/$defs/verdict" },
-        "chain": { "$ref": "#/$defs/coords" }
+        "verdict": {
+          "$ref": "#/$defs/verdict"
+        },
+        "chain": {
+          "$ref": "#/$defs/coords"
+        },
+        "inclusion": {
+          "$ref": "#/$defs/inclusion"
+        }
       }
     },
     "evidence": {
       "type": "object",
-      "required": ["role", "digest"],
+      "required": [
+        "role",
+        "digest"
+      ],
       "additionalProperties": false,
       "properties": {
-        "role": { "type": "string", "minLength": 1 },
-        "digest": { "$ref": "#/$defs/digest" },
-        "media_type": { "type": "string" },
-        "present": { "type": "boolean" },
-        "location": { "type": "string" }
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "location": {
+          "type": "string"
+        }
       }
     },
     "verdict": {
       "type": "object",
-      "required": ["policy", "decision"],
+      "required": [
+        "policy",
+        "decision"
+      ],
       "additionalProperties": false,
       "properties": {
-        "policy": { "type": "string", "minLength": 1 },
-        "policy_digest": { "$ref": "#/$defs/digest" },
-        "inputs_digest": { "$ref": "#/$defs/digest" },
-        "decision": { "type": "string", "minLength": 1 },
-        "detail": { "type": "string" }
+        "policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "inputs_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "type": "string"
+        }
       }
     },
     "anchor": {
       "type": "object",
-      "required": ["type", "seq", "link", "at", "ref"],
+      "required": [
+        "type",
+        "seq",
+        "link",
+        "at",
+        "ref"
+      ],
       "additionalProperties": false,
       "properties": {
-        "type": { "enum": ["rfc3161", "git", "https", "rekor"] },
-        "seq": { "type": "integer", "minimum": 1 },
-        "link": { "$ref": "#/$defs/link" },
-        "at": { "$ref": "#/$defs/time" },
-        "ref": { "type": "string", "minLength": 1 },
-        "proof": { "type": "string", "contentEncoding": "base64" }
+        "type": {
+          "enum": [
+            "rfc3161",
+            "git",
+            "https",
+            "rekor"
+          ]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "link": {
+          "$ref": "#/$defs/link"
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proof": {
+          "type": "string",
+          "contentEncoding": "base64"
+        }
       }
     },
     "signature": {
       "type": "object",
-      "required": ["key_id", "alg", "sig"],
+      "required": [
+        "key_id",
+        "alg",
+        "sig"
+      ],
       "additionalProperties": false,
       "properties": {
-        "key_id": { "$ref": "#/$defs/digest" },
-        "alg": { "const": "ed25519" },
-        "sig": { "type": "string", "contentEncoding": "base64" }
+        "key_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "alg": {
+          "const": "ed25519"
+        },
+        "sig": {
+          "type": "string",
+          "contentEncoding": "base64"
+        }
+      }
+    },
+    "consistency": {
+      "type": "object",
+      "required": [
+        "from_size",
+        "from_root",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "from_root": {
+          "$ref": "#/$defs/link"
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        }
+      }
+    },
+    "inclusion": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        }
       }
     }
   }

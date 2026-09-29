@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -88,8 +89,13 @@ type Report struct {
 	// the bundled claims. That head's link is unverified here, so such an anchor binds nothing
 	// this verifier confirmed and does not earn the anchored conformance word.
 	AnchorsToDeclaredHead int `json:"anchors_to_declared_head,omitempty"`
-	// AnchorProofsCarried is how many anchors embed a proof blob.
+	// AnchorProofsCarried is how many anchors embed a proof blob. Only anchors matching a coordinate
+	// this verifier confirmed are counted; a proof on a declared head that leads the claims is not.
 	AnchorProofsCarried int `json:"anchor_proofs_carried"`
+	// AnchorProofsOnDeclaredHead is how many proofs sit on an anchor matching only a declared head
+	// beyond the bundled claims. Such a proof attests a link tied to nothing this verifier confirmed,
+	// so it is reported but never verified or counted toward the anchored conformance word.
+	AnchorProofsOnDeclaredHead int `json:"anchor_proofs_on_declared_head,omitempty"`
 	// AnchorProofsValidated reports whether every carried proof was checked and held.
 	AnchorProofsValidated bool `json:"anchor_proofs_validated"`
 	// AnchorProofsVerified is how many embedded proofs were cryptographically checked against the
@@ -304,16 +310,25 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 	head := b.Chain.Head
 	var newestAttestation time.Time
 	for i, a := range b.Anchors {
+		matched := false
 		switch {
 		case verified[a.Seq] == a.Link && a.Link != "":
 			r.AnchorsMatched++
+			matched = true
 		case !r.HeadMatched && a.Seq == head.Seq && a.Link == head.Link:
 			r.AnchorsToDeclaredHead++
+			if a.Proof != "" {
+				r.AnchorProofsOnDeclaredHead++
+			}
 		default:
 			r.problem("anchor %d (%s) does not match any bundled claim or the declared head", i,
 				a.Type)
 		}
-		if a.Proof == "" {
+		// A proof is only opened when its anchor matched a coordinate this verifier confirmed. A proof
+		// over a declared head that leads the claims attests a link tied to nothing in the bundle, so
+		// verifying it would let an anchor on an unverified head reach "anchored (proof verified)",
+		// which is the strongest word the format issues. It is reported separately and never counted.
+		if !matched || a.Proof == "" {
 			continue
 		}
 		r.AnchorProofsCarried++
@@ -432,12 +447,11 @@ func (r *Report) checkEvidence(b *bundle.Bundle, dir string) {
 		if err != nil || !d.Type().IsRegular() {
 			return err
 		}
-		content, err := os.ReadFile(path)
+		digest, err := hashFile(path)
 		if err != nil {
 			return err
 		}
-		sum := sha256.Sum256(content)
-		supplied["sha256:"+hex.EncodeToString(sum[:])] = true
+		supplied[digest] = true
 		return nil
 	})
 	if err != nil {
@@ -453,6 +467,21 @@ func (r *Report) checkEvidence(b *bundle.Bundle, dir string) {
 			}
 		}
 	}
+}
+
+// hashFile streams a file into a SHA-256 hasher and returns its sha256: digest. Evidence artifacts
+// are arbitrary user files, so the whole file is never held in memory at once.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // chainWording says what the chain verification established, in the terms the declared profile

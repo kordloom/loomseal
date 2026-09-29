@@ -17,6 +17,15 @@
 // Without them a tree admits a second preimage: an attacker presents an interior node's two child
 // hashes as if they were a single leaf's content and proves membership of an entry the log never
 // held.
+//
+// These are reference implementations, tuned for being obviously correct rather than fast. Root holds
+// every leaf in memory, and InclusionProof and ConsistencyProof recompute subtree roots at each step
+// rather than descending a precomputed tree, so producing a proof for every entry of an n leaf log
+// costs O(n^2) hashing. That is deliberate: this package exists to be checkable against the
+// specification's own known answers and comparable entry for entry with another language, not to be
+// the engine a large producer builds its log with. A producer disclosing windows from a log of real
+// size should keep a persistent tree and serve proofs from it. Verification is unaffected: it folds a
+// single supplied path and is already linear in that path's length.
 package merkle
 
 import (

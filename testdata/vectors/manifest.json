@@ -2,6 +2,13 @@
   "description": "LoomSeal v0.1 conformance vectors. Each entry declares whether the bundle must verify, and when it must not, which check fails and why. A verifier is conformant when it agrees with every entry.",
   "vectors": [
     {
+      "name": "anchor-declared-head-proof",
+      "file": "anchor-declared-head-proof.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An rfc3161 proof on a declared head beyond the bundled claims is not opened and earns no anchored level, because the link it attests is tied to nothing the verifier confirmed."
+    },
+    {
       "name": "anchor-matches-nothing",
       "file": "anchor-matches-nothing.loomseal.json",
       "must_verify": false,
@@ -35,6 +42,13 @@
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "Evidence not supplied to the verifier is referenced, never counted as verified."
+    },
+    {
+      "name": "foreign-install-linear",
+      "file": "foreign-install-linear.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A loomseal-chain-v1 chain whose params.install_id is not the producer's is refused, which is what stops one install from restating another's producer block over its links."
     },
     {
       "name": "head-behind-claims",
@@ -268,6 +282,13 @@
       "why": "An rfc3161 anchor carrying a real timestamp token verifies offline against the link it attests to, with no network and no trust in the producer."
     },
     {
+      "name": "switchtender-audit-bound-install",
+      "file": "switchtender-audit-bound-install.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A switchtender-audit-v1 entry that carries install_id folds it into its link and binds the entry to the producer, which an entry omitting it does not."
+    },
+    {
       "name": "switchtender-audit-json-escapes",
       "file": "switchtender-audit-json-escapes.loomseal.json",
       "must_verify": true,
@@ -280,6 +301,20 @@
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "A claim time carrying sub-microsecond digits verifies, because the profile hashes the stored time bytes rather than parsing and re-serializing them."
+    },
+    {
+      "name": "switchtender-foreign-install",
+      "file": "switchtender-foreign-install.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A bound switchtender-audit-v1 entry whose folded install_id is not the producer's is refused, which is what stops a published receipt from being lifted into another install's bundle."
+    },
+    {
+      "name": "switchtender-params-only",
+      "file": "switchtender-params-only.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A switchtender-audit-v1 chain that stamps chain.params.install_id without folding it into its links verifies as pre-binding: the param is not part of this profile's link, so a producer adopting per-entry binding keeps every receipt it already published."
     },
     {
       "name": "tampered-payload",
@@ -301,6 +336,13 @@
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "An astral character encodes as a surrogate pair and verifies."
+    },
+    {
+      "name": "window-open-no-prev",
+      "file": "window-open-no-prev.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A linear window opening at seq 5 with an empty prev is refused: a slice of a longer chain must link to the entry before it, or it is claiming to be unrooted at an arbitrary point."
     },
     {
       "name": "windowed-head",

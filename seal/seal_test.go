@@ -34,8 +34,11 @@ func minimalBundle(t *testing.T, pub ed25519.PublicKey) []byte {
 			"product": "SealTest", "product_version": "v1", "install_id": "in_test",
 			"public_key": encodeKey(pub), "key_id": seal.KeyID(pub),
 		},
-		"subject":    map[string]any{"type": "fleet", "id": "test"},
-		"claims":     []any{map[string]any{"type": "switchtender.audit/1", "at": "2026-07-27T15:00:00Z", "payload": map[string]any{"actor": "root"}}},
+		"subject": map[string]any{"type": "fleet", "id": "test"},
+		"claims": []any{map[string]any{
+			"type": "switchtender.audit/1", "at": "2026-07-27T15:00:00Z",
+			"payload": map[string]any{"actor": "root"},
+		}},
 		"signatures": []any{},
 	})
 	if err != nil {

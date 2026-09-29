@@ -204,7 +204,8 @@ func TestRunBrokenChain(t *testing.T) {
 	}
 }
 
-// Test that an anchor pointing nowhere fails while a carried proof is still counted.
+// Test that an anchor pointing nowhere fails and its carried proof is not counted: a proof over a
+// coordinate this verifier could not confirm attests nothing about the bundle, so it is not opened.
 func TestRunAnchorMismatch(t *testing.T) {
 	t.Parallel()
 	signed := signedBundle(t, func(m map[string]any) {
@@ -213,7 +214,7 @@ func TestRunAnchorMismatch(t *testing.T) {
 		first["link"] = strings.Repeat("ee", 32)
 	})
 	got := Run(signed, Options{})
-	if got.OK || got.AnchorsMatched != 0 || got.AnchorProofsCarried != 1 {
+	if got.OK || got.AnchorsMatched != 0 || got.AnchorProofsCarried != 0 {
 		t.Errorf("anchor outcome: ok %t matched %d carried %d", got.OK, got.AnchorsMatched,
 			got.AnchorProofsCarried)
 	}

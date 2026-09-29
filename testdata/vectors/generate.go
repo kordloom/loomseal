@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
-	"github.com/kordloom/loomseal/merkle"
 	"github.com/kordloom/loomseal/jcs"
+	"github.com/kordloom/loomseal/merkle"
 	"github.com/kordloom/loomseal/seal"
 )
 
@@ -152,6 +152,31 @@ func (s *state) positives() {
 	// Shipped SwitchTender construction.
 	s.add("switchtender-audit", true, "signed, chained (full)", "",
 		"The shipped SwitchTender profile recomputes every link.", s.sign(s.switchTender()))
+
+	// Shipped SwitchTender construction bound to the producer install. The install id is carried in
+	// the claim payload and folded into the link, so the link cannot be lifted into another install's
+	// bundle without breaking any third-party anchor over it.
+	s.add("switchtender-audit-bound-install", true, "signed, chained (full)", "",
+		"A switchtender-audit-v1 entry that carries install_id folds it into its link and binds the "+
+			"entry to the producer, which an entry omitting it does not.",
+		s.sign(s.switchTenderBound()))
+
+	// The shape SwitchTender ships today: chain.params.install_id stamped, entries not yet folding
+	// the id. The param is inert metadata to this profile, so the entries are pre-binding and hash
+	// as they always did, and adopting per-entry binding invalidates no receipt already published.
+	m = s.switchTender()
+	m["chain"].(map[string]any)["params"] = map[string]any{"install_id": installID}
+	s.add("switchtender-params-only", true, "signed, chained (full)", "",
+		"A switchtender-audit-v1 chain that stamps chain.params.install_id without folding it into "+
+			"its links verifies as pre-binding: the param is not part of this profile's link, so a "+
+			"producer adopting per-entry binding keeps every receipt it already published.", s.sign(m))
+
+	// A real timestamp token on a declared head that leads the claims. The proof is valid but attests
+	// a link tied to no bundled claim, so a verifier reports it and awards no anchored level.
+	s.add("anchor-declared-head-proof", true, "signed, chained (full)", "",
+		"An rfc3161 proof on a declared head beyond the bundled claims is not opened and earns no "+
+			"anchored level, because the link it attests is tied to nothing the verifier confirmed.",
+		s.sign(s.switchTenderDeclaredHeadProof()))
 
 	// Sub-microsecond claim time. A verifier that parses the time into its language's own type and
 	// formats it back loses digits wherever that type is not nanosecond-capable, and reports an
@@ -313,6 +338,36 @@ func (s *state) negatives() {
 	m["anchors"] = []any{gitAnchor(999, strings.Repeat("ee", 32))}
 	s.add("anchor-matches-nothing", false, "", "anchor",
 		"An anchor whose coordinates match nothing in the bundle fails.", s.sign(m))
+
+	// A loomseal-chain-v1 chain whose params.install_id is not the producer's. The link commits to
+	// the id, so a copier restating the producer block cannot make it match without breaking the link.
+	// The Go verifier enforced this; the reference verifier did not, so the two disagreed here until
+	// this vector locked it. It is the linear equivalent of merkle-foreign-install.
+	m = s.v1(1, false)
+	m["chain"].(map[string]any)["params"].(map[string]any)["install_id"] = "in_someone_else"
+	s.add("foreign-install-linear", false, "", "chain",
+		"A loomseal-chain-v1 chain whose params.install_id is not the producer's is refused, which is "+
+			"what stops one install from restating another's producer block over its links.", s.sign(m))
+
+	// A bound SwitchTender entry re-signed under a different producer install, the receipt-lifting
+	// shape. The folded install_id no longer matches the producer, and a copier who instead rewrites
+	// the payload id to match breaks the link, so the lift is caught either way.
+	m = s.switchTenderBound()
+	m["producer"].(map[string]any)["install_id"] = "in_someone_else"
+	s.add("switchtender-foreign-install", false, "", "chain",
+		"A bound switchtender-audit-v1 entry whose folded install_id is not the producer's is refused, "+
+			"which is what stops a published receipt from being lifted into another install's bundle.",
+		s.sign(m))
+
+	// A window that opens past sequence one with no prev link. Its first claim recomputes as though
+	// it were genesis, so only the window-genesis rule catches that it names no predecessor.
+	m = s.v1(1, false)
+	m["claims"].([]any)[0].(map[string]any)["chain"].(map[string]any)["seq"] = int64(5)
+	s.relinkV1(m, false)
+	s.add("window-open-no-prev", false, "", "chain",
+		"A linear window opening at seq 5 with an empty prev is refused: a slice of a longer chain "+
+			"must link to the entry before it, or it is claiming to be unrooted at an arbitrary point.",
+		s.sign(m))
 
 	// Wrong format version.
 	m = s.v1(1, false)
@@ -744,14 +799,24 @@ func stripChain(claim map[string]any) map[string]any {
 	return out
 }
 
-// switchTenderLink recomputes a switchtender-audit-v2 link: SHA-256 over the canonical JSON object
-// of the claim's fields, so a field added later is committed without revising the profile.
+// switchTenderLink recomputes a switchtender-audit-v1 link with no install binding, the pre-binding
+// form every legacy chain carries.
 func switchTenderLink(seq int64, atStr, actor, method, path, prev string) string {
+	return switchTenderLinkBound(seq, atStr, actor, method, path, prev, "")
+}
+
+// switchTenderLinkBound recomputes a switchtender-audit-v1 link: SHA-256 over the canonical JSON
+// object of the claim's fields, so a field added later is committed without revising the profile. The
+// install id is folded in when non-empty, which is how a chain binds its links to the producer.
+func switchTenderLinkBound(seq int64, atStr, actor, method, path, prev, install string) string {
 	// Serialized with the JCS encoder, not encoding/json. encoding/json escapes &, <, >, U+2028,
 	// and U+2029 for embedding in HTML; RFC 8785 emits them raw. A vector built with the escaping
 	// encoder would have written the wrong answer into the file that defines what correct means.
 	fields := map[string]any{
 		"seq": seq, "at": atStr, "actor": actor, "method": method, "path": path, "prev": prev,
+	}
+	if install != "" {
+		fields["install_id"] = install
 	}
 	b, err := jcs.Serialize(fields)
 	if err != nil {
@@ -759,6 +824,33 @@ func switchTenderLink(seq int64, atStr, actor, method, path, prev string) string
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// switchTenderBound builds a shipped SwitchTender chain that binds its link to the producer install,
+// the form new producers emit. The install id is carried in the claim payload and folded into the
+// link, so an entry that omits it stays unchanged while a bound entry cannot be lifted.
+func (s *state) switchTenderBound() map[string]any {
+	m := s.base()
+	link := switchTenderLinkBound(1, at, "release-token", "POST", "/api/runs", "", installID)
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["payload"].(map[string]any)["install_id"] = installID
+	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+	m["chain"] = map[string]any{
+		"profile": profileSwitchTender, "keyed": false,
+		"head": map[string]any{"seq": int64(1), "link": link},
+	}
+	return m
+}
+
+// switchTenderDeclaredHeadProof pushes the head of the anchored-proof bundle beyond the disclosed
+// claim, so the real timestamp token sits on a declared head the bundle cannot tie to a claim. The
+// proof stays cryptographically valid, but a verifier must not open it or award an anchored level.
+func (s *state) switchTenderDeclaredHeadProof() map[string]any {
+	m := s.switchTenderProof()
+	m["chain"].(map[string]any)["head"] = map[string]any{"seq": int64(500), "link": anchoredLink}
+	anchor := m["anchors"].([]any)[0].(map[string]any)
+	anchor["seq"] = int64(500)
+	return m
 }
 
 // parseUnixNano converts an RFC 3339 time to Unix nanoseconds.
@@ -832,7 +924,7 @@ func merkleLeafData(claim map[string]any) []byte {
 			obj := e.(map[string]any)
 			cp := map[string]any{}
 			for k, v := range obj {
-				if k != "present" {
+				if k != "present" && k != "location" {
 					cp[k] = v
 				}
 			}

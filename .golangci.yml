@@ -1,12 +1,19 @@
 version: "2"
 
 linters:
+  enable:
+    - lll
   settings:
     errcheck:
       exclude-functions:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
+    lll:
+      # The house rule is 100 for code and up to 120 for function signatures. lll cannot express that
+      # split, so it is set to the 120 ceiling: it catches genuinely long lines without flagging a
+      # signature that legitimately runs past 100.
+      line-length: 120
     misspell:
       locale: US
   exclusions:

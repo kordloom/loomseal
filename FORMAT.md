@@ -205,7 +205,12 @@ they differ; a verifier selects its behavior from `chain.profile`, which the sig
 never from any other field.
 
 In a linear profile claims carry `chain.seq`, `chain.prev`, and `chain.link`. Claims in a bundle are
-sorted by ascending `seq` and must be contiguous; discontinuous history means separate bundles.
+sorted by ascending `seq` and must be contiguous; discontinuous history means separate bundles. The
+first claim carries an empty `prev` only when it is genesis, at `seq` 1. A window that opens past
+`seq` 1 is a slice of a longer chain, so its first claim links to the entry immediately before the
+window and must carry that non-empty `prev`; a first claim above `seq` 1 with an empty `prev` is
+rejected, because it recomputes as though it were genesis and would let a bundle present itself as
+unrooted at an arbitrary point.
 
 `chain.head` records the newest coordinates the producer attests for the whole chain, which may
 lead the claims a bundle carries: a bundle is a window into a longer history. When the head
@@ -222,14 +227,29 @@ as it appears in the bundle), `actor`, `method`, `path`, and `prev` (the previou
 string at genesis). Sequence starts at 1. This profile is unkeyed: any verifier recomputes every link
 from the claim payloads alone.
 
-The object carries three further fields when, and only when, the entry has them, each a non-empty
-string: `actor_type` (how the actor authenticated), `on_behalf_of` (the account whose authority the
-actor used), and `content_digest` (`sha256:` and the hex digest of the canonical, redacted change
-payload). An empty field is omitted from the object rather than written as an empty string, so an
-entry recorded before a field existed and one that simply does not use it hash identically. Because
-the link commits to a canonical object rather than a fixed positional array, a field added later is
-committed without changing how any earlier entry hashes, which is what lets this profile carry new
-evidence without a new profile version. A verifier hashes exactly the fields present and no others.
+The object carries four further fields when, and only when, the entry has them, each a non-empty
+string in the claim payload: `actor_type` (how the actor authenticated), `on_behalf_of` (the account
+whose authority the actor used), `content_digest` (`sha256:` and the hex digest of the canonical,
+redacted change payload), and `install_id` (the producing installation's identifier). An empty field
+is omitted from the object rather than written as an empty string, so an entry recorded before a
+field existed and one that simply does not use it hash identically. Because the link commits to a
+canonical object rather than a fixed positional array, a field added later is committed without
+changing how any earlier entry hashes, which is what lets this profile carry new evidence without a
+new profile version. A verifier hashes exactly the fields present and no others.
+
+`install_id` binds an entry to its producer, and when an entry carries it a verifier **requires it to
+equal `producer.install_id`**. The reason is the one the tree and generic profiles state: a link that
+commits to nothing about the install is one a copier can lift. A published receipt whose links named
+no install could be taken whole, re-signed under another installation's producer block and key, and
+would still recompute, so a relying party pinning that installation's fingerprint would read one
+install's history as another's, a real third-party timestamp riding along intact because the token
+commits only to the link. Folding the install into the link closes that for every entry that carries
+it: rewriting the producer block forces the payload id to be rewritten to match, which changes the
+link, which breaks any third-party anchor taken over the original. The binding is per entry, not per
+chain, so a chain adopts it mid-life without invalidating a single link it has already published:
+entries recorded before the field existed hash exactly as they always did, and stay exactly as
+liftable as they always were. A producer should carry `install_id` on every new entry, and a relying
+party should treat only entries that carry it as bound to the producing install.
 
 An earlier revision of this construction hashed six values as a positional array. Nothing consumed
 that form outside this repository, so the profile was redefined in place rather than versioned; a
@@ -296,15 +316,16 @@ membership of an entry the log never held.
 
 **Leaf data.** The claim digest of a claim is `sha256:` and the hex SHA-256 of the RFC 8785 canonical
 form of that claim's JSON object with its `chain` and `inclusion` members removed, and with the
-`present` member removed from every entry of `evidence`. The removals are structural, done on the
-parsed member tree before canonicalizing, never by editing text.
+`present` and `location` members removed from every entry of `evidence`. The removals are structural,
+done on the parsed member tree before canonicalizing, never by editing text.
 
 Each removal has a reason. `chain` carries the leaf's position and `inclusion` carries its proof, and a
 leaf commits to content, not to where it sits or how it is proved. `evidence[].present` says whether
-an artifact travels with this particular bundle, which is a fact about packaging rather than about the
-entry: the same log entry disclosed once with its transcript attached and once without would otherwise
-hash two different ways, so one of the two could never fold to the anchored root. Every other member of
-an evidence entry, including the digest itself, stays in the leaf.
+an artifact travels with this particular bundle and `evidence[].location` says where it sits relative
+to it, both facts about packaging rather than about the entry: the same log entry disclosed once with
+its transcript attached and once without, or laid out two ways, would otherwise hash differently, so
+one disclosure could never fold to the anchored root. Every other member of an evidence entry,
+including the digest itself, stays in the leaf.
 
 Canonicalizing is not the same as reformatting a value, and this format requires the first while
 forbidding the second. RFC 8785 fixes how the *structure* is written: key order, string escaping,
@@ -538,13 +559,18 @@ anchor often.
 
 A verifier checks an `rfc3161` proof rather than only carrying it. It confirms the token's message
 imprint is the SHA-256 of the anchored link's 32 raw bytes, decoded from its hex, not of the hex text,
-that the token's signed attributes commit to the payload, that the signature verifies against the
-timestamping certificate the token carries, and that the token's `genTime` equals the anchor's declared
-`at` to within one minute. That last check is what makes the anchor time mean anything: `at` is written
-by the producer, so without comparing it to the time the authority actually signed, a producer
-backdates an anchor by writing whatever `at` it likes beside a genuine token. Where the two disagree
-the token's `genTime` is the fact and the bundle is rejected, because a producer that misreports the
-one value it does not control has misreported its evidence.
+that the token's signed attributes commit to the payload, and that the signature verifies against the
+timestamping certificate the token carries. It also holds the token's `genTime` against two other
+facts the token already carries. First, `genTime` must fall within the signer certificate's own
+validity window: an authority's certificate has to be valid when it signs, so a token signed outside
+its certificate's life is not evidence whatever the signature says, and this is checkable with no root
+store because both values travel in the token. Second, `genTime` must not precede the entry the anchor
+covers, allowing a five-minute clock skew: the token commits to a link that is the hash of a claim
+carrying its own time, so an authority cannot honestly have signed it before that claim existed.
+Without this a producer running its own authority could sign any hash with any date and still reach the
+strongest verdict the format issues. The producer-written anchor `at` is a label for the reader and is
+not the value the verdict rests on; `genTime` is the fact, because it is the one time value the
+producer does not control.
 
 An `rfc3161` anchor carrying no `proof` is reported as anchored by reference, exactly like a `git` or
 `https` anchor, and does not earn the anchored level. Its type declares that an offline proof exists,

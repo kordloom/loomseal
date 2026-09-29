@@ -141,8 +141,8 @@ func verifyConsistency(b *bundle.Bundle, root []byte, size int64) error {
 
 // leafData builds one claim's leaf bytes: the canonical form of the domain, the install, and the
 // claim digest. The digest covers the claim's own content with the members that describe its
-// position, its proof, and how this bundle happens to package its evidence removed, so the same log
-// entry disclosed in two bundles yields one leaf.
+// position (chain), its proof (inclusion), and how this bundle happens to package its evidence
+// (present, location) removed, so the same log entry disclosed in two bundles yields one leaf.
 func leafData(claim map[string]any, installID string) ([]byte, error) {
 	content := make(map[string]any, len(claim))
 	for k, v := range claim {
@@ -160,7 +160,10 @@ func leafData(claim map[string]any, installID string) ([]byte, error) {
 			}
 			cp := make(map[string]any, len(obj))
 			for k, v := range obj {
-				if k == "present" {
+				// present and location are packaging details: whether the artifact travels beside this
+				// bundle and where. Both are dropped so the same log entry disclosed in two bundles that
+				// happen to package their evidence differently still yields one leaf.
+				if k == "present" || k == "location" {
 					continue
 				}
 				cp[k] = v
@@ -221,5 +224,6 @@ func decodeHashes(in []string) ([][]byte, error) {
 }
 
 // compile-time proof that a claim's payload stays raw JSON, which leafData relies on by working from
-// the parsed document rather than the decoded struct.
-var _ = json.RawMessage(nil)
+// the parsed document rather than the decoded struct. If the field type ever changes, this stops
+// compiling rather than silently canonicalizing a re-encoded payload.
+var _ json.RawMessage = bundle.Claim{}.Payload

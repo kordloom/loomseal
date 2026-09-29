@@ -98,6 +98,14 @@ func checkContinuity(claims []bundle.Claim) error {
 			if c.Seq == 1 && c.Prev != "" {
 				return fmt.Errorf("%w: claim 0 is genesis but has a prev link", ErrBroken)
 			}
+			// A window that opens past sequence one is a slice of a longer chain, so its first claim
+			// links to the entry before the window and must carry that prev. Without this rule a
+			// window opening at any position with an empty prev recomputes as though it were genesis,
+			// which lets a bundle present itself as unrooted at an arbitrary point.
+			if c.Seq > 1 && c.Prev == "" {
+				return fmt.Errorf("%w: claim 0 opens a window at seq %d but carries no prev link",
+					ErrBroken, c.Seq)
+			}
 			continue
 		}
 		prev := claims[i-1].Chain
@@ -147,17 +155,30 @@ type switchTenderPayload struct {
 	OnBehalfOf string `json:"on_behalf_of"`
 	// ContentDigest covers the canonical change payload, empty when the request carried no body.
 	ContentDigest string `json:"content_digest"`
+	// InstallID is the producing installation, empty on an entry recorded before the field existed.
+	InstallID string `json:"install_id"`
 }
 
 // checkSwitchTender recomputes the shipped SwitchTender construction: SHA-256 over the canonical
 // JSON object of the claim's sequence, time, actor, method, path, and previous link, plus the actor
-// type, delegated account, and content digest when the entry carries them.
+// type, delegated account, content digest, and install id when the entry carries them.
 func checkSwitchTender(b *bundle.Bundle) error {
 	for i := range b.Claims {
 		claim := &b.Claims[i]
 		var p switchTenderPayload
 		if err := json.Unmarshal(claim.Payload, &p); err != nil {
 			return fmt.Errorf("%w: claim %d payload: %w", ErrClaim, i, err)
+		}
+		// install_id binds the entry to the producer. When an entry carries it, it must be the
+		// signer's own, and it is folded into the link like the other optional fields. A link that
+		// commits to the install cannot be lifted into another install's bundle while keeping a
+		// genuine anchor: rewriting the producer forces rewriting the link, which breaks any
+		// third-party timestamp taken over the original. An entry that omits it is a pre-binding
+		// entry, hashed exactly as before, so a chain can adopt the field without invalidating the
+		// links it already published.
+		if p.InstallID != "" && p.InstallID != b.Producer.InstallID {
+			return fmt.Errorf("%w: claim %d install_id %q does not match producer.install_id %q",
+				ErrProfile, i, p.InstallID, b.Producer.InstallID)
 		}
 		// The time is validated but hashed verbatim, exactly as it appears in the bundle.
 		//
@@ -196,6 +217,7 @@ func checkSwitchTender(b *bundle.Bundle) error {
 			"actor_type":     p.ActorType,
 			"on_behalf_of":   p.OnBehalfOf,
 			"content_digest": p.ContentDigest,
+			"install_id":     p.InstallID,
 		} {
 			if value != "" {
 				fields[key] = value

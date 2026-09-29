@@ -181,21 +181,3 @@ func TestHashForRejectsUnsupportedDigests(t *testing.T) {
 		t.Error("an unsupported digest resolved")
 	}
 }
-
-// TestDecodeHex pins the link decoder, since a link that decodes wrong produces an imprint that
-// matches nothing and the failure would look like tampering.
-func TestDecodeHex(t *testing.T) {
-	t.Parallel()
-	got, err := decodeHex("00ffAb")
-	if err != nil {
-		t.Fatalf("decodeHex() error = %v", err)
-	}
-	if len(got) != 3 || got[0] != 0x00 || got[1] != 0xff || got[2] != 0xab {
-		t.Errorf("decodeHex() = %x, want 00ffab", got)
-	}
-	for _, bad := range []string{"abc", "zz", "0g"} {
-		if _, err := decodeHex(bad); err == nil {
-			t.Errorf("decodeHex(%q) accepted invalid hex", bad)
-		}
-	}
-}

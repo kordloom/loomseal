@@ -286,6 +286,13 @@ def _verify_timestamp(token, link, index):
 
     if certs_der is None or signer_infos is None:
         raise VError("anchor", f"anchor {index} proof carries no certificate or signer")
+    # A timestamp token has exactly one signer. Zero is malformed and more than one is ambiguous.
+    # This verifier resolves the signer certificate by the timestamping usage rather than by the
+    # signer id, which the Go verifier resolves; the two agree wherever a token names a single
+    # timestamping certificate, which every conformance vector does.
+    signer_count = sum(1 for t, _b, _f in _children(signer_infos) if t == 0x30)
+    if signer_count != 1:
+        raise VError("anchor", f"anchor {index} proof carries {signer_count} signers, want one")
     certs = pkcs7.load_der_pkcs7_certificates(token)
     signer_cert = None
     for cert in certs:
@@ -338,6 +345,17 @@ def _verify_timestamp(token, link, index):
         _verify_cert_signature(signer_cert, signature, signed, digest_name)
     except Exception as exc:
         raise VError("anchor", f"anchor {index} proof signature does not verify: {exc}") from exc
+
+    # An authority's certificate has to be valid when it signs, so a signing time outside the signer
+    # certificate's own window is not evidence, whatever the signature says. This needs no root store:
+    # it is a self-consistency check between two values the token already carries.
+    if gen_time and len(gen_time) >= 14:
+        signed_at = datetime.strptime(gen_time[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        not_before = signer_cert.not_valid_before_utc
+        not_after = signer_cert.not_valid_after_utc
+        if signed_at < not_before or signed_at > not_after:
+            raise VError("anchor", f"anchor {index} proof signing time is outside the certificate "
+                                   "validity window")
 
     when = gen_time or "unknown time"
     if len(when) >= 14:
@@ -449,6 +467,9 @@ def _check_chain(b, report):
     report["chain_present"] = True
     chain = b["chain"]
     claims = b["claims"]
+    # Recorded so the level wording can distinguish a tree from a linear chain, the same way the Go
+    # verifier keys its wording on the profile rather than the mode.
+    report["chain_profile"] = chain["profile"]
     # The tree profile is checked before the linear rules below, which it legitimately violates: a
     # tree has no per-entry predecessor, its head is a root rather than the newest claim's link, and
     # disclosing a non-contiguous subset of leaves is the whole point of the profile.
@@ -466,6 +487,11 @@ def _check_chain(b, report):
         if i == 0:
             if co["seq"] == 1 and co.get("prev", "") != "":
                 raise VError("chain", "genesis claim has a prev link")
+            # A window opening past sequence one links to the entry before it and must carry that
+            # prev; an empty prev there recomputes as genesis and lets a bundle present itself as
+            # unrooted at an arbitrary point.
+            if co["seq"] > 1 and co.get("prev", "") == "":
+                raise VError("chain", f"claim 0 opens a window at seq {co['seq']} but carries no prev")
             continue
         prev = claims[i - 1]["chain"]
         if co["seq"] != prev["seq"] + 1:
@@ -506,8 +532,11 @@ def _merkle_leaf_data(claim, install):
     bundles yields one leaf."""
     content = {k: v for k, v in claim.items() if k not in ("chain", "inclusion")}
     if isinstance(content.get("evidence"), list):
+        # present and location are packaging details, dropped so the same entry disclosed in two
+        # bundles that package their evidence differently still yields one leaf.
         content["evidence"] = [
-            {k: v for k, v in e.items() if k != "present"} for e in content["evidence"]
+            {k: v for k, v in e.items() if k not in ("present", "location")}
+            for e in content["evidence"]
         ]
     digest = "sha256:" + hashlib.sha256(canon(content)).hexdigest()
     return canon({"domain": MERKLE, "install_id": install, "claim": digest})
@@ -664,6 +693,12 @@ def _links_v1(b):
     install = (b["chain"].get("params") or {}).get("install_id")
     if not install:
         raise VError("chain", "loomseal-chain-v1 requires params.install_id")
+    # The id has to be the signer's, not merely present. An id a bundle states but nothing ties to
+    # the producer is one a copier can restate, so a link bound to it is bound to nothing they cannot
+    # also claim. FORMAT.md requires this and the Go verifier enforced it; this reference verifier did
+    # not, so the two disagreed on a foreign-install linear bundle until now.
+    if install != b["producer"].get("install_id"):
+        raise VError("chain", f"{V1} params.install_id does not match producer.install_id")
     for i, c in enumerate(b["claims"]):
         bare = {k: v for k, v in c.items() if k != "chain"}
         claim_digest = "sha256:" + hashlib.sha256(canon(bare)).hexdigest()
@@ -678,12 +713,22 @@ def _links_switchtender(b):
     for i, c in enumerate(b["claims"]):
         p = c["payload"]
         _check_rfc3339(c["at"], i)
+        # install_id binds the entry to the producer. When an entry carries it, it must be the
+        # signer's own, and it is folded into the link like the other optional fields. A link that
+        # commits to the install cannot be lifted into another install's bundle while keeping a
+        # genuine anchor: rewriting the producer forces rewriting the link, which breaks any
+        # third-party timestamp taken over the original. An entry that omits it is a pre-binding
+        # entry, hashed exactly as before, so a chain can adopt the field without invalidating the
+        # links it already published.
+        install = p.get("install_id")
+        if isinstance(install, str) and install and install != b["producer"].get("install_id"):
+            raise VError("chain", f"claim {i} install_id does not match producer.install_id")
         claim = {"seq": c["chain"]["seq"], "at": c["at"], "prev": c["chain"].get("prev", ""),
                  "actor": p.get("actor", ""), "method": p.get("method", ""),
                  "path": p.get("path", "")}
         # Fields added after the first release are hashed only when the entry carries them, exactly
         # as the producer omits them, so an entry recorded before they existed recomputes unchanged.
-        for key in ("actor_type", "on_behalf_of", "content_digest"):
+        for key in ("actor_type", "on_behalf_of", "content_digest", "install_id"):
             value = p.get(key)
             if isinstance(value, str) and value:
                 claim[key] = value
@@ -720,6 +765,20 @@ def _check_rfc3339(ts, i):
         raise VError("claim", f"claim {i} at is not RFC 3339: {exc}") from exc
 
 
+# ANCHOR_SKEW_S is how far an authority's clock may sit behind the producer's before an attestation
+# reads as predating the entry it covers. Both clocks are real and neither is authoritative, so a
+# small allowance keeps honest installs from being called liars. It matches the Go verifier.
+ANCHOR_SKEW_S = 300
+
+
+def _rfc3339_epoch(ts):
+    """Parse an RFC 3339 UTC time to epoch seconds, or None when it is not well formed."""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def _check_anchors(b, report):
     anchors = b.get("anchors") or []
     if not anchors:
@@ -727,20 +786,36 @@ def _check_anchors(b, report):
     if "chain" not in b:
         raise VError("anchor", "anchors present without a chain")
     verified = {}
+    # claim_at records when each anchored position says it happened, so an attestation can be held
+    # against it: a timestamp authority signs a hash it is handed, and that hash cannot exist before
+    # the entry it covers.
+    claim_at = {}
     for c in b["claims"]:
         if "chain" in c:
             verified[c["chain"]["seq"]] = c["chain"]["link"]
+            at = _rfc3339_epoch(c.get("at"))
+            if at is not None:
+                claim_at[c["chain"]["seq"]] = at
     head = b["chain"]["head"]
     if report["head_matched"]:
         verified[head["seq"]] = head["link"]
     for i, a in enumerate(anchors):
+        matched = False
         if verified.get(a["seq"]) == a["link"]:
             report["anchors_matched"] += 1
+            matched = True
         elif not report["head_matched"] and a["seq"] == head["seq"] and a["link"] == head["link"]:
             report["anchors_to_declared_head"] += 1
+            if a.get("proof"):
+                report["anchor_proofs_on_declared_head"] = (
+                    report.get("anchor_proofs_on_declared_head", 0) + 1)
         else:
             raise VError("anchor", f"anchor {i} matches no verified claim or the declared head")
-        if not a.get("proof"):
+        # A proof is only opened when its anchor matched a coordinate this verifier confirmed. A proof
+        # over a declared head that leads the claims attests a link tied to nothing in the bundle, so
+        # verifying it would let it reach "anchored (proof verified)", the strongest word the format
+        # issues. It is reported separately and never counted.
+        if not matched or not a.get("proof"):
             continue
         report["anchor_proofs_carried"] += 1
         # A carried proof used to be counted and never opened, so a bundle holding a real signed
@@ -753,6 +828,14 @@ def _check_anchors(b, report):
         except Exception as exc:
             raise VError("anchor", f"anchor {i} proof is not base64: {exc}") from exc
         when, signer = _verify_timestamp(token, a["link"], i)
+        # An attestation earlier than the entry it covers is a contradiction, not evidence: the token
+        # commits to a link that is the hash of a claim carrying its own time, so an authority cannot
+        # honestly have signed it first. Without this a producer running its own authority could sign
+        # any hash with any date and still reach the strongest verdict the format issues.
+        signed_at = _rfc3339_epoch(when)
+        if a["seq"] in claim_at and signed_at is not None and signed_at < claim_at[a["seq"]] - ANCHOR_SKEW_S:
+            raise VError("anchor", f"anchor {i} attests {when} over entry {a['seq']}, before the "
+                                   "entry it covers: a timestamp cannot precede the entry")
         report["anchor_proofs_verified"] += 1
         report["anchor_attestations"].append(f"{when} by {signer}")
     # True only when every proof the bundle carries was opened and held.
@@ -871,7 +954,16 @@ def _level(report):
         return "not verified"
     level = "signed"
     if report["chain_present"] and report["chain_ok"]:
-        level += f", chained ({report['chain_mode']})"
+        # A tree recomputes everything, so "full" would tell a reader nothing; what it established is
+        # membership in a log of a stated size, plus append-only growth when a consistency proof folded.
+        # A linear chain is worded by the mode it reached. This mirrors the Go verifier's chainWording.
+        if report.get("chain_profile") == MERKLE:
+            wording = f"tree of {report.get('tree_size', 0)}"
+            if report.get("consistency_ok"):
+                wording += f", append-only from {report.get('consistency_from')}"
+        else:
+            wording = report["chain_mode"]
+        level += f", chained ({wording})"
     anchored = report["anchor_proofs_verified"] > 0 or report["anchors_matched"] > 0
     if report["anchor_proofs_verified"] > 0:
         # A proof checked here needed no network and no trust in the producer, which is a stronger

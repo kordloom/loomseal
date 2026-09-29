@@ -53,6 +53,12 @@
       "items": {
         "$ref": "#/$defs/signature"
       }
+    },
+    "attestations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attestation"
+      }
     }
   },
   "$defs": {
@@ -109,14 +115,8 @@
       "additionalProperties": false,
       "properties": {
         "type": {
-          "enum": [
-            "url",
-            "fleet",
-            "repo",
-            "agent",
-            "host",
-            "run"
-          ]
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$"
         },
         "id": {
           "type": "string",
@@ -260,6 +260,9 @@
         "sig": {
           "type": "string",
           "minLength": 1
+        },
+        "at": {
+          "$ref": "#/$defs/time"
         }
       }
     },

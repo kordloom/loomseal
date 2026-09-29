@@ -144,37 +144,7 @@ func verifyConsistency(b *bundle.Bundle, root []byte, size int64) error {
 // position (chain), its proof (inclusion), and how this bundle happens to package its evidence
 // (present, location) removed, so the same log entry disclosed in two bundles yields one leaf.
 func leafData(claim map[string]any, installID string) ([]byte, error) {
-	content := make(map[string]any, len(claim))
-	for k, v := range claim {
-		// chain and inclusion describe position and proof; disclosures and attestations are holder-
-		// and third-party-controlled and travel outside the leaf. All are dropped so the leaf commits
-		// to content alone, with redactable fields committed through the payload's _sd digest set.
-		if k == "chain" || k == "inclusion" || k == "disclosures" || k == "attestations" {
-			continue
-		}
-		content[k] = v
-	}
-	if ev, ok := content["evidence"].([]any); ok {
-		stripped := make([]any, 0, len(ev))
-		for _, e := range ev {
-			obj, ok := e.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("%w: evidence entry is not an object", ErrClaim)
-			}
-			cp := make(map[string]any, len(obj))
-			for k, v := range obj {
-				// present and location are packaging details: whether the artifact travels beside this
-				// bundle and where. Both are dropped so the same log entry disclosed in two bundles that
-				// happen to package their evidence differently still yields one leaf.
-				if k == "present" || k == "location" {
-					continue
-				}
-				cp[k] = v
-			}
-			stripped = append(stripped, cp)
-		}
-		content["evidence"] = stripped
-	}
+	content := ClaimContent(claim)
 	canonical, err := jcs.Serialize(content)
 	if err != nil {
 		return nil, err

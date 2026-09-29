@@ -9,4 +9,8 @@ const (
 	CodeFailed = 1
 	// CodeUsage means the invocation or input could not be processed at all.
 	CodeUsage = 2
+	// CodeUnsupported means the bundle declares a version, profile, or algorithm this verifier
+	// does not implement. Fail-closed like CodeFailed, but a script can tell "upgrade the
+	// verifier" from "distrust the bundle."
+	CodeUnsupported = 3
 )

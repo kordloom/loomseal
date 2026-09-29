@@ -23,6 +23,8 @@ type spanTestEntry struct {
 	Count int64
 	// Stream overrides the span payload stream when set.
 	Stream string
+	// Cadence overrides the span payload cadence when set, in seconds.
+	Cadence int64
 }
 
 // spanTestBundle builds a signed loomseal-chain-v1 bundle from entries, anchoring the head when
@@ -45,10 +47,14 @@ func spanTestBundle(t *testing.T, entries []spanTestEntry, anchored bool) []byte
 			if stream == "" {
 				stream = "chain"
 			}
+			cadence := e.Cadence
+			if cadence == 0 {
+				cadence = 60
+			}
 			c = map[string]any{
 				"type": "loomseal.span/1", "at": e.At,
 				"payload": map[string]any{
-					"stream": stream, "cadence_s": 60, "beat": e.Beat, "count": e.Count,
+					"stream": stream, "cadence_s": cadence, "beat": e.Beat, "count": e.Count,
 				},
 			}
 		} else {
@@ -213,4 +219,81 @@ func problemContains(r *Report, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestSpanTimeMustAdvance pins the monotonic-time rule between beats. A beat whose time
+// equals its predecessor's is a stalled clock, which the boundary of the gap check would
+// otherwise quietly absorb.
+func TestSpanTimeMustAdvance(t *testing.T) {
+	t.Parallel()
+	stalled := spanBase()
+	stalled[3].At = stalled[1].At
+	got := Run(spanTestBundle(t, stalled, true), Options{})
+	if got.SpanOK {
+		t.Errorf("span ok %t, want false; problems %v", got.SpanOK, got.Problems)
+	}
+	if !problemContains(got, "does not advance") {
+		t.Errorf("problems %v do not mention the stalled clock", got.Problems)
+	}
+}
+
+// TestSpanPayloadBounds pins the span payload floor values: a cadence below one second
+// and a negative count are each named as problems on their own.
+func TestSpanPayloadBounds(t *testing.T) {
+	t.Parallel()
+
+	// Test 0: a zero cadence is refused.
+	zeroCadence := spanBase()
+	zeroCadence[1].Cadence = -1
+	got := Run(spanTestBundle(t, zeroCadence, true), Options{})
+	if got.SpanOK || !problemContains(got, "cadence_s") {
+		t.Errorf("span ok %t problems %v, want a cadence problem", got.SpanOK, got.Problems)
+	}
+
+	// Test 1: a negative count is refused.
+	negCount := spanBase()
+	negCount[1].Count = -2
+	got = Run(spanTestBundle(t, negCount, true), Options{})
+	if got.SpanOK || !problemContains(got, "count -2") {
+		t.Errorf("span ok %t problems %v, want a count problem", got.SpanOK, got.Problems)
+	}
+}
+
+// TestSpanBoundaryValues pins the legal floor of each span payload field and the report
+// fields a clean run must leave empty: a cadence of exactly one second and a window
+// counting zero entries are both valid, a single-gap run names that gap as the longest,
+// and a gapless run reports no longest gap at all.
+func TestSpanBoundaryValues(t *testing.T) {
+	t.Parallel()
+
+	// Test 0: cadence one and count zero are the legal floors.
+	floor := []spanTestEntry{
+		{Kind: "span", At: "2026-07-27T12:01:00Z", Beat: 1, Count: 0, Cadence: 1},
+		{Kind: "span", At: "2026-07-27T12:01:01Z", Beat: 2, Count: 0, Cadence: 1},
+	}
+	got := Run(spanTestBundle(t, floor, true), Options{})
+	if !got.SpanOK {
+		t.Errorf("floor values refused: %v", got.Problems)
+	}
+
+	// Test 1: a gapless run reports no longest gap.
+	if got.SpanLongestGap != "" {
+		t.Errorf("gapless longest gap %q, want empty", got.SpanLongestGap)
+	}
+
+	// Test 2: a run with one gap names it as the longest.
+	gapped := spanBase()
+	gapped[3].At = "2026-07-27T12:04:00Z"
+	got = Run(spanTestBundle(t, gapped, true), Options{})
+	if got.SpanLongestGap != "3m0s" {
+		t.Errorf("longest gap %q, want 3m0s", got.SpanLongestGap)
+	}
+
+	// Test 3: a bundle with no span claims reports no coverage line at all.
+	noSpans := []spanTestEntry{{Kind: "audit", At: "2026-07-27T12:00:10Z"}}
+	got = Run(spanTestBundle(t, noSpans, true), Options{})
+	if got.SpanCoverage != "" || got.SpanPresent {
+		t.Errorf("spanless coverage %q present %t, want empty and false", got.SpanCoverage,
+			got.SpanPresent)
+	}
 }

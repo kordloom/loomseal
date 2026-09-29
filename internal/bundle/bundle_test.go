@@ -73,7 +73,7 @@ func TestParse(t *testing.T) {
 	}, { // Test 1: Unknown top-level fields are rejected.
 		Mutate: func(m map[string]any) { m["extra"] = 1 }, Want: ErrParse,
 	}, { // Test 2: A wrong format version is rejected.
-		Mutate: func(m map[string]any) { m["loomseal"] = "0.2" }, Want: ErrSchema,
+		Mutate: func(m map[string]any) { m["loomseal"] = "0.2" }, Want: ErrUnsupported,
 	}, { // Test 3: An empty bundle_id is rejected.
 		Mutate: func(m map[string]any) { m["bundle_id"] = "" }, Want: ErrSchema,
 	}, { // Test 4: A malformed created_at is rejected.
@@ -84,9 +84,10 @@ func TestParse(t *testing.T) {
 		}, Want: ErrSchema,
 	}, { // Test 6: A malformed producer key_id is rejected.
 		Mutate: func(m map[string]any) { producerOf(m)["key_id"] = "abc" }, Want: ErrSchema,
-	}, { // Test 7: An unknown subject type is rejected.
+	}, { // Test 7: A subject type outside the token pattern is rejected; an unknown token is
+		// vocabulary and passes, which the subject-unknown-type vector pins from the other side.
 		Mutate: func(m map[string]any) {
-			m["subject"] = map[string]any{"type": "planet", "id": "x"}
+			m["subject"] = map[string]any{"type": "Not A Token!", "id": "x"}
 		}, Want: ErrSchema,
 	}, { // Test 8: A bundle without claims is rejected.
 		Mutate: func(m map[string]any) { m["claims"] = []any{} }, Want: ErrSchema,
@@ -104,7 +105,7 @@ func TestParse(t *testing.T) {
 				"profile": "mystery-v9", "keyed": false,
 				"head": map[string]any{"seq": 1, "link": strings.Repeat("ab", 32)},
 			}
-		}, Want: ErrSchema,
+		}, Want: ErrUnsupported,
 	}, { // Test 13: A chain head with a bad link is rejected.
 		Mutate: func(m map[string]any) {
 			m["chain"] = map[string]any{
@@ -130,7 +131,7 @@ func TestParse(t *testing.T) {
 			s, _ := m["signatures"].([]any)
 			first, _ := s[0].(map[string]any)
 			first["alg"] = "rsa"
-		}, Want: ErrSchema,
+		}, Want: ErrUnsupported,
 	}, { // Test 18: A wrong-size signature is rejected.
 		Mutate: func(m map[string]any) {
 			s, _ := m["signatures"].([]any)
@@ -252,5 +253,66 @@ func TestKeyIDShape(t *testing.T) {
 	other[31] ^= 0xff
 	if KeyID(other) == id {
 		t.Error("two different keys share a fingerprint, so pinning one accepts the other")
+	}
+}
+
+// TestParseFieldGuards pins validation rules whose guards are disjunction chains, which a
+// suite that only ever feeds complete documents leaves free to weaken one clause at a time.
+func TestParseFieldGuards(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		Mutate func(m map[string]any)
+		Want   error
+	}{{ // Test 0: An empty producer product is rejected on its own.
+		Mutate: func(m map[string]any) { producerOf(m)["product"] = "" }, Want: ErrSchema,
+	}, { // Test 1: An empty producer product_version is rejected on its own.
+		Mutate: func(m map[string]any) { producerOf(m)["product_version"] = "" }, Want: ErrSchema,
+	}, { // Test 2: An empty producer install_id is rejected on its own.
+		Mutate: func(m map[string]any) { producerOf(m)["install_id"] = "" }, Want: ErrSchema,
+	}, { // Test 3: A verdict missing only its decision is rejected.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["verdict"] = map[string]any{"policy": "p1", "decision": ""}
+		}, Want: ErrSchema,
+	}, { // Test 4: A verdict missing only its policy is rejected.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["verdict"] = map[string]any{"policy": "", "decision": "allow"}
+		}, Want: ErrSchema,
+	}, { // Test 5: A consistency prefix of zero entries is refused, since every log
+		// extends the empty log and such a proof establishes nothing.
+		Mutate: func(m map[string]any) {
+			m["chain"] = merkleChain(0)
+		}, Want: ErrSchema,
+	}, { // Test 6: A consistency prefix of exactly one entry is legal.
+		Mutate: func(m map[string]any) {
+			m["chain"] = merkleChain(1)
+		},
+	}, { // Test 7: A complete verdict is accepted.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["verdict"] = map[string]any{"policy": "p1", "decision": "allow"}
+		},
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			m := base()
+			test.Mutate(m)
+			_, err := Parse(mustJSON(t, m))
+			if !errors.Is(err, test.Want) {
+				t.Errorf("error mismatch: got %v, want %v", err, test.Want)
+			}
+		})
+	}
+}
+
+// merkleChain builds a tree-profile chain declaration whose consistency proof claims a
+// prefix of fromSize entries, for exercising the consistency guards.
+func merkleChain(fromSize int64) map[string]any {
+	link := strings.Repeat("ab", 32)
+	return map[string]any{
+		"profile": ProfileMerkle, "keyed": false,
+		"head": map[string]any{"seq": 2, "link": link},
+		"consistency": map[string]any{
+			"from_size": fromSize, "from_root": link, "path": []any{link},
+		},
 	}
 }

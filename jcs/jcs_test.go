@@ -159,3 +159,120 @@ func TestSerializeGoValues(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateStringsEscapeEdges pins the escape-decoding corners the main table leaves
+// open: lowercase hex digits, the exact boundaries of the low surrogate range, and an
+// escape truncated at the end of input. Every escape in the main table is uppercase, so
+// without these the lowercase decode path never runs under test at all.
+func TestValidateStringsEscapeEdges(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		In         string
+		WantResult string
+		Want       error
+	}{{ // Test 0: A lowercase surrogate pair decodes to its code point.
+		In: `"\ud83d\ude00"`, WantResult: `"😀"`,
+	}, { // Test 1: A lowercase lone low surrogate is rejected.
+		In: `"\udfff"`, Want: ErrString,
+	}, { // Test 2: The lowest legal pair decodes to U+10000.
+		In: `"\uD800\uDC00"`, WantResult: `"𐀀"`,
+	}, { // Test 3: The highest legal pair decodes to U+10FFFF.
+		In: `"\uDBFF\uDFFF"`, WantResult: `"􏿿"`,
+	}, { // Test 4: A high surrogate paired one below the low range is rejected.
+		In: `"\uD800\uDBFF"`, Want: ErrString,
+	}, { // Test 5: Mixed-case hex digits decode like either case alone.
+		In: `"\uD83d\udE00"`, WantResult: `"😀"`,
+	}, { // Test 6: A backslash as the final byte is a dangling escape, not a scan past the end.
+		In: `"\`, Want: ErrString,
+	}, { // Test 7: A lowercase BMP escape decodes to its literal character.
+		In: `"\u00e9"`, WantResult: `"é"`,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			got, err := Canonicalize([]byte(test.In))
+			if !errors.Is(err, test.Want) {
+				t.Fatalf("error mismatch: got %v, want %v", err, test.Want)
+			}
+			if test.Want != nil {
+				return
+			}
+			if diff := cmp.Diff(test.WantResult, string(got)); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestCanonicalizeHexBoundaries pins the hex-digit ranges of escape decoding at their
+// exact edges, and the UTF-16 key ordering RFC 8785 requires. The digit ranges are three
+// two-sided comparisons a passing suite of mid-range digits leaves entirely unpinned.
+func TestCanonicalizeHexBoundaries(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		In         string
+		WantResult string
+		Want       error
+	}{{ // Test 0: The a and f digit boundaries decode.
+		In: `"\u00af"`, WantResult: `"¯"`,
+	}, { // Test 1: The A and F digit boundaries decode.
+		In: `"\u00AF"`, WantResult: `"¯"`,
+	}, { // Test 2: The 0 and 9 digit boundaries decode.
+		In: `"\u0909"`, WantResult: `"उ"`,
+	}, { // Test 3: A digit just past f is rejected.
+		In: `"\u00g0"`, Want: ErrString,
+	}, { // Test 4: Keys sort by UTF-16 code units, as RFC 8785 requires: the astral
+		// key's high surrogate D834 sorts before the BMP key FB33, so the astral
+		// key stays first even though its code point is lower.
+		In:         `{"𝌆":1,"דּ":2}`,
+		WantResult: `{"𝌆":1,"דּ":2}`,
+	}, { // Test 5: A strict prefix sorts first, and keys agreeing on their first
+		// unit are ordered by the unit after it.
+		In:         `{"ab":3,"aa":2,"a":1}`,
+		WantResult: `{"a":1,"aa":2,"ab":3}`,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			got, err := Canonicalize([]byte(test.In))
+			if !errors.Is(err, test.Want) {
+				t.Fatalf("error mismatch: got %v, want %v", err, test.Want)
+			}
+			if test.Want != nil {
+				return
+			}
+			if diff := cmp.Diff(test.WantResult, string(got)); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestUTF16LessContract pins the comparator directly. Sorting can luck into the right
+// order under an inconsistent comparator, so the ordering test alone cannot hold these:
+// equal prefixes must defer to the next unit, and a string never sorts before itself.
+func TestUTF16LessContract(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		A, B string
+		Want bool
+	}{{ // Test 0: Equal first units defer to the second.
+		A: "ab", B: "aa", Want: false,
+	}, { // Test 1: The mirror image orders the other way.
+		A: "aa", B: "ab", Want: true,
+	}, { // Test 2: A string does not sort before itself.
+		A: "aa", B: "aa", Want: false,
+	}, { // Test 3: A strict prefix sorts first.
+		A: "a", B: "ab", Want: true,
+	}, { // Test 4: The longer string never sorts before its own prefix.
+		A: "ab", B: "a", Want: false,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			if got := utf16Less(test.A, test.B); got != test.Want {
+				t.Errorf("utf16Less(%q, %q) = %t, want %t", test.A, test.B, got, test.Want)
+			}
+		})
+	}
+}

@@ -2,12 +2,18 @@ package rfc3161
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
+	"math/big"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // tokenLink is the chain link the stored token attests to. The token was issued by a public
@@ -179,5 +185,65 @@ func TestHashForRejectsUnsupportedDigests(t *testing.T) {
 	// SHA-1, which no conforming authority should be using for this.
 	if _, err := hashFor(asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}); err == nil {
 		t.Error("an unsupported digest resolved")
+	}
+}
+
+// tsaCert generates a self-signed timestamping certificate with the given serial and
+// common name, so certificate selection can be tested without a real authority.
+func tsaCert(t *testing.T, serial int64, cn string) (*x509.Certificate, []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(serial),
+		Subject:      pkix.Name{CommonName: cn},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageTimeStamping},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+	return c, der
+}
+
+// TestSignerCertificateNamesBothFields pins signer resolution as a conjunction of serial
+// and issuer. A decoy from the same issuer under a different serial, listed first, must
+// not be selected: matching on either field alone would report, and check the signature
+// against, a certificate the token never claimed signed it.
+func TestSignerCertificateNamesBothFields(t *testing.T) {
+	t.Parallel()
+	// Both certificates carry the same issuer name; only the serial separates them.
+	decoy, decoyDER := tsaCert(t, 1000, "Acme TSA")
+	signer, signerDER := tsaCert(t, 2000, "Acme TSA")
+
+	sd := signedData{}
+	sd.Certificates.Bytes = append(append([]byte{}, decoyDER...), signerDER...)
+
+	named := issuerAndSerial{
+		Issuer:       asn1.RawValue{FullBytes: signer.RawIssuer},
+		SerialNumber: signer.SerialNumber,
+	}
+	sidDER, err := asn1.Marshal(named)
+	if err != nil {
+		t.Fatalf("marshal signer id: %v", err)
+	}
+
+	got, err := signerCertificate(sd, asn1.RawValue{FullBytes: sidDER})
+	if err != nil {
+		t.Fatalf("signer certificate: %v", err)
+	}
+	if got.SerialNumber.Cmp(signer.SerialNumber) != 0 {
+		t.Errorf("selected serial %v, want %v", got.SerialNumber, signer.SerialNumber)
+	}
+	if got.SerialNumber.Cmp(decoy.SerialNumber) == 0 {
+		t.Error("selected the decoy certificate")
 	}
 }

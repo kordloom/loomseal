@@ -1,29 +1,52 @@
-name: deploy-site
+name: ship
 
+# One button in the Actions tab: run the core gate, then rebuild the browser verifier and
+# deploy the site only if everything passes. deploy-site still handles the automatic
+# on-push path; this is the deliberate, gated version of the same publish.
 on:
-  push:
-    branches: [main]
-    # The verifier the site ships is compiled from this repository's own source, so a change to
-    # the verification path is a change to the site even when nothing under site/ moved.
-    paths:
-      - "site/**"
-      - "wasm/**"
-      - "internal/**"
-      - "seal/**"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/deploy-site.yml"
   workflow_dispatch:
+    inputs:
+      deploy_site:
+        description: "Deploy loomseal.com after the gate passes."
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
   group: deploy-site
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+
+  deploy-site:
+    needs: [gate, lint]
+    if: ${{ inputs.deploy_site }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,3 +79,6 @@ jobs:
           wranglerVersion: "4.112.0"
           workingDirectory: site
           command: deploy
+
+      - name: Verify the site is answering
+        run: curl -fsS -o /dev/null "https://loomseal.com/?_=$(date +%s)"

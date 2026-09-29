@@ -2,6 +2,13 @@
   "description": "LoomSeal v0.1 conformance vectors. Each entry declares whether the bundle must verify, and when it must not, which check fails and why. A verifier is conformant when it agrees with every entry.",
   "vectors": [
     {
+      "name": "anchor-corrupt-token",
+      "file": "anchor-corrupt-token.loomseal.json",
+      "must_verify": false,
+      "failing_check": "anchor",
+      "why": "An rfc3161 proof that does not open as a timestamp token fails the anchor check: a carried proof that is garbage must never grade the same as no proof."
+    },
+    {
       "name": "anchor-declared-head-proof",
       "file": "anchor-declared-head-proof.loomseal.json",
       "must_verify": true,
@@ -37,6 +44,13 @@
       "why": "A counterparty attestation whose role was changed after signing no longer verifies, because the counter-signature binds the role as well as the link."
     },
     {
+      "name": "attestation-with-time",
+      "file": "attestation-with-time.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An attestation whose at member is set carries the signing time inside the signed bytes; altering the time after the fact breaks the counter-signature."
+    },
+    {
       "name": "attested-claim",
       "file": "attested-claim.loomseal.json",
       "must_verify": true,
@@ -49,6 +63,13 @@
       "must_verify": false,
       "failing_check": "chain",
       "why": "A prev link that does not match the prior link breaks continuity."
+    },
+    {
+      "name": "chain-v1-evidence-packaging",
+      "file": "chain-v1-evidence-packaging.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An evidence entry's present and location are packaging details outside the committed content, so a chain-v1 link recomputes whatever way this copy packages its evidence."
     },
     {
       "name": "duplicate-top-level-key",
@@ -70,6 +91,20 @@
       "must_verify": false,
       "failing_check": "chain",
       "why": "A loomseal-chain-v1 chain whose params.install_id is not the producer's is refused, which is what stops one install from restating another's producer block over its links."
+    },
+    {
+      "name": "head-attestation-role-swapped",
+      "file": "head-attestation-role-swapped.loomseal.json",
+      "must_verify": false,
+      "failing_check": "attestation",
+      "why": "A head attestation whose role is rewritten after signing fails, because the role sits inside the signed preimage."
+    },
+    {
+      "name": "head-attested",
+      "file": "head-attested.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A head-level attestation added after signing verifies over the chain head and is reported as vouching for it; the producer signature is untouched because the member is stripped from its preimage."
     },
     {
       "name": "head-behind-claims",
@@ -233,6 +268,20 @@
       "why": "alg is outside the signed bytes, so a verifier rejects a foreign value rather than dispatching on it."
     },
     {
+      "name": "signature-foreign-keyid",
+      "file": "signature-foreign-keyid.loomseal.json",
+      "must_verify": false,
+      "failing_check": "signature",
+      "why": "A signatures entry naming a key the producer block does not hold fails the bundle. The array sits outside the signed bytes, so a foreign entry is a rider nothing vouches for, and it must not travel inside a green verdict."
+    },
+    {
+      "name": "signature-unknown-member",
+      "file": "signature-unknown-member.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "An unknown member inside a signature object fails at parse. Signature objects sit outside the signed bytes, so member strictness is the only thing keeping unsigned data out of them."
+    },
+    {
       "name": "signed-chained-anchored",
       "file": "signed-chained-anchored.loomseal.json",
       "must_verify": true,
@@ -287,6 +336,13 @@
       "must_verify": true,
       "level": "signed, chained (full), anchored by reference, spanned",
       "why": "Two beats whose counts recompute from the sequence numbers earn the spanned level."
+    },
+    {
+      "name": "subject-unknown-type",
+      "file": "subject-unknown-type.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A subject type outside the known vocabulary is reported and never failed: subject types are informational, and a frozen verifier must not call a newer producer's subject a schema error."
     },
     {
       "name": "swatch-attested",
@@ -394,11 +450,32 @@
       "why": "A byte changed after signing fails the producer signature."
     },
     {
+      "name": "unknown-chain-profile",
+      "file": "unknown-chain-profile.loomseal.json",
+      "must_verify": false,
+      "failing_check": "unsupported",
+      "why": "A chain profile this verifier does not implement is refused as unsupported, a fail-closed verdict distinct from verification failure, so a legitimate newer bundle never reads as forged."
+    },
+    {
+      "name": "unknown-claim-member",
+      "file": "unknown-claim-member.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A claim member the schema does not define fails at parse, before the signature is examined."
+    },
+    {
       "name": "unknown-claim-type",
       "file": "unknown-claim-type.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "A claim type outside the registry verifies and is noted, never failed."
+    },
+    {
+      "name": "unknown-envelope-member",
+      "file": "unknown-envelope-member.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A bundle member the schema does not define fails at parse. Strict rejection of the unknown is the design: nothing unspecified rides inside an accepted bundle."
     },
     {
       "name": "valid-surrogate-pair",
@@ -425,8 +502,8 @@
       "name": "wrong-version",
       "file": "wrong-version.loomseal.json",
       "must_verify": false,
-      "failing_check": "parse",
-      "why": "A verifier speaks one format version and rejects others."
+      "failing_check": "unsupported",
+      "why": "A loomseal version this verifier does not implement is refused as unsupported without judging the signature. Fail closed, but never worded as a verification failure."
     }
   ]
 }

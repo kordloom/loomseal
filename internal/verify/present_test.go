@@ -3,6 +3,7 @@ package verify
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
@@ -62,5 +63,44 @@ func TestRunPresentation(t *testing.T) {
 	got = RunPresentation(tampered, PresentationOptions{Audience: "acme-verifier", Nonce: "chal-123"})
 	if got.OK || got.PresentationOK {
 		t.Fatalf("tampered presentation verified: ok %t presOK %t", got.OK, got.PresentationOK)
+	}
+}
+
+// TestPresentationHolderKeyGuards pins the holder key checks: a key that decodes but is
+// the wrong size, and a disclosure entry missing one of its three required parts. Both
+// guards are disjunction chains that only complete inputs would otherwise exercise.
+func TestPresentationHolderKeyGuards(t *testing.T) {
+	t.Parallel()
+	signed := swatchBundle(t, "title")
+	holder := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{11}, 32))
+	pres, err := seal.Present(signed, holder, "acme-verifier", "chal-123", at)
+	if err != nil {
+		t.Fatalf("present: %v", err)
+	}
+	opts := PresentationOptions{Audience: "acme-verifier", Nonce: "chal-123"}
+
+	// Test 0: a holder key that is valid base64 of the wrong length is refused.
+	var doc map[string]any
+	if err := json.Unmarshal(pres, &doc); err != nil {
+		t.Fatal(err)
+	}
+	h, _ := doc["holder"].(map[string]any)
+	h["public_key"] = base64.StdEncoding.EncodeToString(make([]byte, 16))
+	short, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := RunPresentation(short, opts)
+	if got.PresentationOK {
+		t.Fatalf("short holder key verified: %v", got.Problems)
+	}
+	found := false
+	for _, p := range got.Problems {
+		if bytes.Contains([]byte(p), []byte("32 byte")) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("problems %v do not mention the key size", got.Problems)
 	}
 }

@@ -310,6 +310,13 @@
       "why": "A bound switchtender-audit-v1 entry whose folded install_id is not the producer's is refused, which is what stops a published receipt from being lifted into another install's bundle."
     },
     {
+      "name": "switchtender-params-disagrees",
+      "file": "switchtender-params-disagrees.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "A switchtender-audit-v1 chain.params.install_id that is not the producer's is refused: the param is informational and the per-claim install_id is what binds."
+    },
+    {
       "name": "switchtender-params-only",
       "file": "switchtender-params-only.loomseal.json",
       "must_verify": true,

@@ -710,6 +710,14 @@ def _links_v1(b):
 
 
 def _links_switchtender(b):
+    # chain.params.install_id is informational in this profile: the per-claim install_id is what
+    # binds. A param that disagrees with the producer is refused rather than silently ignored, so a
+    # third-party producer cannot set it and assume it binds. A param equal to the producer restates
+    # it and is allowed.
+    pid = (b["chain"].get("params") or {}).get("install_id")
+    if pid and pid != b["producer"].get("install_id"):
+        raise VError("chain", f"{SWITCHTENDER} chain.params.install_id is informational and must "
+                              "equal producer.install_id; the per-claim install_id is what binds")
     for i, c in enumerate(b["claims"]):
         p = c["payload"]
         _check_rfc3339(c["at"], i)

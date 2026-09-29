@@ -1,0 +1,17 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      # Close errors on deferred cleanup paths carry no actionable signal here.
+      - linters:
+          - errcheck
+        source: 'defer .*\.Close\(\)'

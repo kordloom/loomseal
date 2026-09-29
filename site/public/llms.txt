@@ -1,0 +1,48 @@
+# LoomSeal
+
+> LoomSeal is the KordLoom proof format and its free, open verifier. A bundle is one JSON
+> file carrying claims about what a system did, SHA-256 digests of the evidence behind them,
+> their coordinates in an append-only hash chain, external anchors that fix that chain in
+> time, and an ed25519 signature from the producer. Anyone can verify a bundle offline with
+> the `loomseal` binary: no account, no server, and no trust in KordLoom or in the operator
+> who sent the file. The conformance wording is exactly three words: signed, chained,
+> anchored. Apache-2.0.
+
+Install: `go install github.com/kordloom/loomseal@latest`, then
+`loomseal verify bundle.loomseal.json --evidence ./evidence`. Exit 0 verified, 1 verification
+failed, 2 usage error.
+
+## Pages
+
+- [Home](https://loomseal.com/): why the format exists, a reproducible verification you can
+  run in sixty seconds, and what a verified bundle does and does not prove.
+- [The spec](https://loomseal.com/spec): the format itself. Bundle shape, canonical form
+  (RFC 8785), producer keys and signatures, the three chain profiles
+  (dormouse-audit-chain-v2, switchtender-audit-v1, loomseal-chain-v1), anchors, conformance
+  levels, the verification procedure, and the claim-type registry.
+- [FAQ](https://loomseal.com/faq): why it exists, the value to operators and to reviewers,
+  the cryptography, how keys are kept, quantum computers, why not a blockchain, and what
+  happens to your proof if KordLoom disappears.
+
+## What it proves
+
+A verified bundle proves the producer holding the signing key assembled those exact claims,
+that the claims sit in an append-only order not reordered or rewritten since its heads were
+anchored, and that supplied artifacts match their recorded digests. It does not prove the
+producer observed the world honestly at capture time: a chain fixes the record, not the
+character of the recorder. Keyed chains verify structurally for third parties and fully for
+the key holder.
+
+## Cryptography
+
+SHA-256 for digests, HMAC-SHA256 for keyed chains, ed25519 for signatures. No blockchain, no
+token, no consensus, no network dependency. Signature entries carry an algorithm field, so a
+post-quantum signature algorithm can join ed25519 without a new envelope.
+
+## Related
+
+- [KordLoom](https://kordloom.com): the company. Software that proves itself.
+- [Dormouse](https://dormousehq.com): watches vendor compliance pages, proves every check.
+- [SwitchTender](https://switchtender.com): runs a fleet from one binary, proves every change.
+- [Source](https://github.com/kordloom/loomseal): spec, JSON schema, verifier, seal SDK for
+  producers, and a signed example bundle anyone can verify.

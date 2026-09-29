@@ -1,0 +1,65 @@
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # A verifier nobody can run is worthless, so the archives are only built after the
+      # binary proves itself against the published example bundle.
+      - name: Verify the example bundle
+        run: |
+          go build -o loomseal .
+          ./loomseal verify examples/audit.loomseal.json --evidence examples/evidence
+
+      - name: Build the archives
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG:-$(git describe --tags --always)}"
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            stage="dist/stage"
+            rm -rf "$stage"
+            mkdir -p "$stage"
+            bin="loomseal"
+            if [ "$goos" = "windows" ]; then
+              bin="loomseal.exe"
+            fi
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
+              -ldflags "-s -w -X github.com/kordloom/loomseal/cmd.Version=${version#v}" \
+              -o "$stage/$bin" .
+            cp LICENSE README.md FORMAT.md "$stage/"
+            name="loomseal_${version#v}_${goos}_${goarch}"
+            if [ "$goos" = "windows" ]; then
+              (cd "$stage" && zip -qr "../${name}.zip" .)
+            else
+              tar -czf "dist/${name}.tar.gz" -C "$stage" .
+            fi
+          done
+          rm -rf dist/stage
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - name: Attach the archives to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/* --clobber

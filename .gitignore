@@ -1,0 +1,8 @@
+.idea
+loomseal
+*.exe
+*.test
+*.out
+dist/
+.DS_Store
+.wrangler/

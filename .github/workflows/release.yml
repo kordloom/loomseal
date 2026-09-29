@@ -123,6 +123,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' && secrets.HOMEBREW_TAP_TOKEN || secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
+          KORDLOOM_EMAIL: 328011957+kordloom-admin@users.noreply.github.com
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
@@ -173,11 +174,14 @@ jobs:
           CASK
           content=$(base64 -w0 loomseal.rb)
           existing=$(gh api repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb --jq .sha 2>/dev/null || true)
+          # The tap commit is authored as KordLoom whichever account owns the token.
+          who=(-f "author[name]=KordLoom" -f "author[email]=${KORDLOOM_EMAIL}"
+            -f "committer[name]=KordLoom" -f "committer[email]=${KORDLOOM_EMAIL}")
           if [ -n "$existing" ]; then
-            gh api -X PUT repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb \
+            gh api -X PUT repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb "${who[@]}" \
               -f message="Update loomseal cask to ${version}" -f content="$content" -f sha="$existing" > /dev/null
           else
-            gh api -X PUT repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb \
+            gh api -X PUT repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb "${who[@]}" \
               -f message="Add loomseal cask ${version}" -f content="$content" > /dev/null
           fi
           echo "cask updated to ${version}"

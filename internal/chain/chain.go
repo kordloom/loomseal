@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
-	"github.com/kordloom/loomseal/internal/jcs"
+	"github.com/kordloom/loomseal/jcs"
 )
 
 // Mode names for a chain verification.

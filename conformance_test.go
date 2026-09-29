@@ -103,6 +103,14 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 			t.Errorf("anchor case did not fail on an anchor: matched %d problems %v",
 				r.AnchorsMatched, r.Problems)
 		}
+	case "span":
+		if !r.SignatureOK || !r.ChainOK {
+			t.Errorf("span case failed earlier than the span step: %v", r.Problems)
+		}
+		if !r.SpanPresent || r.SpanOK || !hasProblem(r, "span") {
+			t.Errorf("span case did not fail on a span check: present %t ok %t problems %v",
+				r.SpanPresent, r.SpanOK, r.Problems)
+		}
 	default:
 		t.Fatalf("manifest names an unknown failing_check %q", check)
 	}

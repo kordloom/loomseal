@@ -30,7 +30,7 @@ MAX_SAFE = 2 ** 53
 V1 = "loomseal-chain-v1"
 SWITCHTENDER = "switchtender-audit-v1"
 
-KNOWN_TYPES = {"switchtender.audit/1", "switchtender.run/1"}
+KNOWN_TYPES = {"switchtender.audit/1", "switchtender.run/1", "loomseal.span/1"}
 
 
 class VError(Exception):
@@ -372,13 +372,17 @@ def verify(raw_bytes, evidence_dir=None):
               "chain_mode": "", "head_matched": False, "anchors_matched": 0,
               "anchor_proofs_carried": 0, "anchor_proofs_verified": 0,
               "anchor_proofs_validated": False, "anchor_attestations": [],
-              "anchors_to_declared_head": 0, "unknown_types": []}
+              "anchors_to_declared_head": 0, "unknown_types": [],
+              "span_present": False, "span_ok": False, "span_beats": 0,
+              "span_counts_verified": 0, "span_counts_carried": 0,
+              "span_gaps": [], "span_longest_gap": "", "span_coverage": ""}
     try:
         b = parse_strict(raw_bytes)
         _schema_check(b)
         _check_signature(raw_bytes, b, report)
         _check_chain(b, report)
         _check_anchors(b, report)
+        _check_span(b, report)
         _check_evidence(b, evidence_dir, report)
     except VError as e:
         report["problems"].append(f"{e.check}: {e.msg}")
@@ -581,6 +585,92 @@ def _check_anchors(b, report):
         and report["anchor_proofs_verified"] == report["anchor_proofs_carried"])
 
 
+def _at_epoch(ts, i):
+    """Parse a claim time to epoch seconds for cadence measurement. Fractions beyond microseconds
+    are trimmed here because the value is measured, never hashed."""
+    if not isinstance(ts, str) or not ts.endswith("Z"):
+        raise VError("span", f"span claim {i} at must be RFC 3339 UTC ending in Z")
+    body = ts[:-1]
+    if "." in body:
+        head, frac = body.split(".", 1)
+        body = head + "." + frac[:6]
+    try:
+        return datetime.fromisoformat(body + "+00:00").timestamp()
+    except ValueError as exc:
+        raise VError("span", f"span claim {i} at is not RFC 3339: {exc}") from exc
+
+
+def _check_span(b, report):
+    """Verify loomseal.span/1 population attestations. A false count or a missing beat number is
+    a contradiction and fails the bundle. Beats further apart than the declared cadence are gaps,
+    reported with their bounds and never hidden: coverage is a measurement, not a badge."""
+    spans = []
+    for i, c in enumerate(b["claims"]):
+        if c.get("type") != "loomseal.span/1":
+            continue
+        report["span_present"] = True
+        if "chain" not in b:
+            raise VError("span", "span claims present without a chain declaration")
+        if "chain" not in c:
+            raise VError("span", f"span claim {i} has no chain coordinates")
+        p = c["payload"]
+        if p.get("stream") != "chain":
+            raise VError("span", f"span claim {i} stream {p.get('stream')!r}: this format "
+                                 "defines only 'chain'")
+        cadence, beat, count = p.get("cadence_s"), p.get("beat"), p.get("count")
+        if not isinstance(cadence, int) or cadence < 1:
+            raise VError("span", f"span claim {i} cadence_s {cadence!r}, want at least 1")
+        if not isinstance(beat, int) or beat < 1:
+            raise VError("span", f"span claim {i} beat {beat!r}, want at least 1")
+        if not isinstance(count, int) or count < 0:
+            raise VError("span", f"span claim {i} count {count!r}, want at least 0")
+        spans.append((p, c["chain"]["seq"], _at_epoch(c["at"], i)))
+    if not report["span_present"]:
+        return
+    report["span_beats"] = len(spans)
+
+    # Beat 1 commits to every entry before it, so its count is arithmetic even when the bundle
+    # opens mid-chain. A later first beat left its predecessor outside the window, so its count
+    # is carried, never trusted.
+    first_p, first_seq, _ = spans[0]
+    if first_p["beat"] == 1:
+        want = first_seq - 1
+        if first_p["count"] != want:
+            raise VError("span", f"span beat 1 counts {first_p['count']} entries before it, "
+                                 f"its position shows {want}")
+        report["span_counts_verified"] += 1
+    else:
+        report["span_counts_carried"] += 1
+
+    missed = 0
+    longest = 0.0
+    for i in range(1, len(spans)):
+        (pp, pseq, pat), (cp, cseq, cat) = spans[i - 1], spans[i]
+        if cp["beat"] != pp["beat"] + 1:
+            raise VError("span", f"span beat {cp['beat']} follows beat {pp['beat']}: a missing "
+                                 "beat is a deleted window")
+        want = cseq - pseq - 1
+        if cp["count"] != want:
+            raise VError("span", f"span beat {cp['beat']} counts {cp['count']} entries since "
+                                 f"beat {pp['beat']}, the chain shows {want}")
+        report["span_counts_verified"] += 1
+        delta = cat - pat
+        if delta <= 0:
+            raise VError("span", f"span beat {cp['beat']} time does not advance past beat "
+                                 f"{pp['beat']}")
+        cadence = float(pp["cadence_s"])
+        if delta <= cadence:
+            continue
+        report["span_gaps"].append(f"unattested window of {int(delta)}s between beat "
+                                   f"{pp['beat']} and beat {cp['beat']}")
+        longest = max(longest, delta)
+        missed += max(0, round(delta / cadence) - 1)
+    if longest:
+        report["span_longest_gap"] = f"{int(longest)}s"
+    report["span_coverage"] = f"{len(spans)}/{len(spans) + missed} windows attested"
+    report["span_ok"] = True
+
+
 def _check_evidence(b, evidence_dir, report):
     supplied = set()
     if evidence_dir:
@@ -606,12 +696,16 @@ def _level(report):
     level = "signed"
     if report["chain_present"] and report["chain_ok"]:
         level += f", chained ({report['chain_mode']})"
+    anchored = report["anchor_proofs_verified"] > 0 or report["anchors_matched"] > 0
     if report["anchor_proofs_verified"] > 0:
         # A proof checked here needed no network and no trust in the producer, which is a stronger
         # statement than a reference a relying party still has to go and confirm.
         level += ", anchored (proof verified)"
     elif report["anchors_matched"] > 0:
         level += ", anchored by reference"
+    # Spanned sits above anchored: a population commitment is only worth the anchoring under it.
+    if anchored and report["span_present"] and report["span_ok"]:
+        level += ", spanned"
     return level
 
 
@@ -636,6 +730,11 @@ def failing_check_error(check, r):
             return "anchor case failed earlier than the anchor step"
         if r["anchors_matched"] != 0 or not any("anchor" in p for p in r["problems"]):
             return f"anchor case did not fail on an anchor: matched {r['anchors_matched']}"
+    elif check == "span":
+        if not r["signature_ok"] or not r["chain_ok"]:
+            return "span case failed earlier than the span step"
+        if not r["span_present"] or r["span_ok"] or not any("span" in p for p in r["problems"]):
+            return f"span case did not fail on a span check: {r['problems']}"
     else:
         return f"manifest names an unknown failing_check {check!r}"
     return None

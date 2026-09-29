@@ -9,7 +9,7 @@ import (
 
 	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/internal/chain"
-	"github.com/kordloom/loomseal/internal/jcs"
+	"github.com/kordloom/loomseal/jcs"
 )
 
 // KeyID returns the sha256: fingerprint of a raw ed25519 public key, the value that goes

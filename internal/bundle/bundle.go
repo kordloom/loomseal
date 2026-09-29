@@ -505,7 +505,8 @@ func CanonicalUnsigned(raw []byte) ([]byte, error) {
 
 // StripUnsigned removes from a parsed bundle tree the members a producer signature does not cover:
 // the signatures array is emptied, head-level attestations are dropped, and every claim's
-// holder-controlled disclosures and third-party attestations are dropped. The signature commits to the _sd digest set inside each payload, never to
+// holder-controlled disclosures and third-party attestations are dropped. The signature commits
+// to the _sd digest set inside each payload, never to
 // the disclosures that reveal those fields nor to the counter-signatures a third party later adds, so
 // a holder withholds a disclosure and a counterparty attaches an attestation without any of it
 // affecting the producer signature, the link, or the leaf.

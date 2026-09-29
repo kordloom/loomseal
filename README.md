@@ -120,6 +120,16 @@ Flags: `--evidence <dir>` checks artifact digests against files you were given,
 operator's trust page, `--json` emits the report for machines, `--pretty` indents it. Exit
 codes: 0 verified, 1 verification failed, 2 usage or read error.
 
+Two different things can go wrong with evidence, and they do not mean the same thing. An
+artifact you were never given is counted as missing and is not a failure, because a holder
+is allowed to disclose part of a set. An artifact sitting at the location the bundle names,
+whose bytes hash to something other than the sealed digest, is a failure: it reports on its
+own `ALTERED` line, records a problem, and the bundle does not verify.
+
+    evidence   7 verified, 0 missing, 0 referenced only
+    ALTERED    1 artifact(s) present but not matching the sealed digest
+    NOT VERIFIED
+
 ## What verification proves
 
 Run `loomseal verify` on one file and, seconds later, offline, with no account and no trust in

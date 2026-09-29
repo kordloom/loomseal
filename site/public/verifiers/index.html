@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoomSpan &middot; LoomSeal</title>
-<meta name="description" content="LoomSpan is the LoomSeal completeness profile: continuous signed population attestation that turns silent omission into an affirmative lie.">
-<link rel="canonical" href="https://loomseal.com/span">
+<title>The verifiers &middot; LoomSeal</title>
+<meta name="description" content="LoomSeal ships two verifiers, one in Go and one written separately from the spec in Python, cross-checked on the same conformance vectors so the format is not held honest by a single implementation.">
+<link rel="canonical" href="https://loomseal.com/verifiers">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com/span">
-<meta property="og:title" content="LoomSpan: proof the span is whole">
-<meta property="og:description" content="LoomSeal proves records were not edited. LoomSpan proves the record is the whole record.">
+<meta property="og:url" content="https://loomseal.com/verifiers">
+<meta property="og:title" content="Who checks the checker">
+<meta property="og:description" content="Two verifiers, written apart in different languages, kept honest against each other on shared conformance vectors.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
 <style>
   :root {
@@ -333,78 +333,38 @@
 
   <div class="page-head">
     <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
-    <h1>LoomSpan</h1>
+    <h1>Who checks the checker</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">LoomSeal proves the threads were not tampered with.<br>LoomSpan proves the span is whole.</p>
-    <p class="crumb"><a href="/">loomseal.com</a> &middot; LoomSpan</p>
+    <p class="lead">Two verifiers, written apart,<br>kept honest against each other.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; The verifiers</p>
   </div>
 
   <div class="doc">
-    <p class="canon">LoomSpan is a draft profile of the LoomSeal format. The normative text lives in
-      <a href="/spec#loomspan">the spec</a>; this page is the why.
+    <p class="canon">The trust model, stated plainly. What a verified bundle means sits in
+      <a href="/#proves">what a bundle proves</a>, and the mechanism is in
+      <a href="/how">how it works</a>.
     </p>
 
-    <h2>The other half of proof</h2>
-    <p>Signed logs, transparency logs, and attestation formats, LoomSeal included, prove
-    records were not edited. None of them prove records were written. A system that quietly
-    declines to log the incident produces a record that is intact, verified, and misleading.
-    Auditors meet this every year as completeness testing: before a system-generated report
-    counts as evidence, someone must establish that nothing was left out of the population.
-    Accuracy is the cheap half. Completeness is the expensive half, assembled by hand from
-    screenshots, exports, and professional skepticism billed hourly.</p>
+    <h2>Two verifiers, not one</h2>
+    <p>A format that says <em>do not take our word for it</em> and then ships one verifier is
+    asking you to trust our code in order to prove our code is trustworthy. So there are two. A
+    Go verifier ships in the binary. A separate Python one is written from the specification, in
+    a different language, on different libraries. Twenty-seven conformance vectors run against
+    both, and a disagreement is treated as a defect in the format rather than a curiosity.</p>
 
-    <h2>What LoomSpan does</h2>
-    <p>Completeness cannot be proven absolutely. That would be a claim about events that left
-    no trace. The achievable goal, and the one audit actually runs on, is to convert silent
-    omission into an affirmative lie. On a fixed cadence the producer signs a beat: as of this
-    moment, the chain head is this, and exactly this many entries have been appended since the
-    last beat. Deleting an entry afterward contradicts the counts or the links. Switching the
-    collector off during an incident no longer leaves an empty nothing. It leaves either a
-    missing heartbeat, which is visible, or a signed false count, which is a materially
-    different problem for whoever signed it.</p>
-    <p>Silence needs one more ingredient. A chain that stops beating simply ends, and a file
-    cannot show what should have come next. Beats are therefore published where absence is
-    visible: an append-only public feed on the declared cadence, where a missing entry is
-    plain to anyone watching. The feed, not the file, is where going dark becomes loud.</p>
+    <h2>It has already earned its keep</h2>
+    <p>A timestamp carrying nanoseconds verified in Go and failed in Python, which reads as
+    tampering when nothing has been tampered with; the spec now hashes the stored bytes and the
+    failure is impossible. A signature check that assumed one hash function silently verified
+    nothing against an authority that used another, and only surfaced because the other
+    implementation disagreed. One verifier would have shipped both.</p>
 
-    <h2>What it looks like in an audit</h2>
-    <p>A company sells to enterprises, and every deal stalls on the same SOC 2 question: prove the
-    quarterly access review covered every system, not just the ones convenient to screenshot. The
-    evidence has always been a folder of exports assembled the week the auditor arrives, and the
-    auditor's hardest hours go to completeness, establishing by hand that nothing was left out of
-    the population, billed hourly.</p>
-    <div class="scene">
-      <p>With a spanned chain the review tool signs a beat every sixty seconds to a public feed:
-      the chain head as of now, and the exact count of entries added since the last beat. Switching
-      the collector off during the review no longer leaves a convenient blank. It leaves a missing
-      heartbeat on a feed the auditor can watch, or a signed false count, which is a far worse thing
-      to have put a signature on.</p>
-      <p>The auditor checks one bundle and reads the measurement off it, no screenshots involved:</p>
-      <p class="honest">Attested every sixty seconds, publicly anchored, longest unattested window
-      seventy-four seconds.</p>
-    </div>
-    <p>That sentence is the whole deliverable for the expensive half of the audit. It is honest
-    about the one gap rather than hiding it, which is exactly what lets a reviewer trust the rest.</p>
-
-    <h2>What it proves, and what it does not</h2>
-    <p>A spanned chain proves the producer committed, beat by beat, to the exact population of
-    its record, and that nothing attested was later removed without contradiction. It does not
-    prove an event was captured in the first place: a beat bounds when an omission had to
-    begin, not whether one happened. Coverage is reported as measurement, never as a badge.
-    Attested every 60 seconds, publicly anchored, longest unattested window 74 seconds: that
-    is the honest sentence, and the only kind this site is allowed to print.</p>
-
-    <h2>Where it lives</h2>
-    <p>LoomSpan is a profile of LoomSeal, not a second format. One claim type,
-    <code>loomseal.span/1</code>, on the same chains, checked by the same verifier, under the
-    same offline rules: no server, no account, no trust in KordLoom. The draft text sits in
-    <a href="/spec#loomspan">the spec</a>, and SwitchTender's change chain is the first
-    planned producer.</p>
-    <p>Status: shipped. The verifier checks span claims, five conformance vectors cover the
-    profile, and the Go, Python, and browser verifiers agree on every one. The next step is
-    conversations with the people who assemble completeness evidence by hand, not more code.
-    <a href="mailto:hello@kordloom.com">hello@kordloom.com</a> reaches the person writing
-    it.</p>
+    <h2>The vectors outlive us</h2>
+    <p>The vectors are the durable part. They outlive whoever wrote either verifier, and a third
+    party can run them against an implementation of their own. That is what keeps the format from
+    being held honest by any single program, ours included. There is also a third verifier that
+    <a href="/verify">runs entirely in your browser</a>, so you can check a bundle without
+    installing anything at all.</p>
   </div>
 
   <footer>

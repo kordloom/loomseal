@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoomSpan &middot; LoomSeal</title>
-<meta name="description" content="LoomSpan is the LoomSeal completeness profile: continuous signed population attestation that turns silent omission into an affirmative lie.">
-<link rel="canonical" href="https://loomseal.com/span">
+<title>How it works &middot; LoomSeal</title>
+<meta name="description" content="How LoomSeal works: each record is hashed to the one before it as it is written, the chain head is published where you cannot reach it, and the verifier runs the whole thing backwards offline.">
+<link rel="canonical" href="https://loomseal.com/how">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com/span">
-<meta property="og:title" content="LoomSpan: proof the span is whole">
-<meta property="og:description" content="LoomSeal proves records were not edited. LoomSpan proves the record is the whole record.">
+<meta property="og:url" content="https://loomseal.com/how">
+<meta property="og:title" content="How LoomSeal works">
+<meta property="og:description" content="The chain is built as you go, not assembled when somebody asks. Here is the whole mechanism, end to end.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
 <style>
   :root {
@@ -126,6 +126,24 @@
     border: 1px solid var(--border);
     border-radius: 5px;
     padding: 0.1em 0.35em;
+  }
+  .doc pre {
+    margin: 1.4rem 0;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+  .doc pre code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1em;
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--deep);
   }
   .doc .scene {
     border-left: 2px solid var(--border);
@@ -333,78 +351,52 @@
 
   <div class="page-head">
     <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
-    <h1>LoomSpan</h1>
+    <h1>How it works</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">LoomSeal proves the threads were not tampered with.<br>LoomSpan proves the span is whole.</p>
-    <p class="crumb"><a href="/">loomseal.com</a> &middot; LoomSpan</p>
+    <p class="lead">The chain is built as you go,<br>not assembled when somebody asks.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; How it works</p>
   </div>
 
   <div class="doc">
-    <p class="canon">LoomSpan is a draft profile of the LoomSeal format. The normative text lives in
-      <a href="/spec#loomspan">the spec</a>; this page is the why.
+    <p class="canon">The mechanism in full. The <a href="/spec">spec</a> is the normative text,
+      and the <a href="/faq">FAQ</a> answers it in short.
     </p>
 
-    <h2>The other half of proof</h2>
-    <p>Signed logs, transparency logs, and attestation formats, LoomSeal included, prove
-    records were not edited. None of them prove records were written. A system that quietly
-    declines to log the incident produces a record that is intact, verified, and misleading.
-    Auditors meet this every year as completeness testing: before a system-generated report
-    counts as evidence, someone must establish that nothing was left out of the population.
-    Accuracy is the cheap half. Completeness is the expensive half, assembled by hand from
-    screenshots, exports, and professional skepticism billed hourly.</p>
+    <h2>Three things while it runs, one when somebody asks</h2>
+    <p>Three things happen while your software runs, and one happens when somebody asks. Your
+    software records what it did, which it already does. Each entry is hashed together with the
+    one before it, so the entries form a chain. And every so often the current head of that
+    chain, a single 64-character string, is published somewhere you do not control: a git
+    commit, a timestamp authority, a transparency log.</p>
+    <pre><code>entry 1    link1 = H(claim1, "")
+entry 2    link2 = H(claim2, link1)
+entry 3    link3 = H(claim3, link2)
 
-    <h2>What LoomSpan does</h2>
-    <p>Completeness cannot be proven absolutely. That would be a claim about events that left
-    no trace. The achievable goal, and the one audit actually runs on, is to convert silent
-    omission into an affirmative lie. On a fixed cadence the producer signs a beat: as of this
-    moment, the chain head is this, and exactly this many entries have been appended since the
-    last beat. Deleting an entry afterward contradicts the counts or the links. Switching the
-    collector off during an incident no longer leaves an empty nothing. It leaves either a
-    missing heartbeat, which is visible, or a signed false count, which is a materially
-    different problem for whoever signed it.</p>
-    <p>Silence needs one more ingredient. A chain that stops beating simply ends, and a file
-    cannot show what should have come next. Beats are therefore published where absence is
-    visible: an append-only public feed on the declared cadence, where a missing entry is
-    plain to anyone watching. The feed, not the file, is where going dark becomes loud.</p>
+head       link3  --published--&gt;  git commit, timestamp, transparency log</code></pre>
+    <p>Alter or delete anything earlier and every link after it changes. There is no way to edit
+    the middle of a chain and leave the end intact. So when somebody asks for evidence, you
+    export the claims for the window they care about, the digests of any files behind them, the
+    chain coordinates, the anchors, and one signature over the whole document.</p>
 
-    <h2>What it looks like in an audit</h2>
-    <p>A company sells to enterprises, and every deal stalls on the same SOC 2 question: prove the
-    quarterly access review covered every system, not just the ones convenient to screenshot. The
-    evidence has always been a folder of exports assembled the week the auditor arrives, and the
-    auditor's hardest hours go to completeness, establishing by hand that nothing was left out of
-    the population, billed hourly.</p>
-    <div class="scene">
-      <p>With a spanned chain the review tool signs a beat every sixty seconds to a public feed:
-      the chain head as of now, and the exact count of entries added since the last beat. Switching
-      the collector off during the review no longer leaves a convenient blank. It leaves a missing
-      heartbeat on a feed the auditor can watch, or a signed false count, which is a far worse thing
-      to have put a signature on.</p>
-      <p>The auditor checks one bundle and reads the measurement off it, no screenshots involved:</p>
-      <p class="honest">Attested every sixty seconds, publicly anchored, longest unattested window
-      seventy-four seconds.</p>
-    </div>
-    <p>That sentence is the whole deliverable for the expensive half of the audit. It is honest
-    about the one gap rather than hiding it, which is exactly what lets a reviewer trust the rest.</p>
+    <h2>The verifier runs it backwards</h2>
+    <p>The verifier runs that backwards, offline. It confirms the signature, recomputes every
+    link from the claim contents, checks that each entry points at the one before it, and
+    matches the anchors against links in the chain. A removed or reordered entry is not merely
+    detected. The verifier names where the break is.</p>
 
-    <h2>What it proves, and what it does not</h2>
-    <p>A spanned chain proves the producer committed, beat by beat, to the exact population of
-    its record, and that nothing attested was later removed without contradiction. It does not
-    prove an event was captured in the first place: a beat bounds when an omission had to
-    begin, not whether one happened. Coverage is reported as measurement, never as a badge.
-    Attested every 60 seconds, publicly anchored, longest unattested window 74 seconds: that
-    is the honest sentence, and the only kind this site is allowed to print.</p>
+    <h2>The anchor is what does the work</h2>
+    <p>Notice what the anchor changes. A hash chain on its own only proves internal
+    consistency, and anyone could sit down and build a consistent one this afternoon.
+    Publishing the head as you go is what makes that worthless to a forger: a convincing fake
+    would have required lying from the first entry and publishing the false heads to a third
+    party the entire time. The security is not the cryptography. It is that history cannot be
+    backfilled.</p>
 
-    <h2>Where it lives</h2>
-    <p>LoomSpan is a profile of LoomSeal, not a second format. One claim type,
-    <code>loomseal.span/1</code>, on the same chains, checked by the same verifier, under the
-    same offline rules: no server, no account, no trust in KordLoom. The draft text sits in
-    <a href="/spec#loomspan">the spec</a>, and SwitchTender's change chain is the first
-    planned producer.</p>
-    <p>Status: shipped. The verifier checks span claims, five conformance vectors cover the
-    profile, and the Go, Python, and browser verifiers agree on every one. The next step is
-    conversations with the people who assemble completeness evidence by hand, not more code.
-    <a href="mailto:hello@kordloom.com">hello@kordloom.com</a> reaches the person writing
-    it.</p>
+    <h2>What sits on top of this</h2>
+    <p>That is the accuracy half: nothing was changed or removed. Proving nothing was left out
+    is the other half, and it rides on the same chains as <a href="/span">LoomSpan</a>. Every
+    bundle is checked by <a href="/verifiers">two verifiers kept honest against each other</a>,
+    and the <a href="/examples">worked examples</a> show the whole mechanism at real stakes.</p>
   </div>
 
   <footer>

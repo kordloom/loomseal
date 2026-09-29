@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,3 +65,66 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" dist/* --clobber
+
+      # Regenerate the Homebrew cask in kordloom/homebrew-tap from this release's checksums. It
+      # skips quietly until the HOMEBREW_TAP_GITHUB_TOKEN secret exists, so a release never fails
+      # just because the tap is not set up yet.
+      - name: Update the Homebrew cask
+        if: github.event_name == 'release' && env.HOMEBREW_TAP_GITHUB_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          sha() { awk -v f="loomseal_${version}_$1" '$2 == f {print $1}' dist/SHA256SUMS; }
+          for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            test -n "$(sha "${target}.tar.gz")" || { echo "missing checksum for ${target}"; exit 1; }
+          done
+          cat > loomseal.rb <<CASK
+          cask "loomseal" do
+            version "${version}"
+
+            on_macos do
+              on_intel do
+                sha256 "$(sha darwin_amd64.tar.gz)"
+                url "https://github.com/kordloom/loomseal/releases/download/v#{version}/loomseal_#{version}_darwin_amd64.tar.gz"
+              end
+              on_arm do
+                sha256 "$(sha darwin_arm64.tar.gz)"
+                url "https://github.com/kordloom/loomseal/releases/download/v#{version}/loomseal_#{version}_darwin_arm64.tar.gz"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                sha256 "$(sha linux_amd64.tar.gz)"
+                url "https://github.com/kordloom/loomseal/releases/download/v#{version}/loomseal_#{version}_linux_amd64.tar.gz"
+              end
+              on_arm do
+                sha256 "$(sha linux_arm64.tar.gz)"
+                url "https://github.com/kordloom/loomseal/releases/download/v#{version}/loomseal_#{version}_linux_arm64.tar.gz"
+              end
+            end
+
+            name "loomseal"
+            desc "Open format for evidence someone else can check: signed, chained, anchored, verified offline"
+            homepage "https://loomseal.com"
+
+            livecheck do
+              skip "Auto-generated on release."
+            end
+
+            binary "loomseal"
+          end
+          CASK
+          content=$(base64 -w0 loomseal.rb)
+          existing=$(gh api repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb --jq .sha 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh api -X PUT repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb \
+              -f message="Update loomseal cask to ${version}" -f content="$content" -f sha="$existing" > /dev/null
+          else
+            gh api -X PUT repos/kordloom/homebrew-tap/contents/Casks/loomseal.rb \
+              -f message="Add loomseal cask ${version}" -f content="$content" > /dev/null
+          fi
+          echo "cask updated to ${version}"

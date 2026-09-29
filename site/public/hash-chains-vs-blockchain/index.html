@@ -3,17 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoomSpan &middot; LoomSeal</title>
-<meta name="description" content="LoomSpan is the LoomSeal completeness profile: continuous signed population attestation that turns silent omission into an affirmative lie.">
-<link rel="canonical" href="https://loomseal.com/span">
+<title>Hash Chains vs Blockchains &middot; LoomSeal</title>
+<meta name="description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
+<link rel="canonical" href="https://loomseal.com/hash-chains-vs-blockchain">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com/span">
-<meta property="og:title" content="LoomSpan: proof the span is whole">
-<meta property="og:description" content="LoomSeal proves records were not edited. LoomSpan proves the record is the whole record.">
+<meta property="og:url" content="https://loomseal.com/hash-chains-vs-blockchain">
+<meta property="og:title" content="Hash chains vs blockchains">
+<meta property="og:description" content="Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "TechArticle",
+ "headline": "Hash chains vs blockchains",
+ "description": "Hash chains and blockchains both link records by digest. The difference is consensus, and most systems that want tamper evidence do not need it.",
+ "url": "https://loomseal.com/hash-chains-vs-blockchain",
+ "publisher": {
+  "@type": "Organization",
+  "name": "KordLoom",
+  "url": "https://kordloom.com"
+ }
+}
+</script>
 <style>
   :root {
     --paper: #f8f2e4;
@@ -127,17 +141,13 @@
     border-radius: 5px;
     padding: 0.1em 0.35em;
   }
-  .doc .scene {
-    border-left: 2px solid var(--border);
-    padding: 0.3rem 0 0.3rem 1.3rem;
-    margin: 0.4rem 0 0.9rem;
-  }
-  .doc .scene p:last-child { margin-bottom: 0; }
-  .doc .honest {
-    font-family: ui-serif, Georgia, "Times New Roman", serif;
-    font-style: italic;
-    color: var(--deep);
-  }
+  .doc ul, .doc ol { margin: 0 0 1rem 1.3rem; }
+  .doc li { font-size: 0.93rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.45rem; }
+  .doc h3 { font-size: 0.98rem; font-weight: 600; color: var(--ink); margin: 1.7rem 0 0.5rem; }
+  .table-wrap { overflow-x: auto; margin: 0 0 1rem; }
+  .doc table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+  .doc th, .doc td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; color: var(--body-c); line-height: 1.55; }
+  .doc th { background: var(--code-bg); color: var(--ink); font-weight: 600; }
   footer {
     width: 100%;
     max-width: 60rem;
@@ -333,78 +343,67 @@
 
   <div class="page-head">
     <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
-    <h1>LoomSpan</h1>
+    <h1>Hash chains vs blockchains</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">LoomSeal proves the threads were not tampered with.<br>LoomSpan proves the span is whole.</p>
-    <p class="crumb"><a href="/">loomseal.com</a> &middot; LoomSpan</p>
+    <p class="lead">Both link records with hashes. Only one needs a network, consensus, and a coin.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; Reading</p>
   </div>
 
   <div class="doc">
-    <p class="canon">LoomSpan is a draft profile of the LoomSeal format. The normative text lives in
-      <a href="/spec#loomspan">the spec</a>; this page is the why.
-    </p>
 
-    <h2>The other half of proof</h2>
-    <p>Signed logs, transparency logs, and attestation formats, LoomSeal included, prove
-    records were not edited. None of them prove records were written. A system that quietly
-    declines to log the incident produces a record that is intact, verified, and misleading.
-    Auditors meet this every year as completeness testing: before a system-generated report
-    counts as evidence, someone must establish that nothing was left out of the population.
-    Accuracy is the cheap half. Completeness is the expensive half, assembled by hand from
-    screenshots, exports, and professional skepticism billed hourly.</p>
+    <h2>The shared core</h2>
+    <p>Strip both to their skeletons and they are the same data structure: records linked by
+    digest, where each entry commits to the one before it, so any alteration cascades forward
+    and becomes detectable. That linked-digest core is decades older than any cryptocurrency,
+    and it is the part doing the tamper-evidence work in both.</p>
 
-    <h2>What LoomSpan does</h2>
-    <p>Completeness cannot be proven absolutely. That would be a claim about events that left
-    no trace. The achievable goal, and the one audit actually runs on, is to convert silent
-    omission into an affirmative lie. On a fixed cadence the producer signs a beat: as of this
-    moment, the chain head is this, and exactly this many entries have been appended since the
-    last beat. Deleting an entry afterward contradicts the counts or the links. Switching the
-    collector off during an incident no longer leaves an empty nothing. It leaves either a
-    missing heartbeat, which is visible, or a signed false count, which is a materially
-    different problem for whoever signed it.</p>
-    <p>Silence needs one more ingredient. A chain that stops beating simply ends, and a file
-    cannot show what should have come next. Beats are therefore published where absence is
-    visible: an append-only public feed on the declared cadence, where a missing entry is
-    plain to anyone watching. The feed, not the file, is where going dark becomes loud.</p>
+    <h2>What a blockchain adds</h2>
+    <p>A blockchain is a hash chain plus machinery for a specific, hard situation: many
+    mutually distrusting writers and no operator everyone trusts. That machinery is
+    consensus, replication across many nodes, and usually an incentive token to keep
+    strangers honest, and it is expensive in every dimension: latency, throughput, cost,
+    operational complexity, and explanation. When the situation genuinely is many distrusting
+    writers, the price can be worth paying. When it is not, the machinery is ceremony.</p>
 
-    <h2>What it looks like in an audit</h2>
-    <p>A company sells to enterprises, and every deal stalls on the same SOC 2 question: prove the
-    quarterly access review covered every system, not just the ones convenient to screenshot. The
-    evidence has always been a folder of exports assembled the week the auditor arrives, and the
-    auditor's hardest hours go to completeness, establishing by hand that nothing was left out of
-    the population, billed hourly.</p>
-    <div class="scene">
-      <p>With a spanned chain the review tool signs a beat every sixty seconds to a public feed:
-      the chain head as of now, and the exact count of entries added since the last beat. Switching
-      the collector off during the review no longer leaves a convenient blank. It leaves a missing
-      heartbeat on a feed the auditor can watch, or a signed false count, which is a far worse thing
-      to have put a signature on.</p>
-      <p>The auditor checks one bundle and reads the measurement off it, no screenshots involved:</p>
-      <p class="honest">Attested every sixty seconds, publicly anchored, longest unattested window
-      seventy-four seconds.</p>
-    </div>
-    <p>That sentence is the whole deliverable for the expensive half of the audit. It is honest
-    about the one gap rather than hiding it, which is exactly what lets a reviewer trust the rest.</p>
+    <h2>The question that decides it</h2>
+    <p>Ask one thing: who writes to this log? If the answer is one operator, and the problem
+    is that readers do not trust that operator, consensus among strangers solves nothing,
+    because there is exactly one writer to reach consensus with. What readers need is tamper
+    evidence plus a way to catch the operator rewriting history, and that second part does
+    not require a network. It requires anchoring.</p>
 
-    <h2>What it proves, and what it does not</h2>
-    <p>A spanned chain proves the producer committed, beat by beat, to the exact population of
-    its record, and that nothing attested was later removed without contradiction. It does not
-    prove an event was captured in the first place: a beat bounds when an omission had to
-    begin, not whether one happened. Coverage is reported as measurement, never as a badge.
-    Attested every 60 seconds, publicly anchored, longest unattested window 74 seconds: that
-    is the honest sentence, and the only kind this site is allowed to print.</p>
+    <h2>Anchoring: the cheap alternative to consensus</h2>
+    <p>Publish the chain's head, one short hash, somewhere the operator cannot rewrite: a
+    timestamp authority under RFC 3161, a commit in a public git repository, a transparency
+    log. Do it on a schedule. A rewritten history now has to disagree with heads that were
+    published outside the operator's control before there was any reason to lie, which means
+    a forger needed to be forging from the beginning, in public, continuously. That is the
+    property most projects reaching for a blockchain actually wanted, at roughly zero cost
+    and with nothing to operate.</p>
 
-    <h2>Where it lives</h2>
-    <p>LoomSpan is a profile of LoomSeal, not a second format. One claim type,
-    <code>loomseal.span/1</code>, on the same chains, checked by the same verifier, under the
-    same offline rules: no server, no account, no trust in KordLoom. The draft text sits in
-    <a href="/spec#loomspan">the spec</a>, and SwitchTender's change chain is the first
-    planned producer.</p>
-    <p>Status: shipped. The verifier checks span claims, five conformance vectors cover the
-    profile, and the Go, Python, and browser verifiers agree on every one. The next step is
-    conversations with the people who assemble completeness evidence by hand, not more code.
-    <a href="mailto:hello@kordloom.com">hello@kordloom.com</a> reaches the person writing
-    it.</p>
+    <h2>When a blockchain is the right call</h2>
+    <p>Genuinely multi-party writes with no trusted operator and value moving between
+    strangers: that is the honest home turf, and public chains serve it. What earns the
+    skepticism is the private blockchain deployed inside one company, which is a database
+    with extra steps, and the compliance project that says blockchain when it means
+    tamper-evident, which is buying consensus to solve a problem consensus does not
+    address.</p>
+
+    <h2>Where LoomSeal fits</h2>
+    <p>LoomSeal takes the boring side of this trade on purpose. Its design rules fix SHA-256,
+    HMAC-SHA256, and ed25519, no consensus, no tokens, no network dependency, and put the
+    external fixity in anchors: timestamp authorities, public git, transparency logs. One
+    file, verified offline by a free tool, with the rules public in
+    <a href="/spec">the spec</a>. The chain does the tamper evidence, the anchors do the
+    part people thought they needed a blockchain for.</p>
+
+    <h2>Related reading</h2>
+    <ul>
+      <li><a href="/tamper-evident-logs">Tamper-evident logs, explained</a></li>
+      <li><a href="/evidence-formats">Verifiable evidence formats, compared</a></li>
+      <li><a href="/ipe-completeness">IPE and the completeness problem</a></li>
+    </ul>
+
   </div>
 
   <footer>

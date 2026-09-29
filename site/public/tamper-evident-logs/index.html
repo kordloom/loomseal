@@ -3,17 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoomSpan &middot; LoomSeal</title>
-<meta name="description" content="LoomSpan is the LoomSeal completeness profile: continuous signed population attestation that turns silent omission into an affirmative lie.">
-<link rel="canonical" href="https://loomseal.com/span">
+<title>Tamper-Evident Logs &middot; LoomSeal</title>
+<meta name="description" content="What a tamper-evident log is, how hash chains make every edit detectable, how to prove a log was not altered, and what no log can prove.">
+<link rel="canonical" href="https://loomseal.com/tamper-evident-logs">
 <link rel="icon" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://loomseal.com/span">
-<meta property="og:title" content="LoomSpan: proof the span is whole">
-<meta property="og:description" content="LoomSeal proves records were not edited. LoomSpan proves the record is the whole record.">
+<meta property="og:url" content="https://loomseal.com/tamper-evident-logs">
+<meta property="og:title" content="Tamper-evident logs, explained">
+<meta property="og:description" content="What a tamper-evident log is, how hash chains make every edit detectable, how to prove a log was not altered, and what no log can prove.">
 <meta property="og:image" content="https://loomseal.com/loomseal-og.png">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "TechArticle",
+ "headline": "Tamper-evident logs, explained",
+ "description": "What a tamper-evident log is, how hash chains make every edit detectable, how to prove a log was not altered, and what no log can prove.",
+ "url": "https://loomseal.com/tamper-evident-logs",
+ "publisher": {
+  "@type": "Organization",
+  "name": "KordLoom",
+  "url": "https://kordloom.com"
+ }
+}
+</script>
 <style>
   :root {
     --paper: #f8f2e4;
@@ -127,17 +141,13 @@
     border-radius: 5px;
     padding: 0.1em 0.35em;
   }
-  .doc .scene {
-    border-left: 2px solid var(--border);
-    padding: 0.3rem 0 0.3rem 1.3rem;
-    margin: 0.4rem 0 0.9rem;
-  }
-  .doc .scene p:last-child { margin-bottom: 0; }
-  .doc .honest {
-    font-family: ui-serif, Georgia, "Times New Roman", serif;
-    font-style: italic;
-    color: var(--deep);
-  }
+  .doc ul, .doc ol { margin: 0 0 1rem 1.3rem; }
+  .doc li { font-size: 0.93rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.45rem; }
+  .doc h3 { font-size: 0.98rem; font-weight: 600; color: var(--ink); margin: 1.7rem 0 0.5rem; }
+  .table-wrap { overflow-x: auto; margin: 0 0 1rem; }
+  .doc table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+  .doc th, .doc td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; color: var(--body-c); line-height: 1.55; }
+  .doc th { background: var(--code-bg); color: var(--ink); font-weight: 600; }
   footer {
     width: 100%;
     max-width: 60rem;
@@ -333,78 +343,86 @@
 
   <div class="page-head">
     <a href="/" aria-label="LoomSeal home"><img class="mark-sm" src="/loomseal-512.png" alt="LoomSeal woven LS mark"></a>
-    <h1>LoomSpan</h1>
+    <h1>Tamper-evident logs, explained</h1>
     <div class="rule" aria-hidden="true"></div>
-    <p class="lead">LoomSeal proves the threads were not tampered with.<br>LoomSpan proves the span is whole.</p>
-    <p class="crumb"><a href="/">loomseal.com</a> &middot; LoomSpan</p>
+    <p class="lead">A seal does not prevent tampering. It reveals it.</p>
+    <p class="crumb"><a href="/">loomseal.com</a> &middot; Reading</p>
   </div>
 
   <div class="doc">
-    <p class="canon">LoomSpan is a draft profile of the LoomSeal format. The normative text lives in
-      <a href="/spec#loomspan">the spec</a>; this page is the why.
-    </p>
 
-    <h2>The other half of proof</h2>
-    <p>Signed logs, transparency logs, and attestation formats, LoomSeal included, prove
-    records were not edited. None of them prove records were written. A system that quietly
-    declines to log the incident produces a record that is intact, verified, and misleading.
-    Auditors meet this every year as completeness testing: before a system-generated report
-    counts as evidence, someone must establish that nothing was left out of the population.
-    Accuracy is the cheap half. Completeness is the expensive half, assembled by hand from
-    screenshots, exports, and professional skepticism billed hourly.</p>
+    <h2>What tamper-evident actually means</h2>
+    <p>A tamper-evident log is a record designed so that any alteration becomes detectable.
+    Not prevented: detectable. Nobody can stop a person with write access from opening a file
+    and editing it, and any design that claims otherwise is describing hardware, not software.
+    What a log can do is make every edit leave a mark that arithmetic finds. The seal on a
+    medicine bottle works the same way. It does not stop the tampering, it makes the tampering
+    impossible to hide.</p>
 
-    <h2>What LoomSpan does</h2>
-    <p>Completeness cannot be proven absolutely. That would be a claim about events that left
-    no trace. The achievable goal, and the one audit actually runs on, is to convert silent
-    omission into an affirmative lie. On a fixed cadence the producer signs a beat: as of this
-    moment, the chain head is this, and exactly this many entries have been appended since the
-    last beat. Deleting an entry afterward contradicts the counts or the links. Switching the
-    collector off during an incident no longer leaves an empty nothing. It leaves either a
-    missing heartbeat, which is visible, or a signed false count, which is a materially
-    different problem for whoever signed it.</p>
-    <p>Silence needs one more ingredient. A chain that stops beating simply ends, and a file
-    cannot show what should have come next. Beats are therefore published where absence is
-    visible: an append-only public feed on the declared cadence, where a missing entry is
-    plain to anyone watching. The feed, not the file, is where going dark becomes loud.</p>
+    <h2>How hash chains make edits visible</h2>
+    <p>The standard construction is a hash chain. Every entry carries a digest of the entry
+    before it, so entry three's link covers entry three's content and entry two's link, which
+    covers entry two's content and entry one's link, all the way back to the first record.
+    Change a single character anywhere, delete an entry, or reorder two of them, and every
+    link after that point recomputes to a different value. A verifier walking the chain does
+    not merely notice something is wrong. It names the exact entry where history stops being
+    intact.</p>
 
-    <h2>What it looks like in an audit</h2>
-    <p>A company sells to enterprises, and every deal stalls on the same SOC 2 question: prove the
-    quarterly access review covered every system, not just the ones convenient to screenshot. The
-    evidence has always been a folder of exports assembled the week the auditor arrives, and the
-    auditor's hardest hours go to completeness, establishing by hand that nothing was left out of
-    the population, billed hourly.</p>
-    <div class="scene">
-      <p>With a spanned chain the review tool signs a beat every sixty seconds to a public feed:
-      the chain head as of now, and the exact count of entries added since the last beat. Switching
-      the collector off during the review no longer leaves a convenient blank. It leaves a missing
-      heartbeat on a feed the auditor can watch, or a signed false count, which is a far worse thing
-      to have put a signature on.</p>
-      <p>The auditor checks one bundle and reads the measurement off it, no screenshots involved:</p>
-      <p class="honest">Attested every sixty seconds, publicly anchored, longest unattested window
-      seventy-four seconds.</p>
-    </div>
-    <p>That sentence is the whole deliverable for the expensive half of the audit. It is honest
-    about the one gap rather than hiding it, which is exactly what lets a reviewer trust the rest.</p>
+    <h2>The missing half: anchoring</h2>
+    <p>A chain alone proves internal consistency, and internal consistency is cheap. Anyone
+    can sit down this afternoon and fabricate a perfectly consistent chain that says whatever
+    they like. What makes a chain evidence is publishing its head, one short hash, somewhere
+    the log's operator cannot rewrite: a timestamp authority under RFC 3161, a commit in a
+    public git repository, a transparency log. Once heads are anchored on a schedule, a
+    convincing fake requires having lied from the very first entry and having published the
+    false heads the entire time. Rewriting the past now needs a time machine, not a text
+    editor.</p>
 
-    <h2>What it proves, and what it does not</h2>
-    <p>A spanned chain proves the producer committed, beat by beat, to the exact population of
-    its record, and that nothing attested was later removed without contradiction. It does not
-    prove an event was captured in the first place: a beat bounds when an omission had to
-    begin, not whether one happened. Coverage is reported as measurement, never as a badge.
-    Attested every 60 seconds, publicly anchored, longest unattested window 74 seconds: that
-    is the honest sentence, and the only kind this site is allowed to print.</p>
+    <h2>How to prove a log was not altered</h2>
+    <p>Put together, proving a log's integrity to a skeptical reader takes four things:</p>
+    <ul>
+      <li>Append-only linking, so any edit breaks the arithmetic downstream of it.</li>
+      <li>A signature over the records, so the producer is committed to exactly these bytes.</li>
+      <li>External anchors, so the history provably predates the moment anyone had a reason
+      to fake it.</li>
+      <li>An independent verifier the recipient runs themselves, because a check only the
+      producer can perform is a promise, not a proof.</li>
+    </ul>
+    <p>The delivery matters as much as the mechanism. Hand the reader a file and a free
+    verifier, not credentials to your dashboard. Evidence that requires trusting your
+    infrastructure to check is not evidence to a stranger.</p>
 
-    <h2>Where it lives</h2>
-    <p>LoomSpan is a profile of LoomSeal, not a second format. One claim type,
-    <code>loomseal.span/1</code>, on the same chains, checked by the same verifier, under the
-    same offline rules: no server, no account, no trust in KordLoom. The draft text sits in
-    <a href="/spec#loomspan">the spec</a>, and SwitchTender's change chain is the first
-    planned producer.</p>
-    <p>Status: shipped. The verifier checks span claims, five conformance vectors cover the
-    profile, and the Go, Python, and browser verifiers agree on every one. The next step is
-    conversations with the people who assemble completeness evidence by hand, not more code.
-    <a href="mailto:hello@kordloom.com">hello@kordloom.com</a> reaches the person writing
-    it.</p>
+    <h2>What no tamper-evident log can prove</h2>
+    <p>Two limits, stated plainly. First, a chain fixes the record, not the honesty of the
+    recorder. A producer that writes fiction produces an intact chain of fiction. Second, and
+    less obvious: an entry that was never written leaves no break to find. Deletion is
+    detectable. Silent omission is not, unless the log also commits to its own population.
+    That is a separate mechanism, continuous population attestation, where the producer signs
+    a running count on a fixed cadence so that a quietly dropped record contradicts either
+    the chain or the producer's own signed arithmetic. The
+    <a href="/span">LoomSpan profile</a> exists for exactly this.</p>
+
+    <h2>Tamper-evident versus tamper-proof</h2>
+    <p>Tamper-proof is a claim about preventing modification, and in software it is almost
+    always marketing. Storage can be overwritten, databases can be edited by their
+    administrators, and append-only APIs sit on mutable disks. Tamper-evident is the honest,
+    achievable property, and it is sufficient: when any alteration is certain to be caught by
+    a free check, altering the record stops being useful.</p>
+
+    <h2>Where LoomSeal fits</h2>
+    <p>LoomSeal is an open format that packages all of the above into one portable JSON file:
+    the records, the chain coordinates, the external anchors, and an ed25519 signature, with
+    a free Apache-2.0 verifier anyone can run offline. The format's rules are public in
+    <a href="/spec">the spec</a>, and you can drop any bundle into
+    <a href="/verify">the browser verifier</a> and watch the arithmetic settle it.</p>
+
+    <h2>Related reading</h2>
+    <ul>
+      <li><a href="/hash-chains-vs-blockchain">Hash chains vs blockchains</a></li>
+      <li><a href="/ipe-completeness">IPE and the completeness problem</a></li>
+      <li><a href="/evidence-formats">Verifiable evidence formats, compared</a></li>
+    </ul>
+
   </div>
 
   <footer>

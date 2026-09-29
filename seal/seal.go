@@ -5,6 +5,7 @@ package seal
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	"github.com/kordloom/loomseal/internal/bundle"
@@ -30,8 +31,10 @@ func SignBundle(raw []byte, priv ed25519.PrivateKey) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle is not a JSON object", ErrBundle)
 	}
-	m["signatures"] = []any{}
-	canonical, err := jcs.Serialize(m)
+	// Sign over the canonical unsigned form, which drops signatures and holder-controlled
+	// disclosures, then re-attach the signature to the full tree so the output still carries any
+	// disclosures the producer emitted. A holder may later withhold them without breaking this.
+	canonical, err := bundle.CanonicalUnsigned(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +49,41 @@ func SignBundle(raw []byte, priv ed25519.PrivateKey) ([]byte, error) {
 		"sig":    base64.StdEncoding.EncodeToString(sig),
 	}}
 	return jcs.Serialize(m)
+}
+
+// Present wraps a bundle in a presentation bound to a verifier and a challenge, signed by the holder
+// key. The bundle is embedded exactly as given, so a holder that has reduced a claim's disclosures to
+// a chosen subset presents only those. The holder signature binds the audience, the presented
+// bundle's digest, the time, and the nonce, so the presentation cannot be replayed to another
+// verifier or with a stale challenge. createdAt is RFC 3339 UTC.
+func Present(bundleRaw []byte, holderPriv ed25519.PrivateKey, audience, nonce, createdAt string) ([]byte, error) {
+	canonical, err := jcs.Canonicalize(bundleRaw)
+	if err != nil {
+		return nil, err
+	}
+	preimage, err := bundle.PresentationSigningInput(audience, nonce, createdAt, canonical)
+	if err != nil {
+		return nil, err
+	}
+	pub, ok := holderPriv.Public().(ed25519.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("%w: private key has no ed25519 public key", ErrBundle)
+	}
+	sig := ed25519.Sign(holderPriv, preimage)
+	m := map[string]any{
+		"loomseal_presentation": "0.1",
+		"created_at":            createdAt,
+		"audience":              audience,
+		"nonce":                 nonce,
+		"holder": map[string]any{
+			"key_id":     bundle.KeyID(pub),
+			"public_key": base64.StdEncoding.EncodeToString(pub),
+			"alg":        "ed25519",
+		},
+		"bundle": json.RawMessage(bundleRaw),
+		"sig":    base64.StdEncoding.EncodeToString(sig),
+	}
+	return json.Marshal(m)
 }
 
 // LinkV1 computes a loomseal-chain-v1 link. The claim value must not carry a chain member;

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/kordloom/loomseal/internal/jsonutil"
 	"github.com/kordloom/loomseal/internal/verify"
@@ -17,6 +18,8 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	evidence := fs.String("evidence", "", "directory of evidence artifacts to check")
 	fingerprint := fs.String("fingerprint", "", "required producer key fingerprint, sha256:<hex>")
+	audience := fs.String("audience", "", "for a presentation, the verifier it must be addressed to")
+	nonce := fs.String("nonce", "", "for a presentation, the challenge it must echo")
 	jsonOut := fs.Bool("json", false, "emit the report as JSON on stdout")
 	pretty := fs.Bool("pretty", false, "indent the JSON report")
 	// The flag package stops at the first positional argument, so keep parsing past the
@@ -52,7 +55,29 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "loomseal verify: %v\n", err)
 		return CodeUsage
 	}
-	report := verify.Run(raw, verify.Options{EvidenceDir: *evidence, Fingerprint: *fingerprint})
+	bundleOpts := verify.Options{EvidenceDir: *evidence, Fingerprint: *fingerprint}
+	// One command accepts either a bundle or a holder presentation that wraps one, told apart by the
+	// presentation version member.
+	if verify.LooksLikePresentation(raw) {
+		pr := verify.RunPresentation(raw, verify.PresentationOptions{
+			Audience: *audience, Nonce: *nonce, Bundle: bundleOpts,
+		})
+		if *jsonOut {
+			out, err := jsonutil.Marshal(pr, *pretty)
+			if err != nil {
+				fmt.Fprintf(stderr, "loomseal verify: encode report: %v\n", err)
+				return CodeUsage
+			}
+			fmt.Fprintln(stdout, string(out))
+		} else {
+			renderPresentation(stdout, pr)
+		}
+		if pr.OK {
+			return CodeOK
+		}
+		return CodeFailed
+	}
+	report := verify.Run(raw, bundleOpts)
 	if *jsonOut {
 		out, err := jsonutil.Marshal(report, *pretty)
 		if err != nil {
@@ -67,6 +92,34 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		return CodeOK
 	}
 	return CodeFailed
+}
+
+// renderPresentation writes the human-readable report for a holder presentation, then the embedded
+// bundle's own report beneath it.
+func renderPresentation(w io.Writer, r *verify.PresentationReport) {
+	if r.PresentationOK {
+		fmt.Fprintf(w, "presented  by holder %s to %q\n", r.HolderKeyID, r.Audience)
+	} else {
+		fmt.Fprintln(w, "presented  FAILED")
+	}
+	if r.AudienceMatch != nil {
+		fmt.Fprintf(w, "audience   match %t\n", *r.AudienceMatch)
+	}
+	if r.NonceMatch != nil {
+		fmt.Fprintf(w, "nonce      match %t\n", *r.NonceMatch)
+	}
+	for _, p := range r.Problems {
+		fmt.Fprintf(w, "problem    %s\n", p)
+	}
+	if r.Bundle != nil {
+		fmt.Fprintln(w, "---")
+		renderReport(w, r.Bundle)
+	}
+	if r.OK {
+		fmt.Fprintln(w, "PRESENTATION VERIFIED")
+	} else {
+		fmt.Fprintln(w, "PRESENTATION NOT VERIFIED")
+	}
 }
 
 // renderReport writes the human-readable report.
@@ -174,6 +227,24 @@ func renderReport(w io.Writer, r *verify.Report) {
 		}
 		for _, g := range r.SpanGaps {
 			fmt.Fprintf(w, "gap        %s\n", g)
+		}
+	}
+	// Selective disclosure: how many redactable fields were shown against how many were committed. The
+	// link covers the committed set, so the count holds whether or not the holder revealed a field.
+	if r.DisclosuresPresent {
+		line := fmt.Sprintf("disclosed  %d field(s) revealed, %d redacted", r.FieldsRevealed,
+			r.FieldsRedacted)
+		if len(r.RevealedFields) > 0 {
+			line += ": " + strings.Join(r.RevealedFields, ", ")
+		}
+		fmt.Fprintln(w, line)
+	}
+	// Counter-signatures by parties other than the producer, reported with who vouched so the reader
+	// decides whether to trust them. This is what turns a self-asserted claim into a two-party one.
+	if r.AttestationsPresent {
+		fmt.Fprintf(w, "attested   %d counter-signature(s) verified\n", r.AttestationsVerified)
+		for _, a := range r.Attestors {
+			fmt.Fprintf(w, "vouched    %s\n", a)
 		}
 	}
 	fmt.Fprintf(w, "evidence   %d verified, %d missing, %d referenced only\n",

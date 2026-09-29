@@ -60,9 +60,27 @@ if (pinned.ok) {
   console.log("!! mismatched key pin verified");
 }
 
+// The compiled module also verifies holder presentations, held to the same presentation vectors as
+// the command line, including the audience and nonce pins each vector declares.
+const pres = JSON.parse(
+  fs.readFileSync(path.join(root, "testdata/vectors/presentations.json"), "utf8"),
+);
+for (const v of pres.vectors) {
+  const bytes = new Uint8Array(
+    fs.readFileSync(path.join(root, "testdata/vectors", v.file)),
+  );
+  const r = JSON.parse(
+    loomsealVerifyPresentation(bytes, v.expect_audience || "", v.expect_nonce || ""),
+  );
+  if (r.ok !== v.must_verify) {
+    bad++;
+    console.log(`!! ${v.name.padEnd(30)} ok=${r.ok} expect=${v.must_verify}`);
+  }
+}
+
 console.log(
   bad === 0
-    ? `ALL MATCH  ${manifest.vectors.length} vectors + key pin`
+    ? `ALL MATCH  ${manifest.vectors.length} vectors + ${pres.vectors.length} presentations + key pin`
     : `${bad} MISMATCH`,
 );
 process.exit(bad ? 1 : 0);

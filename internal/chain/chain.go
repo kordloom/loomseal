@@ -280,6 +280,13 @@ func checkV1(raw []byte, b *bundle.Bundle) error {
 			return fmt.Errorf("%w: claim %d is not an object", ErrClaim, i)
 		}
 		delete(obj, "chain")
+		// disclosures are holder-controlled and travel outside the committed claim, so they never
+		// enter the link. The redactable fields they reveal are committed through the payload's _sd
+		// digest set instead, which stays in the link whether a field is revealed or withheld.
+		delete(obj, "disclosures")
+		// attestations are counter-signatures a third party adds after signing, so they too stay out
+		// of the link; each attestation instead signs the link it vouches for.
+		delete(obj, "attestations")
 		link, err := LinkV1(nil, installID, claim.Chain.Seq, claim.Chain.Prev, obj)
 		if err != nil {
 			return fmt.Errorf("%w: claim %d: %w", ErrClaim, i, err)

@@ -146,7 +146,10 @@ func verifyConsistency(b *bundle.Bundle, root []byte, size int64) error {
 func leafData(claim map[string]any, installID string) ([]byte, error) {
 	content := make(map[string]any, len(claim))
 	for k, v := range claim {
-		if k == "chain" || k == "inclusion" {
+		// chain and inclusion describe position and proof; disclosures and attestations are holder-
+		// and third-party-controlled and travel outside the leaf. All are dropped so the leaf commits
+		// to content alone, with redactable fields committed through the payload's _sd digest set.
+		if k == "chain" || k == "inclusion" || k == "disclosures" || k == "attestations" {
 			continue
 		}
 		content[k] = v

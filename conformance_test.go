@@ -76,6 +76,54 @@ func TestConformanceVectors(t *testing.T) {
 	}
 }
 
+// presentationManifest is the presentation conformance document.
+type presentationManifest struct {
+	Vectors []presentationVector `json:"vectors"`
+}
+
+// presentationVector is one presentation conformance case.
+type presentationVector struct {
+	Name           string `json:"name"`
+	File           string `json:"file"`
+	ExpectAudience string `json:"expect_audience"`
+	ExpectNonce    string `json:"expect_nonce"`
+	MustVerify     bool   `json:"must_verify"`
+	Why            string `json:"why"`
+}
+
+// TestPresentationConformance drives the presentation verifier from its manifest, so the shipped
+// verifier and the published presentation vectors can never disagree, including on the audience and
+// nonce pins the manifest declares.
+func TestPresentationConformance(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join(vectorsDir, "presentations.json"))
+	if err != nil {
+		t.Fatalf("read presentation manifest: %v", err)
+	}
+	var man presentationManifest
+	if err := json.Unmarshal(raw, &man); err != nil {
+		t.Fatalf("parse presentation manifest: %v", err)
+	}
+	if len(man.Vectors) == 0 {
+		t.Fatal("manifest declares no presentation vectors")
+	}
+	for _, v := range man.Vectors {
+		t.Run(v.Name, func(t *testing.T) {
+			t.Parallel()
+			doc, err := os.ReadFile(filepath.Join(vectorsDir, v.File))
+			if err != nil {
+				t.Fatalf("read presentation: %v", err)
+			}
+			rep := verify.RunPresentation(doc, verify.PresentationOptions{
+				Audience: v.ExpectAudience, Nonce: v.ExpectNonce,
+			})
+			if rep.OK != v.MustVerify {
+				t.Fatalf("verified %t, want %t; problems %v", rep.OK, v.MustVerify, rep.Problems)
+			}
+		})
+	}
+}
+
 // assertFailingCheck confirms the failure fell on the check the manifest names.
 func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 	t.Helper()
@@ -110,6 +158,22 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 		if !r.SpanPresent || r.SpanOK || !hasProblem(r, "span") {
 			t.Errorf("span case did not fail on a span check: present %t ok %t problems %v",
 				r.SpanPresent, r.SpanOK, r.Problems)
+		}
+	case "disclosure":
+		if !r.SignatureOK {
+			t.Errorf("disclosure case failed before the signature: %v", r.Problems)
+		}
+		if !r.DisclosuresPresent || !hasProblem(r, "disclosure") {
+			t.Errorf("disclosure case did not fail on a disclosure: present %t problems %v",
+				r.DisclosuresPresent, r.Problems)
+		}
+	case "attestation":
+		if !r.SignatureOK {
+			t.Errorf("attestation case failed before the signature: %v", r.Problems)
+		}
+		if !r.AttestationsPresent || !hasProblem(r, "attestation") {
+			t.Errorf("attestation case did not fail on an attestation: present %t problems %v",
+				r.AttestationsPresent, r.Problems)
 		}
 	default:
 		t.Fatalf("manifest names an unknown failing_check %q", check)

@@ -134,6 +134,23 @@ type Report struct {
 	EvidenceReferenced int `json:"evidence_referenced"`
 	// UnknownClaimTypes lists claim types outside this verifier's registry.
 	UnknownClaimTypes []string `json:"unknown_claim_types,omitempty"`
+	// DisclosuresPresent reports whether any claim carries selectively disclosable fields, an _sd set.
+	DisclosuresPresent bool `json:"disclosures_present,omitempty"`
+	// FieldsRevealed is how many redactable fields were disclosed and checked against their commitment.
+	FieldsRevealed int `json:"fields_revealed,omitempty"`
+	// FieldsRedacted is how many redactable fields were committed but withheld by the holder.
+	FieldsRedacted int `json:"fields_redacted,omitempty"`
+	// RevealedFields names the disclosed fields, so a reader sees what was shown without the values
+	// having to be echoed into the report.
+	RevealedFields []string `json:"revealed_fields,omitempty"`
+	// AttestationsPresent reports whether any claim carries a counter-signature from a party other
+	// than the producer.
+	AttestationsPresent bool `json:"attestations_present,omitempty"`
+	// AttestationsVerified is how many counter-signatures were checked and held.
+	AttestationsVerified int `json:"attestations_verified,omitempty"`
+	// Attestors lists each verified counter-signer as its role and key fingerprint, so a reader can
+	// decide whether the vouching party is worth trusting.
+	Attestors []string `json:"attestors,omitempty"`
 	// SpanPresent reports whether the bundle carries loomseal.span/1 population attestations.
 	SpanPresent bool `json:"span_present"`
 	// SpanOK reports whether every span check passed. Meaningful only when SpanPresent.
@@ -177,6 +194,8 @@ func Run(raw []byte, opts Options) *Report {
 	r.checkSignature(raw, b, opts.Fingerprint)
 	r.checkClaimTypes(b)
 	r.checkChain(raw, b)
+	r.checkDisclosures(raw, b)
+	r.checkAttestations(b)
 	r.checkAnchors(b)
 	r.checkSpan(b)
 	r.checkEvidence(b, opts.EvidenceDir)

@@ -130,6 +130,28 @@ own `ALTERED` line, records a problem, and the bundle does not verify.
     ALTERED    1 artifact(s) present but not matching the sealed digest
     NOT VERIFIED
 
+## Pin the key, or you have checked half the question
+
+A signature proves a bundle was signed. It does not prove who signed it, because any key
+signs its own bundle perfectly well. Someone can mint a key, put your product name and your
+bundle id in the envelope, write whatever numbers suit them, sign it, and reach the same
+`VERIFIED` verdict and the same exit code as the genuine article.
+
+The fingerprint is what closes that. Without one, verification says so rather than leaving
+you to work it out:
+
+    signature  ok, key sha256:d33996c5...
+    pin        NONE, so this says the bundle was signed, not who signed it
+               pass --fingerprint sha256:<hex> from the producer's trust page
+
+With one, a bundle signed by anything else fails:
+
+    loomseal verify bundle.loomseal.json --fingerprint sha256:69f25ff6...
+
+In `--json` the same distinction is `producer_pinned`, always emitted, so a pipeline that
+gates on `ok` can also see whether the signer was established. Treat an unpinned `ok` as
+"this document is internally consistent," never as "this document is from who it says."
+
 ## What verification proves
 
 Run `loomseal verify` on one file and, seconds later, offline, with no account and no trust in

@@ -231,6 +231,12 @@ tested, and exercised by the example bundle in this repository. SwitchTender emi
 bundles as of v1.35.0: `switchtender audit bundle` signs its audit chain into a bundle anyone can
 verify offline with the binary in this repo.
 
+## History
+
+LoomSeal was developed privately before its first public release, v1.5.4. The commits before it hold
+the code of every earlier release, v0.1.0 through v1.5.3, tagged `snapshot/vX.Y.Z`. Every release
+from v1.5.4 on is built from this repository.
+
 ## License
 
 Apache-2.0. The format, the schema, and this verifier are open so the proof can be checked by

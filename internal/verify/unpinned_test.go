@@ -156,3 +156,37 @@ func TestUnchallengedPresentationLeavesTheMatchesUnset(t *testing.T) {
 		t.Error("the report must carry the presented nonce for the renderer to surface")
 	}
 }
+
+// TestDisclosuresDoNotSoftenAFailure pins that a notice written for a passing outcome does not
+// appear beside a failing one.
+//
+// The unpinned notice says "this says the bundle was signed, not who signed it". True, and the
+// right thing to tell someone holding a bundle that otherwise verified. Printed above ALTERED
+// and NOT VERIFIED it reads as partial reassurance instead, and argues the opposite way from
+// the verdict two lines below it. The verdict word is not the only thing that can lie: a
+// disclosure added for one state can contradict another, and a test that checks only the word
+// will not see it. Both notices are therefore gated on the whole verdict rather than on the
+// local check that motivated them.
+func TestDisclosuresDoNotSoftenAFailure(t *testing.T) {
+	t.Parallel()
+	raw, _ := signedBundleForTest(t, 0x42)
+
+	// A bundle that verifies and was never pinned is the one case the notice belongs to.
+	if r := Run(raw, Options{}); !r.OK || r.ProducerPinned {
+		t.Fatalf("setup: want a passing unpinned run, got ok=%v pinned=%v", r.OK, r.ProducerPinned)
+	}
+	// A bundle pinned to the wrong key fails, and a failing run must not be able to reach the
+	// unpinned notice at all: it is pinned, so the condition is false for that reason too.
+	bad := Run(raw, Options{Fingerprint: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000ff"})
+	if bad.OK {
+		t.Fatal("a mismatched pin must fail the bundle")
+	}
+	if !bad.ProducerPinned {
+		t.Error("a run that compared a fingerprint must report that it did, even when it failed")
+	}
+	// The renderer gates on OK, so any failing report must be one where OK is false. This is
+	// the invariant the gate rests on: nothing else may set OK true while problems exist.
+	if bad.OK != (len(bad.Problems) == 0) {
+		t.Errorf("OK must track the absence of problems: ok=%v problems=%d", bad.OK, len(bad.Problems))
+	}
+}

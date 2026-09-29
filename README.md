@@ -95,15 +95,27 @@ verification decision is in this repository.
 
     loomseal verify examples/audit.loomseal.json --evidence examples/evidence
 
+Without a Go toolchain, [loomseal.com/verify](https://loomseal.com/verify) runs this same
+verifier compiled to WebAssembly. The bundle is read in the tab and never uploaded. Evidence
+artifacts stay on your disk, so their digests report as referenced rather than verified; use
+`--evidence` here to check those too.
+
+The compiled module is built during deploy rather than committed. To run the page locally:
+
+    mkdir -p site/public/verify
+    GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o site/public/verify/loomseal.wasm ./wasm
+    cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/public/verify/
+    node wasm/selftest.mjs site/public/verify
+
 The output, reproducible from this repository right now:
 
     bundle     lsb_example_0001 from loomseal-demo 0.1.0
     subject    fleet demo-yard
     signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
     chain      loomseal-chain-v1, full, 2 claims, head matched true
-    anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
+    anchors    1 matched by coordinates, 0 proof(s) carried, 0 verified
     evidence   1 verified, 0 missing, 0 referenced only
-    VERIFIED   signed, chained (full), anchored (proof verified)
+    VERIFIED   signed, chained (full), anchored by reference
 
 Flags: `--evidence <dir>` checks artifact digests against files you were given,
 `--fingerprint sha256:<hex>` pins the producer key to the fingerprint published on the

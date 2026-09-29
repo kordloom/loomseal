@@ -154,6 +154,8 @@
   }
   .obj-ans { font-size: 0.94rem; line-height: 1.65; color: var(--body-c); }
   .uses { max-width: 46rem; margin: 1.6rem auto 0; }
+  .uses p { margin-bottom: 1rem; }
+  .uses p:last-child { margin-bottom: 0; }
   .uses-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
     gap: 0.35rem 1.6rem; margin-top: 0.9rem;
@@ -365,6 +367,12 @@
       <a class="menu-item" href="#ourselves"><span class="m-name">Why we use it ourselves</span></a>
       <div class="menu-div"></div>
       <p class="menu-label">Documentation</p>
+      <a class="menu-item" href="/verify">
+        <span class="mi-text">
+          <span class="m-name">Verify a bundle</span>
+          <span class="m-desc">Drop a file. Nothing is uploaded.</span>
+        </span>
+      </a>
       <a class="menu-item" href="/spec">
         <span class="mi-text">
           <span class="m-name">The spec</span>
@@ -503,9 +511,9 @@ loomseal verify examples/audit.loomseal.json --evidence examples/evidence</code>
 subject    fleet demo-yard
 signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
 chain      loomseal-chain-v1, full, 2 claims, head matched true
-anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
+anchors    1 matched by coordinates, 0 proof(s) carried, 0 verified
 evidence   1 verified, 0 missing, 0 referenced only
-VERIFIED   signed, chained (full), anchored (proof verified)</code></pre>
+VERIFIED   signed, chained (full), anchored by reference</code></pre>
     <p class="note">Real output, reproducible from the public repository. The verifier is built
     on the Go standard library alone, so every line that touches a verdict is readable in an
     afternoon.</p>
@@ -573,8 +581,10 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
     </div>
     <div class="prose">
       <p>The boundary is stated just as plainly, because proof that overclaims is only
-      marketing. A chain fixes the record, not the character of the recorder. What verification
-      cannot prove sits in the <a href="/spec">spec</a> next to what it can.</p>
+      marketing. A chain fixes the record, not the character of the recorder. It proves nothing
+      was removed after it was written. It cannot prove that everything which happened was
+      written down, because capture is a property of the producer and not of the format. What
+      verification cannot prove sits in the <a href="/spec">spec</a> next to what it can.</p>
     </div>
     <div class="spine">
       <div class="rule spine-rule" aria-hidden="true"></div>
@@ -590,7 +600,7 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
       <em>do not take our word for it</em> and then ships one verifier is asking you to trust our
       code in order to prove our code is trustworthy. So there are two. A Go verifier ships in the
       binary. A separate Python one is written from the specification, in a different language, on
-      different libraries. Twenty-six conformance vectors run against both, and a disagreement is
+      different libraries. Twenty-seven conformance vectors run against both, and a disagreement is
       treated as a defect in the format rather than a curiosity.</p>
       <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">That has already earned its
       keep. A timestamp carrying nanoseconds verified in Go and failed in Python, which reads as
@@ -661,6 +671,8 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
   <footer>
     <div class="foot-links">
       <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">GitHub</a>
+      <span class="foot-sep" aria-hidden="true">&middot;</span>
+      <a href="/verify">Verify a bundle</a>
       <span class="foot-sep" aria-hidden="true">&middot;</span>
       <a href="/spec">The spec</a>
       <span class="foot-sep" aria-hidden="true">&middot;</span>

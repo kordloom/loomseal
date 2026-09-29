@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kordloom/loomseal/internal/jcs"
 	"github.com/kordloom/loomseal/seal"
 )
 
@@ -159,6 +160,11 @@ func (s *state) positives() {
 			"attests to, with no network and no trust in the producer.",
 		s.sign(s.switchTenderProof()))
 
+	s.add("switchtender-audit-json-escapes", true, "signed, chained (full)", "",
+		"A recorded path carrying &, <, > and U+2028 verifies, because the profile serializes with "+
+			"RFC 8785 rather than an encoder that escapes those characters for HTML.",
+		s.sign(s.switchTenderEscapes()))
+
 	s.add("switchtender-audit-nanosecond-at", true, "signed, chained (full)", "",
 		"A claim time carrying sub-microsecond digits verifies, because the profile hashes the "+
 			"stored time bytes rather than parsing and re-serializing them.",
@@ -288,6 +294,37 @@ func (s *state) negatives() {
 	m["producer"].(map[string]any)["key_id"] = "sha256:" + strings.Repeat("00", 32)
 	s.add("producer-keyid-mismatch", false, "", "signature",
 		"The producer key_id must be the digest of the embedded public key.", s.sign(m))
+
+	// Signature alg rewritten after signing. Emptying signatures before signing leaves alg
+	// outside the signed bytes, so this edit costs an attacker nothing and the ed25519
+	// signature still checks out. A verifier that picked its algorithm by reading alg would
+	// follow the attacker; one that treats alg as a label rejects the bundle.
+	s.add("signature-alg-rewritten", false, "", "signature",
+		"alg is outside the signed bytes, so a verifier rejects a foreign value rather than "+
+			"dispatching on it.", rewriteAlg(s.sign(s.v1(1, false)), "rsa-pss-sha256"))
+}
+
+// rewriteAlg edits the first signature entry's alg in an already-signed bundle, the way an
+// attacker in the middle would. The signature stays valid because alg is not covered by it.
+func rewriteAlg(signed []byte, alg string) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(signed, &m); err != nil {
+		panic(err)
+	}
+	sigs, ok := m["signatures"].([]any)
+	if !ok || len(sigs) == 0 {
+		panic("signed bundle carries no signatures")
+	}
+	first, ok := sigs[0].(map[string]any)
+	if !ok {
+		panic("signature entry is not an object")
+	}
+	first["alg"] = alg
+	out, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	return out
 }
 
 // base builds a minimal signed-ready bundle map with one generic claim and no chain.
@@ -395,6 +432,29 @@ func (s *state) switchTender() map[string]any {
 	return m
 }
 
+// switchTenderEscapes builds a chain whose recorded path carries the characters encoding/json
+// escapes for HTML and RFC 8785 does not.
+//
+// A verifier reaching for its language's default JSON encoder recomputes a different link for this
+// claim and reports an honest chain as broken. The entry is append-only, so every later bundle
+// covering it fails the same way and the only escape is to truncate the trail past it. No earlier
+// vector contained one of these characters, which is how the disagreement went unnoticed.
+func (s *state) switchTenderEscapes() map[string]any {
+	m := s.base()
+	const path = "/api/runs/prod&staging<x>\u2028y"
+	link := switchTenderLink(1, at, "release-token", "POST", path, "")
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+	if p, ok := claim["payload"].(map[string]any); ok {
+		p["path"] = path
+	}
+	m["chain"] = map[string]any{
+		"profile": profileSwitchTender, "keyed": false,
+		"head": map[string]any{"seq": int64(1), "link": link},
+	}
+	return m
+}
+
 // anchoredLink is the link a real RFC 3161 token in testdata attests to. A timestamp is signed over
 // a specific value, so the vector is built around the token rather than the other way round.
 const anchoredLink = "77c95e0459eef7970de647dfd263004d23b2c9a44b7feb10a24940bd695a05d3"
@@ -452,8 +512,11 @@ func stripChain(claim map[string]any) map[string]any {
 
 // switchTenderLink recomputes a switchtender-audit-v1 link.
 func switchTenderLink(seq int64, atStr, actor, method, path, prev string) string {
-	fields := []string{strconv.FormatInt(seq, 10), atStr, actor, method, path, prev}
-	b, err := json.Marshal(fields)
+	// Serialized with the JCS encoder, not encoding/json. encoding/json escapes &, <, >, U+2028,
+	// and U+2029 for embedding in HTML; RFC 8785 emits them raw. A vector built with the escaping
+	// encoder would have written the wrong answer into the file that defines what correct means.
+	fields := []any{strconv.FormatInt(seq, 10), atStr, actor, method, path, prev}
+	b, err := jcs.Serialize(fields)
 	if err != nil {
 		panic(err)
 	}

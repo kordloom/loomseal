@@ -1,0 +1,56 @@
+name: deploy-site
+
+on:
+  push:
+    branches: [main]
+    # The verifier the site ships is compiled from this repository's own source, so a change to
+    # the verification path is a change to the site even when nothing under site/ moved.
+    paths:
+      - "site/**"
+      - "wasm/**"
+      - "internal/**"
+      - "seal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/deploy-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The browser verifier is the command line's code compiled for the web. Building it here
+      # keeps a multi-megabyte binary out of the repository and out of its history, and means
+      # the page can never ship a verifier older than the source beside it.
+      - name: Build the browser verifier
+        run: |
+          mkdir -p site/public/verify
+          GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o site/public/verify/loomseal.wasm ./wasm
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/public/verify/
+
+      # A verifier that disagrees with the conformance vectors must never reach the site, so the
+      # verdicts are checked against the manifest before anything is published.
+      - name: Browser verifier agrees with the vectors
+        run: node wasm/selftest.mjs site/public/verify
+
+      - name: Deploy site to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 37ed841c5c85edd1e669f0a22b9fb282
+        working-directory: site
+        run: npx wrangler@4.110.0 deploy

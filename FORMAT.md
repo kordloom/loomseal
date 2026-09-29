@@ -151,15 +151,27 @@ at product initialization and never leaves the install; the public key and its `
 fingerprint belong on the operator's trust page so relying parties can pin them out of band.
 
 A signature is computed over the canonical form of the bundle with `signatures` set to the empty
-array. `sig` is the base64 ed25519 signature. A bundle carries at least one signature whose
-`key_id` matches `producer.key_id`. Verifiers compare `key_id` against a pinned fingerprint when
-the caller provides one.
+array. That replacement happens on the parsed document, which is then re-canonicalized; it is not
+a textual edit, and a document whose `signatures` member is absent is not a bundle. `sig` is the
+base64 ed25519 signature. A bundle carries at least one signature whose `key_id` matches
+`producer.key_id`. Verifiers compare `key_id` against a pinned fingerprint when the caller
+provides one.
+
+Emptying `signatures` before signing puts the whole array, including each entry's `alg` and
+`key_id`, outside the signed bytes. Everything else, including `chain.profile` and every anchor,
+is inside them. So `alg` is a label, never a dispatch key: a verifier MUST NOT choose an
+algorithm by reading it. Format 0.1 fixes ed25519 for signatures and SHA-256 for links and
+digests, and a verifier rejects any signature entry that declares otherwise rather than
+following it. Selecting an algorithm from an attacker-controlled field is how signature formats
+get downgraded, and the field an attacker can rewrite for free is exactly the wrong place to
+look.
 
 SwitchTender's existing signed audit export uses hex-encoded keys; its LoomSeal emitter re-encodes
 the same key as base64. Same key, same trust, one envelope.
 
-Signature entries carry an `alg` field so the format can adopt new algorithms without a new
-envelope. The chains and evidence digests rest on SHA-256 and HMAC-SHA256, which known quantum
+A later format version can adopt new algorithms, but it names them somewhere the signature
+covers, such as a new chain profile or a version bump, rather than by widening what `alg` is
+allowed to say. The chains and evidence digests rest on SHA-256 and HMAC-SHA256, which known quantum
 algorithms do not meaningfully weaken. The ed25519 signature is the component a large future
 quantum computer would break; a later format version adds a NIST-standardized post-quantum
 signature algorithm beside it. External anchoring already bounds that risk: a signature forged
@@ -240,11 +252,11 @@ The verifier checks that each anchor's `seq` and `link` match a coordinate it ve
 in the bundle, or the head when the head tied to the newest claim. An anchor that matches only a
 declared head beyond the bundled claims is reported, but because that head link is unverified the
 anchor binds nothing the verifier confirmed and does not by itself earn the anchored level. An
-anchor that matches no verified coordinate fails the bundle. Verifier v0.1 reports embedded
-`rfc3161` tokens as carried without validating them; token validation lands in v0.2, and until
-then a matched anchor reports as anchored by reference and the relying party confirms the ref out
-of band. Anchoring cadence bounds the window in which a compromised producer key could rewrite
-unanchored history; anchor often.
+anchor that matches no verified coordinate fails the bundle. An anchor type the verifier cannot
+validate offline, such as `git`, `https`, or `rekor`, is matched by coordinates only and reports
+as anchored by reference, leaving the relying party to confirm the ref out of band. Anchoring
+cadence bounds the window in which a compromised producer key could rewrite unanchored history;
+anchor often.
 
 A verifier checks an `rfc3161` proof rather than only carrying it. It confirms the token's message
 imprint is the SHA-256 of the anchored link, that the token's signed attributes commit to the

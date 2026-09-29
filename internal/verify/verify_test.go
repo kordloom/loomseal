@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/internal/chain"
 	"github.com/kordloom/loomseal/seal"
 )
@@ -150,6 +152,7 @@ func TestRunVerified(t *testing.T) {
 		ClaimsChecked:       2,
 		AnchorsMatched:      1,
 		AnchorProofsCarried: 1,
+		AnchoredThroughSeq:  2,
 		EvidenceVerified:    1,
 	}
 	if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
@@ -325,5 +328,68 @@ func TestRunGarbage(t *testing.T) {
 	got := Run([]byte("{"), Options{})
 	if got.OK || got.Level != "not verified" || len(got.Problems) == 0 {
 		t.Errorf("garbage outcome: %+v", got)
+	}
+}
+
+// TestMeasureUnanchored checks how far the anchors reach and what they leave uncovered. The
+// span past the last anchored position is the part a compromised producer key could rewrite,
+// so a verified bundle that leaves a wide one is weaker evidence than one that leaves none.
+func TestMeasureUnanchored(t *testing.T) {
+	t.Parallel()
+	claim := func(seq int64, at, link string) bundle.Claim {
+		return bundle.Claim{At: at, Chain: &bundle.Coords{Seq: seq, Link: link}}
+	}
+	tests := []struct {
+		WantWindow  string
+		Claims      []bundle.Claim
+		Anchors     []bundle.Anchor
+		WantThrough int64
+		WantClaims  int
+	}{{ // Test 0: The anchor covers the newest claim, so nothing is left uncovered.
+		Claims: []bundle.Claim{
+			claim(1, "2026-07-31T10:00:00Z", "aa"),
+			claim(2, "2026-07-31T11:00:00Z", "bb"),
+		},
+		Anchors:     []bundle.Anchor{{Seq: 2, Link: "bb"}},
+		WantThrough: 2,
+	}, { // Test 1: Two claims land after the anchor, spanning four hours.
+		Claims: []bundle.Claim{
+			claim(1, "2026-07-31T10:00:00Z", "aa"),
+			claim(2, "2026-07-31T12:00:00Z", "bb"),
+			claim(3, "2026-07-31T14:00:00Z", "cc"),
+		},
+		Anchors:     []bundle.Anchor{{Seq: 1, Link: "aa"}},
+		WantThrough: 1,
+		WantClaims:  2,
+		WantWindow:  "4h0m0s",
+	}, { // Test 2: The furthest matching anchor wins when several are present.
+		Claims: []bundle.Claim{
+			claim(1, "2026-07-31T10:00:00Z", "aa"),
+			claim(2, "2026-07-31T11:00:00Z", "bb"),
+			claim(3, "2026-07-31T11:30:00Z", "cc"),
+		},
+		Anchors:     []bundle.Anchor{{Seq: 1, Link: "aa"}, {Seq: 2, Link: "bb"}},
+		WantThrough: 2,
+		WantClaims:  1,
+		WantWindow:  "30m0s",
+	}, { // Test 3: An anchor whose link does not match is not counted as coverage.
+		Claims:  []bundle.Claim{claim(1, "2026-07-31T10:00:00Z", "aa")},
+		Anchors: []bundle.Anchor{{Seq: 1, Link: "wrong"}},
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			verified := map[int64]string{}
+			for _, c := range test.Claims {
+				verified[c.Chain.Seq] = c.Chain.Link
+			}
+			r := &Report{}
+			r.measureUnanchored(&bundle.Bundle{Claims: test.Claims, Anchors: test.Anchors}, verified)
+			got := []any{r.AnchoredThroughSeq, r.UnanchoredClaims, r.UnanchoredWindow}
+			want := []any{test.WantThrough, test.WantClaims, test.WantWindow}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

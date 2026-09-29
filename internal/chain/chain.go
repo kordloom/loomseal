@@ -153,11 +153,22 @@ func checkSwitchTender(b *bundle.Bundle) error {
 		if _, err := time.Parse(time.RFC3339, claim.At); err != nil {
 			return fmt.Errorf("%w: claim %d at: %w", ErrClaim, i, err)
 		}
-		fields := []string{
+		// Held as []any because the JCS encoder works over parsed JSON values, which is what makes
+		// it the same encoder a verifier applies to a whole document.
+		fields := []any{
 			strconv.FormatInt(claim.Chain.Seq, 10), claim.At,
 			p.Actor, p.Method, p.Path, claim.Chain.Prev,
 		}
-		payload, err := json.Marshal(fields)
+		// Serialized with this module's own JCS encoder rather than encoding/json.
+		//
+		// encoding/json escapes &, <, >, U+2028, and U+2029 for embedding in HTML. RFC 8785 emits
+		// them raw, which is what the producer and the Python reference both do. A single recorded
+		// path containing an ampersand therefore recomputed to a different link here than at the
+		// two other implementations, and this verifier called an honest chain broken. The entry is
+		// append-only, so every future bundle covering it failed the same way, and the only escape
+		// was to truncate the trail past it. This module already had the correct encoder; this call
+		// site simply did not use it.
+		payload, err := jcs.Serialize(fields)
 		if err != nil {
 			return fmt.Errorf("%w: claim %d: %w", ErrClaim, i, err)
 		}

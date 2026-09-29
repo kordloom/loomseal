@@ -85,6 +85,15 @@ type Report struct {
 	// AnchorAttestations describes each verified proof: when the authority signed, and who it was.
 	// Whether that authority is worth trusting is the relying party's call, not this verifier's.
 	AnchorAttestations []string `json:"anchor_attestations,omitempty"`
+	// AnchoredThroughSeq is the highest chain position an anchor pinned outside the producer's
+	// reach. Claims past it rest on the producer's key alone.
+	AnchoredThroughSeq int64 `json:"anchored_through_seq,omitempty"`
+	// UnanchoredClaims is how many bundled claims sit past AnchoredThroughSeq.
+	UnanchoredClaims int `json:"unanchored_claims,omitempty"`
+	// UnanchoredWindow is the span from the last anchored claim to the newest bundled claim,
+	// which is how long a compromised producer key had to rewrite history undetected. A verified
+	// bundle with a wide window is weaker evidence than one with a narrow window.
+	UnanchoredWindow string `json:"unanchored_window,omitempty"`
 	// EvidenceVerified is how many evidence digests matched a supplied artifact.
 	EvidenceVerified int `json:"evidence_verified"`
 	// EvidenceMissing is how many digests had no artifact in the supplied directory.
@@ -219,9 +228,16 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 		return
 	}
 	verified := map[int64]string{}
+	// claimAt records when each anchored position says it happened, so an attestation can be held
+	// against it. A timestamp authority signs a hash somebody hands it, and that hash cannot exist
+	// before the entry it covers.
+	claimAt := map[int64]time.Time{}
 	for _, c := range b.Claims {
 		if c.Chain != nil {
 			verified[c.Chain.Seq] = c.Chain.Link
+			if at, err := time.Parse(time.RFC3339, c.At); err == nil {
+				claimAt[c.Chain.Seq] = at
+			}
 		}
 	}
 	if r.HeadMatched {
@@ -258,6 +274,17 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 			r.problem("anchor %d proof does not verify: %v", i, verr)
 			continue
 		}
+		// An attestation earlier than the entry it covers is not evidence, it is a contradiction.
+		// The token commits to a link, and that link is the hash of a claim carrying its own time,
+		// so an authority cannot honestly have signed it first. Without this a producer running
+		// their own authority could sign any hash with any date and still reach the strongest
+		// verdict the format issues.
+		if at, ok := claimAt[a.Seq]; ok && res.Time.Before(at.Add(-anchorClockSkew)) {
+			r.problem("anchor %d attests %s over entry %d, which the bundle says happened at %s: "+
+				"a timestamp cannot precede the entry it covers", i,
+				res.Time.UTC().Format(time.RFC3339), a.Seq, at.UTC().Format(time.RFC3339))
+			continue
+		}
 		r.AnchorProofsVerified++
 		r.AnchorAttestations = append(r.AnchorAttestations,
 			res.Time.Format(time.RFC3339)+" by "+res.Signer)
@@ -266,6 +293,51 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 	// this verifier cannot check must not be reported as validated.
 	r.AnchorProofsValidated = r.AnchorProofsCarried > 0 &&
 		r.AnchorProofsVerified == r.AnchorProofsCarried
+	r.measureUnanchored(b, verified)
+}
+
+// anchorClockSkew is how far an authority's clock may sit behind the producer's before an
+// attestation is read as predating the entry it covers. Both clocks are real and neither is
+// authoritative over the other, so a small allowance keeps honest installs from being called liars.
+const anchorClockSkew = 5 * time.Minute
+
+// measureUnanchored records how far the anchors reach and what they leave uncovered. An anchor
+// fixes history only up to the position it names, so the claims after the last anchored position
+// are the ones a compromised producer key could still rewrite. Reporting the span turns a verdict
+// that reads as a yes or no into one that says how much the yes is worth.
+func (r *Report) measureUnanchored(b *bundle.Bundle, verified map[int64]string) {
+	var through int64
+	for _, a := range b.Anchors {
+		if verified[a.Seq] == a.Link && a.Link != "" && a.Seq > through {
+			through = a.Seq
+		}
+	}
+	if through == 0 {
+		return
+	}
+	r.AnchoredThroughSeq = through
+	var anchoredAt, newestAt time.Time
+	for _, c := range b.Claims {
+		if c.Chain == nil {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, c.At)
+		if err != nil {
+			continue
+		}
+		if c.Chain.Seq == through {
+			anchoredAt = at
+		}
+		if c.Chain.Seq > through {
+			r.UnanchoredClaims++
+			if at.After(newestAt) {
+				newestAt = at
+			}
+		}
+	}
+	if !anchoredAt.IsZero() && !newestAt.IsZero() && newestAt.After(anchoredAt) {
+		r.UnanchoredWindow = newestAt.Sub(anchoredAt).Round(time.Second).String()
+	}
 }
 
 // checkEvidence hashes every regular file under dir and compares the bundle's evidence

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verify a bundle · LoomSeal</title>
+<meta name="description" content="Drop a LoomSeal bundle and check it in your browser. Nothing is uploaded.">
+<link rel="canonical" href="https://loomseal.com/verify">
+<link rel="icon" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://loomseal.com/verify">
+<meta property="og:title" content="Verify a LoomSeal bundle">
+<meta property="og:description" content="Drop a bundle and check it in your browser. Nothing is uploaded.">
+<style>
+  :root {
+    --paper: #f8f2e4;
+    --ink: #111111;
+    --body-c: #555550;
+    --deep: #33332f;
+    --faint: #96917f;
+    --rule-c: #e7e0cd;
+    --border: #e2dbc7;
+    --grid: rgba(17, 17, 17, 0.055);
+    --glow: rgba(255, 253, 244, 0.85);
+    --panel: #fffdf6;
+    --hover: #f3ecdb;
+    --code-bg: #f1ead7;
+    --pass: #1f6f43;
+    --fail: #9c2c2c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0d0c0b;
+      --ink: #ece8dc;
+      --body-c: #aaa496;
+      --deep: #cfc9ba;
+      --faint: #7d786c;
+      --rule-c: #26231f;
+      --border: #2b2823;
+      --grid: rgba(236, 232, 220, 0.05);
+      --glow: rgba(236, 232, 220, 0.045);
+      --panel: #161412;
+      --hover: #211e1a;
+      --code-bg: #171512;
+      --pass: #6fcf97;
+      --fail: #e88b8b;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse 64% 50% at 50% 40%, var(--glow) 20%, rgba(255,255,255,0) 100%),
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 2rem 1.5rem 4rem;
+  }
+  .wrap { width: 100%; max-width: 46rem; }
+  header { text-align: center; padding: 3rem 0 2.25rem; }
+  h1 { font-size: clamp(1.6rem, 4.6vw, 2.1rem); font-weight: 600; letter-spacing: 0.02em; }
+  .rule { width: 40px; height: 1px; background: var(--rule-c); margin: 1rem auto; }
+  .lead {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: clamp(0.95rem, 3vw, 1.2rem);
+    line-height: 1.5;
+    color: var(--deep);
+  }
+  .home { display: inline-block; margin-top: 1.1rem; font-size: 0.78rem; letter-spacing: 0.04em;
+          color: var(--faint); text-decoration: none; }
+  .home:hover { color: var(--ink); }
+  #drop {
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    background: var(--panel);
+    padding: 3rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease;
+  }
+  #drop:hover, #drop.over { border-color: var(--faint); background: var(--hover); }
+  #drop:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .drop-main { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+  .drop-sub { font-size: 0.88rem; color: var(--body-c); }
+  .privacy { margin-top: 1rem; font-size: 0.82rem; color: var(--faint); text-align: center; }
+  .pin { margin-top: 1.5rem; display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;
+         justify-content: center; font-size: 0.85rem; color: var(--body-c); }
+  .pin input {
+    flex: 1 1 22rem; min-width: 0; padding: 0.5rem 0.7rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  }
+  #out { margin-top: 2rem; }
+  .verdict {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1rem; font-weight: 600; letter-spacing: 0.02em;
+    padding: 0.9rem 1.1rem; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--code-bg); margin-bottom: 1rem;
+  }
+  .verdict.ok { color: var(--pass); }
+  .verdict.no { color: var(--fail); }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1rem 1.2rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.6;
+  }
+  pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--deep); }
+  details { margin-top: 1rem; }
+  summary { cursor: pointer; font-size: 0.85rem; color: var(--faint); }
+  summary:hover { color: var(--ink); }
+  .note { margin-top: 2.5rem; font-size: 0.85rem; line-height: 1.7; color: var(--body-c);
+          border-top: 1px solid var(--rule-c); padding-top: 1.5rem; }
+  .note a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Verify a bundle</h1>
+      <div class="rule"></div>
+      <p class="lead">Drop the file. Get a verdict.</p>
+      <a class="home" href="/">loomseal.com</a>
+    </header>
+
+    <div id="drop" tabindex="0" role="button" aria-label="Choose or drop a LoomSeal bundle">
+      <p class="drop-main" id="drop-main">Loading the verifier&hellip;</p>
+      <p class="drop-sub" id="drop-sub">The same verifier the command line runs.</p>
+    </div>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+
+    <p class="privacy">Nothing is uploaded. The file is read and checked in this tab, and the
+    page makes no network request after it loads.</p>
+
+    <div class="pin">
+      <label for="fp">Pin the producer key (optional)</label>
+      <input type="text" id="fp" placeholder="sha256:&hellip;" spellcheck="false" autocomplete="off">
+    </div>
+
+    <div id="out" aria-live="polite"></div>
+
+    <p class="note">Evidence artifacts stay on your machine, so their digests are reported as
+    referenced rather than verified. To check artifacts too, run
+    <code>loomseal verify</code> with <code>--evidence</code>. What a verdict does and does not
+    prove is set out in the <a href="/spec">spec</a>.</p>
+  </div>
+
+<script src="/verify/wasm_exec.js"></script>
+<script>
+(function () {
+  "use strict";
+  var drop = document.getElementById("drop");
+  var main = document.getElementById("drop-main");
+  var sub = document.getElementById("drop-sub");
+  var file = document.getElementById("file");
+  var fp = document.getElementById("fp");
+  var out = document.getElementById("out");
+  var ready = false;
+
+  // The verdict lines mirror the command line's wording so the two never drift apart in a
+  // reader's memory.
+  function render(report, name) {
+    var ok = report.ok === true;
+    var html = '<div class="verdict ' + (ok ? "ok" : "no") + '">' +
+      (ok ? "VERIFIED" : "NOT VERIFIED") + "   " + esc(report.level || "") + "</div>";
+    var rows = [];
+    if (report.bundle_id) rows.push(["bundle", report.bundle_id + " from " + (report.producer || "")]);
+    if (report.subject) rows.push(["subject", report.subject]);
+    if (report.key_id) rows.push(["signature", (report.signature_ok ? "ok, key " : "failed, key ") + report.key_id]);
+    if (report.chain_present) {
+      rows.push(["chain", (report.chain_profile || "") + ", " + (report.chain_mode || "") +
+        ", " + (report.claims_checked || 0) + " claims, head matched " + !!report.head_matched]);
+    }
+    if (report.anchors_matched || report.anchor_proofs_carried) {
+      rows.push(["anchors", report.anchors_matched + " matched by coordinates, " +
+        (report.anchor_proofs_carried || 0) + " proof(s) carried, " +
+        (report.anchor_proofs_verified || 0) + " verified"]);
+    }
+    (report.anchor_attestations || []).forEach(function (a) { rows.push(["attested", a]); });
+    if (report.anchored_through_seq) {
+      var line = "through seq " + report.anchored_through_seq;
+      if (report.unanchored_claims) {
+        line += ", " + report.unanchored_claims + " claim(s) after it";
+        if (report.unanchored_window) line += " spanning " + report.unanchored_window;
+      }
+      rows.push(["anchored", line]);
+    }
+    rows.push(["evidence", (report.evidence_verified || 0) + " verified, " +
+      (report.evidence_missing || 0) + " missing, " + (report.evidence_referenced || 0) + " referenced only"]);
+    (report.problems || []).forEach(function (p) { rows.push(["problem", p]); });
+
+    var body = rows.map(function (r) {
+      return esc(pad(r[0])) + esc(String(r[1]));
+    }).join("\n");
+    html += "<pre><code>" + body + "</code></pre>";
+    html += '<details><summary>Full report</summary><pre><code>' +
+      esc(JSON.stringify(report, null, 2)) + "</code></pre></details>";
+    out.innerHTML = html;
+    sub.textContent = name ? "Checked " + name : sub.textContent;
+  }
+
+  function pad(s) { return (s + "           ").slice(0, 11); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function check(f) {
+    if (!ready) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var bytes = new Uint8Array(reader.result);
+      var pin = fp.value.trim();
+      var raw = pin ? loomsealVerify(bytes, pin) : loomsealVerify(bytes);
+      try {
+        render(JSON.parse(raw), f.name);
+      } catch (e) {
+        out.innerHTML = '<div class="verdict no">NOT VERIFIED   report could not be read</div>';
+      }
+    };
+    reader.onerror = function () {
+      out.innerHTML = '<div class="verdict no">NOT VERIFIED   the file could not be read</div>';
+    };
+    // Read as bytes, never as text. A signature covers the canonical form of the document, so
+    // letting the browser re-encode it on the way in could change the verdict.
+    reader.readAsArrayBuffer(f);
+  }
+
+  drop.addEventListener("click", function () { if (ready) file.click(); });
+  drop.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (ready) file.click(); }
+  });
+  file.addEventListener("change", function () { if (file.files[0]) check(file.files[0]); });
+  ["dragenter", "dragover"].forEach(function (t) {
+    drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function (t) {
+    drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove("over"); });
+  });
+  drop.addEventListener("drop", function (e) {
+    if (e.dataTransfer.files[0]) check(e.dataTransfer.files[0]);
+  });
+
+  if (!WebAssembly || !WebAssembly.instantiateStreaming) {
+    main.textContent = "This browser cannot run the verifier";
+    sub.textContent = "Use loomseal verify from the command line instead.";
+    return;
+  }
+  var go = new Go();
+  WebAssembly.instantiateStreaming(fetch("/verify/loomseal.wasm"), go.importObject)
+    .then(function (res) {
+      go.run(res.instance);
+      ready = true;
+      main.textContent = "Drop a bundle here, or click to choose one";
+    })
+    .catch(function () {
+      main.textContent = "The verifier failed to load";
+      sub.textContent = "Reload the page, or use loomseal verify from the command line.";
+    });
+})();
+</script>
+</body>
+</html>

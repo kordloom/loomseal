@@ -74,6 +74,23 @@ jobs:
           pip install -r reference/requirements.txt
           python3 reference/loomverify.py --vectors testdata/vectors
 
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # The page at /verify is the only verifier most relying parties will ever run. It is the
+      # command line's code compiled for the browser, so it must reach the same verdict on every
+      # conformance vector. Rebuilding here also catches a checked-in module that went stale.
+      - name: Browser verifier agrees with the vectors
+        run: |
+          mkdir -p /tmp/wasm
+          GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o /tmp/wasm/loomseal.wasm ./wasm
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" /tmp/wasm/
+          node wasm/selftest.mjs /tmp/wasm
+
   vuln:
     runs-on: ubuntu-latest
     steps:

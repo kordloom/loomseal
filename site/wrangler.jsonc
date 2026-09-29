@@ -2,6 +2,9 @@
   // Serves loomseal.com. The worker predates the site and keeps its original name so the
   // custom domains stay attached; rename in the dashboard requires re-attaching them.
   "name": "loomseal-redirect",
+  // Named so a deploy token needs no account-list permission, which a scoped token often
+  // lacks. Without it wrangler calls out to enumerate accounts and fails before deploying.
+  "account_id": "37ed841c5c85edd1e669f0a22b9fb282",
   "compatibility_date": "2026-07-01",
   "main": "src/index.js",
   "assets": {

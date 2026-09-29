@@ -424,6 +424,11 @@ def _check_signature(raw_bytes, b, report):
     for sig in b["signatures"]:
         if sig.get("key_id") != prod["key_id"]:
             continue
+        # alg sits outside the signed bytes, so an attacker rewrites it for free. It is read
+        # only to reject a bundle that declares something this format does not fix, never to
+        # choose which algorithm to verify with.
+        if sig.get("alg") != "ed25519":
+            raise VError("signature", f"signature alg {sig.get('alg')!r}, want ed25519")
         try:
             pub.verify(base64.b64decode(sig["sig"], validate=True), canonical)
             report["signature_ok"] = True
@@ -612,6 +617,30 @@ def _level(report):
 
 # ---------- CLI ----------
 
+def failing_check_error(check, r):
+    """Return why report r does not fail at the stage the manifest names, or None if it does.
+
+    Agreeing that a bundle is bad is not agreement. Two verifiers that reject the same file for
+    different reasons disagree about the format, so the stage is checked as strictly here as it
+    is in the Go conformance test.
+    """
+    if check in ("parse", "signature"):
+        if r["signature_ok"]:
+            return f"{check} case verified its signature"
+    elif check == "chain":
+        if not r["chain_present"] or r["chain_ok"]:
+            return (f"chain case did not fail the chain: present {r['chain_present']} "
+                    f"ok {r['chain_ok']}")
+    elif check == "anchor":
+        if not r["signature_ok"] or not r["chain_ok"]:
+            return "anchor case failed earlier than the anchor step"
+        if r["anchors_matched"] != 0 or not any("anchor" in p for p in r["problems"]):
+            return f"anchor case did not fail on an anchor: matched {r['anchors_matched']}"
+    else:
+        return f"manifest names an unknown failing_check {check!r}"
+    return None
+
+
 def run_vectors(dirpath):
     """Run every vector in a manifest and report agreement with its declared expectations."""
     man = json.load(open(os.path.join(dirpath, "manifest.json")))
@@ -624,6 +653,10 @@ def run_vectors(dirpath):
         detail = ""
         if ok and v["must_verify"] and v.get("level") and r["level"] != v["level"]:
             status, detail = "!! ", f"  level got[{r['level']}] want[{v['level']}]"
+        if status == "OK " and not v["must_verify"] and v.get("failing_check"):
+            why = failing_check_error(v["failing_check"], r)
+            if why:
+                status, detail = "!! ", f"  {why}"
         if status == "!! ":
             bad += 1
         print(f"{status}{v['name']:<28} ok={ok} expect={v['must_verify']}{detail}")

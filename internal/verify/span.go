@@ -128,6 +128,16 @@ func (r *Report) checkSpanFirst(spans []spanClaim) {
 	r.SpanCountsVerified++
 }
 
+// scheduleSlack is how far past its cadence a beat may land and still count as on time. A beat is
+// written when a timer fires, and a timer fires a few milliseconds late as a matter of course, so a
+// window a hair wider than the cadence is scheduling rather than an unattested stretch. Reporting
+// those listed most ticks of a healthy chain as gaps, dozens a day, and buried a real gap among
+// them. The slack is a hundredth of the cadence and never under a second, far inside the whole
+// missed beat a genuine gap adds.
+func scheduleSlack(cadence time.Duration) time.Duration {
+	return max(cadence/100, time.Second)
+}
+
 // checkSpanPairs verifies every consecutive span claim pair: beat contiguity, the count against
 // the sequence difference, and beat times against the declared cadence. It accumulates the gap
 // report and the coverage wording.
@@ -154,7 +164,7 @@ func (r *Report) checkSpanPairs(spans []spanClaim) {
 			continue
 		}
 		cadence := time.Duration(prev.payload.CadenceS) * time.Second
-		if delta <= cadence {
+		if delta <= cadence+scheduleSlack(cadence) {
 			continue
 		}
 		r.SpanGaps = append(r.SpanGaps,

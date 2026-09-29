@@ -127,6 +127,10 @@ func TestSpan(t *testing.T) {
 	badFirstCount[1].Count = 9
 	badStream := spanBase()
 	badStream[3].Stream = "iam"
+	jittered := spanBase()
+	jittered[3].At = "2026-07-27T12:02:00.004Z"
+	late := spanBase()
+	late[3].At = "2026-07-27T12:02:05Z"
 
 	tests := []struct {
 		Entries      []spanTestEntry
@@ -177,6 +181,14 @@ func TestSpan(t *testing.T) {
 	}, { // Test 8: A stream this format does not define fails the claim.
 		Entries: badStream, Anchored: true,
 		WantProblem: "this format defines only",
+	}, { // Test 9: A beat milliseconds past the cadence is a timer's scheduling, not a gap.
+		Entries: jittered, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 0,
+	}, { // Test 10: A beat seconds past a one minute cadence is past the slack and is reported.
+		Entries: late, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 1,
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {

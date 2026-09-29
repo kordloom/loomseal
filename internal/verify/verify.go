@@ -205,7 +205,8 @@ type Report struct {
 	SpanCountsCarried int `json:"span_counts_carried,omitempty"`
 	// SpanCoverage words the population coverage, such as "2/4 windows attested".
 	SpanCoverage string `json:"span_coverage,omitempty"`
-	// SpanGaps describes each unattested window wider than the declared cadence.
+	// SpanGaps describes each unattested window wider than the declared cadence by more than a
+	// timer's scheduling slack.
 	SpanGaps []string `json:"span_gaps,omitempty"`
 	// SpanLongestGap is the widest unattested window between consecutive beats.
 	SpanLongestGap string `json:"span_longest_gap,omitempty"`

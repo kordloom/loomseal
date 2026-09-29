@@ -103,7 +103,7 @@ The output, reproducible from this repository right now:
     chain      loomseal-chain-v1, full, 2 claims, head matched true
     anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
     evidence   1 verified, 0 missing, 0 referenced only
-    VERIFIED   signed, chained (full), anchored by reference
+    VERIFIED   signed, chained (full), anchored (proof verified)
 
 Flags: `--evidence <dir>` checks artifact digests against files you were given,
 `--fingerprint sha256:<hex>` pins the producer key to the fingerprint published on the
@@ -136,10 +136,12 @@ LoomSeal bundle.
 And because proof that overclaims is just marketing, the verifier states its boundary plainly:
 it cannot prove the recorder observed the world honestly at capture time. A chain fixes the
 record, not the character of the recorder. Keyed chains verify structurally here and fully for
-the key holder, and anchor proofs are carried but not yet validated by this version, so
-confirm anchor refs out of band. The full discipline is in [FORMAT.md](FORMAT.md), which is
-the specification, and the conformance wording is exactly three words: signed, chained,
-anchored. No other adjectives, on purpose.
+the key holder. An `rfc3161` anchor is checked here, against the link it attests to and the
+certificate it carries, so it needs no network and no trust in the producer; anchors of other
+types are confirmed by fetching what they point at. The full discipline is in
+[FORMAT.md](FORMAT.md), which is the specification, and the conformance wording is exactly three
+words: signed, chained, anchored. Anchored says how it was established, by reference or by a
+verified proof, and nothing else is added.
 
 Why it exists, what it is worth, the cryptography, quantum computers, and what happens if
 KordLoom disappears: [docs/FAQ.md](docs/FAQ.md).

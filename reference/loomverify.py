@@ -17,7 +17,13 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import base64
+
+from cryptography import x509
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding
+from cryptography.hazmat.primitives.serialization import pkcs7
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MAX_SAFE = 2 ** 53
@@ -158,6 +164,205 @@ def _ser_str(s):
     return "".join(out)
 
 
+# ---------- RFC 3161 timestamp proofs ----------
+
+OID_SIGNED_DATA = "1.2.840.113549.1.7.2"
+OID_TST_INFO = "1.2.840.113549.1.9.16.1.4"
+OID_MESSAGE_DIGEST = "1.2.840.113549.1.9.4"
+OID_SHA256 = "2.16.840.1.101.3.4.2.1"
+
+# A signer names the digest it used over the signed attributes. Assuming SHA-256 works until an
+# authority signs with anything else, and then it silently compares two unrelated hashes.
+DIGEST_OIDS = {
+    "2.16.840.1.101.3.4.2.1": "sha256",
+    "2.16.840.1.101.3.4.2.2": "sha384",
+    "2.16.840.1.101.3.4.2.3": "sha512",
+}
+
+
+def _der(buf, i=0):
+    """Read one DER element at i, returning (tag, header_len, content, end)."""
+    tag = buf[i]
+    n = buf[i + 1]
+    j = i + 2
+    if n & 0x80:
+        count = n & 0x7F
+        n = int.from_bytes(buf[j:j + count], "big")
+        j += count
+    return tag, j, buf[j:j + n], j + n
+
+
+def _children(content):
+    """Yield every DER element inside a constructed value."""
+    i = 0
+    while i < len(content):
+        tag, hdr, body, end = _der(content, i)
+        yield tag, body, content[i:end]
+        i = end
+
+
+def _oid(body):
+    """Decode a DER OBJECT IDENTIFIER into dotted form."""
+    first = body[0]
+    parts = [str(first // 40), str(first % 40)]
+    value = 0
+    for byte in body[1:]:
+        value = (value << 7) | (byte & 0x7F)
+        if not byte & 0x80:
+            parts.append(str(value))
+            value = 0
+    return ".".join(parts)
+
+
+def _find(content, want_tag):
+    """Return the first child with the given tag, or None."""
+    for tag, body, full in _children(content):
+        if tag == want_tag:
+            return body, full
+    return None, None
+
+
+def _verify_timestamp(token, link, index):
+    """Check that an RFC 3161 token attests to link and is signed by the certificate it carries.
+
+    A timestamp token is the one anchor type that proves itself: it is signed by an authority over
+    the link and carries its own certificates, so it is checked offline with nothing but the bundle.
+    Whether the authority is worth trusting is the relying party's call, made by reading the signer
+    this returns, so no root list is baked in here.
+    """
+    try:
+        _, _, ci, _ = _der(token)
+        oid_body, _ = _find(ci, 0x06)
+        if _oid(oid_body) != OID_SIGNED_DATA:
+            raise VError("anchor", f"anchor {index} proof is not CMS SignedData")
+        explicit, _ = _find(ci, 0xA0)
+        _, _, sd, _ = _der(explicit)
+
+        encap = eci = None
+        certs_der = None
+        signer_infos = None
+        for tag, body, full in _children(sd):
+            if tag == 0x30 and encap is None:
+                inner_oid, _ = _find(body, 0x06)
+                if inner_oid is not None and _oid(inner_oid) == OID_TST_INFO:
+                    encap = body
+            elif tag == 0xA0 and certs_der is None:
+                certs_der = full
+            elif tag == 0x31:
+                signer_infos = body
+        if encap is None:
+            raise VError("anchor", f"anchor {index} proof carries no TSTInfo")
+
+        wrapper, _ = _find(encap, 0xA0)
+        _, _, tst_der, _ = _der(wrapper)
+        _, _, tst, _ = _der(tst_der)
+    except VError:
+        raise
+    except Exception as exc:
+        raise VError("anchor", f"anchor {index} proof is malformed: {exc}") from exc
+
+    # The binding: this token is about this link and no other value.
+    imprint = None
+    for tag, body, _full in _children(tst):
+        if tag == 0x30:
+            algo, _ = _find(body, 0x30)
+            digest, _ = _find(body, 0x04)
+            if algo is not None and digest is not None:
+                alg_oid, _ = _find(algo, 0x06)
+                if alg_oid is not None and _oid(alg_oid) == OID_SHA256:
+                    imprint = digest
+                    break
+    if imprint is None:
+        raise VError("anchor", f"anchor {index} proof has no SHA-256 message imprint")
+    if imprint != hashlib.sha256(bytes.fromhex(link)).digest():
+        raise VError("anchor", f"anchor {index} proof attests to a different link")
+
+    gen_time = None
+    for tag, body, _full in _children(tst):
+        if tag == 0x18:
+            gen_time = body.decode("ascii").rstrip("Z")
+            break
+
+    if certs_der is None or signer_infos is None:
+        raise VError("anchor", f"anchor {index} proof carries no certificate or signer")
+    certs = pkcs7.load_der_pkcs7_certificates(token)
+    signer_cert = None
+    for cert in certs:
+        try:
+            eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+            if x509.oid.ExtendedKeyUsageOID.TIME_STAMPING in eku:
+                signer_cert = cert
+                break
+        except x509.ExtensionNotFound:
+            continue
+    if signer_cert is None:
+        raise VError("anchor", f"anchor {index} proof has no timestamping certificate")
+
+    _, _, si, _ = _der(signer_infos)
+    signed_attrs = signature = digest_name = None
+    pending_algo = None
+    for tag, body, full in _children(si):
+        if tag == 0x30 and signed_attrs is None:
+            algo_oid, _ = _find(body, 0x06)
+            if algo_oid is not None:
+                pending_algo = DIGEST_OIDS.get(_oid(algo_oid), pending_algo)
+        elif tag == 0xA0 and signed_attrs is None:
+            signed_attrs = full
+            digest_name = pending_algo
+        elif tag == 0x04:
+            signature = body
+    if signed_attrs is None or signature is None:
+        raise VError("anchor", f"anchor {index} proof signer is incomplete")
+    if digest_name is None:
+        raise VError("anchor", f"anchor {index} proof uses an unsupported digest")
+
+    # The signed attributes must commit to the payload, or the signature covers nothing that
+    # matters, and the signature is over them re-tagged as a SET rather than the implicit [0].
+    _, _, attrs_body, _ = _der(signed_attrs)
+    bound = False
+    for tag, body, _full in _children(attrs_body):
+        attr_oid, _ = _find(body, 0x06)
+        if attr_oid is None or _oid(attr_oid) != OID_MESSAGE_DIGEST:
+            continue
+        values, _ = _find(body, 0x31)
+        want, _ = _find(values, 0x04)
+        if want != hashlib.new(digest_name, tst_der).digest():
+            raise VError("anchor", f"anchor {index} proof commits to a different payload")
+        bound = True
+    if not bound:
+        raise VError("anchor", f"anchor {index} proof does not commit to its payload")
+
+    signed = b"\x31" + signed_attrs[1:]
+    try:
+        _verify_cert_signature(signer_cert, signature, signed, digest_name)
+    except Exception as exc:
+        raise VError("anchor", f"anchor {index} proof signature does not verify: {exc}") from exc
+
+    when = gen_time or "unknown time"
+    if len(when) >= 14:
+        when = (f"{when[0:4]}-{when[4:6]}-{when[6:8]}T{when[8:10]}:"
+                f"{when[10:12]}:{when[12:14]}Z")
+    return when, signer_cert.subject.rfc4514_string()
+
+
+def _verify_cert_signature(cert, signature, signed, digest_name):
+    """Verify signature over signed using the certificate's public key and the signer's own digest.
+
+    The digest comes from the signer info, never from the certificate. A certificate records how it
+    was itself signed, which has nothing to do with how this token was signed, and using it would
+    check the signature against the wrong hash.
+    """
+    key = cert.public_key()
+    algo = {"sha256": hashes.SHA256(), "sha384": hashes.SHA384(),
+            "sha512": hashes.SHA512()}[digest_name]
+    if isinstance(key, ec.EllipticCurvePublicKey):
+        key.verify(signature, signed, ec.ECDSA(algo))
+    elif isinstance(key, ed25519.Ed25519PublicKey):
+        key.verify(signature, signed)
+    else:
+        key.verify(signature, signed, padding.PKCS1v15(), algo)
+
+
 # ---------- verification ----------
 
 def verify(raw_bytes, evidence_dir=None):
@@ -165,6 +370,8 @@ def verify(raw_bytes, evidence_dir=None):
     report = {"ok": False, "level": "not verified", "problems": [],
               "signature_ok": False, "chain_present": False, "chain_ok": False,
               "chain_mode": "", "head_matched": False, "anchors_matched": 0,
+              "anchor_proofs_carried": 0, "anchor_proofs_verified": 0,
+              "anchor_proofs_validated": False, "anchor_attestations": [],
               "anchors_to_declared_head": 0, "unknown_types": []}
     try:
         b = parse_strict(raw_bytes)
@@ -348,6 +555,25 @@ def _check_anchors(b, report):
             report["anchors_to_declared_head"] += 1
         else:
             raise VError("anchor", f"anchor {i} matches no verified claim or the declared head")
+        if not a.get("proof"):
+            continue
+        report["anchor_proofs_carried"] += 1
+        # A carried proof used to be counted and never opened, so a bundle holding a real signed
+        # timestamp was reported at the same strength as one holding a URL. The format has always
+        # said an rfc3161 proof is checkable offline; this is where that becomes true.
+        if a["type"] != "rfc3161":
+            continue
+        try:
+            token = base64.b64decode(a["proof"], validate=True)
+        except Exception as exc:
+            raise VError("anchor", f"anchor {i} proof is not base64: {exc}") from exc
+        when, signer = _verify_timestamp(token, a["link"], i)
+        report["anchor_proofs_verified"] += 1
+        report["anchor_attestations"].append(f"{when} by {signer}")
+    # True only when every proof the bundle carries was opened and held.
+    report["anchor_proofs_validated"] = (
+        report["anchor_proofs_carried"] > 0
+        and report["anchor_proofs_verified"] == report["anchor_proofs_carried"])
 
 
 def _check_evidence(b, evidence_dir, report):
@@ -375,7 +601,11 @@ def _level(report):
     level = "signed"
     if report["chain_present"] and report["chain_ok"]:
         level += f", chained ({report['chain_mode']})"
-    if report["anchors_matched"] > 0:
+    if report["anchor_proofs_verified"] > 0:
+        # A proof checked here needed no network and no trust in the producer, which is a stronger
+        # statement than a reference a relying party still has to go and confirm.
+        level += ", anchored (proof verified)"
+    elif report["anchors_matched"] > 0:
         level += ", anchored by reference"
     return level
 

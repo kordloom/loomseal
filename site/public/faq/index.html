@@ -405,7 +405,7 @@
         <ul>
           <li>Keyed chains verify structurally for third parties, and fully for the key
           holder.</li>
-          <li>Anchor proofs are carried but not validated, so relying parties confirm anchor
+          <li>An rfc3161 anchor proof is opened and checked against the link it attests to. Anchors of other types are confirmed by fetching what they reference, so relying parties confirm those
           references out of band.</li>
         </ul>
         <p>Proof that overclaims is just marketing.</p>

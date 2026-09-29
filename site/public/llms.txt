@@ -5,7 +5,9 @@
 > their coordinates in an append-only hash chain, external anchors that fix that chain in
 > time, and an ed25519 signature from the producer. Anyone can verify a bundle offline with
 > the `loomseal` binary: no account, no server, and no trust in KordLoom or in the operator
-> who sent the file. The conformance wording is exactly three words: signed, chained,
+> who sent the file. Two verifiers, one in Go and one written separately from the spec in
+> Python, are cross-checked against the same conformance vectors, so the format is not held
+> honest by a single implementation. The conformance wording is exactly three words: signed, chained,
 > anchored. Apache-2.0.
 
 Install: `go install github.com/kordloom/loomseal@latest`, then

@@ -13,9 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/internal/chain"
+	"github.com/kordloom/loomseal/internal/rfc3161"
 )
 
 // knownClaimTypes is the registry of claim types this verifier understands. Unknown types
@@ -73,9 +75,16 @@ type Report struct {
 	AnchorsToDeclaredHead int `json:"anchors_to_declared_head,omitempty"`
 	// AnchorProofsCarried is how many anchors embed a proof blob.
 	AnchorProofsCarried int `json:"anchor_proofs_carried"`
-	// AnchorProofsValidated is false in this version: proofs are carried, not validated,
-	// and the relying party confirms anchor refs out of band.
+	// AnchorProofsValidated reports whether every carried proof was checked and held.
 	AnchorProofsValidated bool `json:"anchor_proofs_validated"`
+	// AnchorProofsVerified is how many embedded proofs were cryptographically checked against the
+	// link they anchor. An rfc3161 proof is signed by a timestamp authority over the link itself, so
+	// it is checked offline with nothing but the bundle. Anchors of other types are confirmed by
+	// fetching what they point at, which this verifier does not do.
+	AnchorProofsVerified int `json:"anchor_proofs_verified,omitempty"`
+	// AnchorAttestations describes each verified proof: when the authority signed, and who it was.
+	// Whether that authority is worth trusting is the relying party's call, not this verifier's.
+	AnchorAttestations []string `json:"anchor_attestations,omitempty"`
 	// EvidenceVerified is how many evidence digests matched a supplied artifact.
 	EvidenceVerified int `json:"evidence_verified"`
 	// EvidenceMissing is how many digests had no artifact in the supplied directory.
@@ -229,10 +238,34 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 			r.problem("anchor %d (%s) does not match any bundled claim or the declared head", i,
 				a.Type)
 		}
-		if a.Proof != "" {
-			r.AnchorProofsCarried++
+		if a.Proof == "" {
+			continue
 		}
+		r.AnchorProofsCarried++
+		// A carried proof used to be counted and never opened, so a bundle holding a real signed
+		// timestamp was reported at the same strength as one holding a URL. The format has always
+		// said an rfc3161 proof is checkable offline; this is where that becomes true.
+		if a.Type != "rfc3161" {
+			continue
+		}
+		token, derr := base64.StdEncoding.DecodeString(a.Proof)
+		if derr != nil {
+			r.problem("anchor %d proof is not base64: %v", i, derr)
+			continue
+		}
+		res, verr := rfc3161.Verify(token, a.Link)
+		if verr != nil {
+			r.problem("anchor %d proof does not verify: %v", i, verr)
+			continue
+		}
+		r.AnchorProofsVerified++
+		r.AnchorAttestations = append(r.AnchorAttestations,
+			res.Time.Format(time.RFC3339)+" by "+res.Signer)
 	}
+	// True only when every proof the bundle carries was opened and held. A bundle carrying a proof
+	// this verifier cannot check must not be reported as validated.
+	r.AnchorProofsValidated = r.AnchorProofsCarried > 0 &&
+		r.AnchorProofsVerified == r.AnchorProofsCarried
 }
 
 // checkEvidence hashes every regular file under dir and compares the bundle's evidence
@@ -281,7 +314,12 @@ func (r *Report) level() string {
 	if r.ChainPresent && r.ChainOK {
 		level += ", chained (" + r.ChainMode + ")"
 	}
-	if r.AnchorsMatched > 0 {
+	switch {
+	case r.AnchorProofsVerified > 0:
+		// A proof checked here needed no network and no trust in the producer, which is a stronger
+		// statement than a reference a relying party still has to go and confirm.
+		level += ", anchored (proof verified)"
+	case r.AnchorsMatched > 0:
 		level += ", anchored by reference"
 	}
 	return level

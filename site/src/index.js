@@ -10,10 +10,12 @@ const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   // The page carries one inline script and one inline style block, so those need to be allowed by
   // hash or by keyword. The rest is locked to this origin, and the signup form's endpoint is the
-  // only cross-origin destination the page is permitted to reach.
+  // only cross-origin destination the page is permitted to reach. The browser verifier compiles
+  // WebAssembly, which needs 'wasm-unsafe-eval'; that keyword permits WebAssembly only and does
+  // not allow general eval, so the page cannot compile arbitrary scripts.
   "Content-Security-Policy": [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "font-src 'self'",

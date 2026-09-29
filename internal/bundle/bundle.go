@@ -24,8 +24,6 @@ const Version = "0.1"
 
 // Chain profile names fixed by the spec.
 const (
-	// ProfileDormouse is the shipped Dormouse keyed HMAC chain construction.
-	ProfileDormouse = "dormouse-audit-chain-v2"
 	// ProfileSwitchTender is the shipped SwitchTender unkeyed audit chain construction.
 	ProfileSwitchTender = "switchtender-audit-v1"
 	// ProfileV1 is the generic construction new producers use.
@@ -56,7 +54,7 @@ type Bundle struct {
 
 // Producer identifies the emitting product installation and its signing key.
 type Producer struct {
-	// Product is the emitting product name, such as dormouse.
+	// Product is the emitting product name, such as switchtender.
 	Product string `json:"product"`
 	// ProductVersion is the emitting product's version.
 	ProductVersion string `json:"product_version"`
@@ -100,7 +98,7 @@ type Coords struct {
 
 // Claim is one attested record.
 type Claim struct {
-	// Type is the namespaced claim type, such as dormouse.check/1.
+	// Type is the namespaced claim type, such as switchtender.audit/1.
 	Type string `json:"type"`
 	// At is the RFC 3339 time the claimed event happened.
 	At string `json:"at"`
@@ -178,7 +176,7 @@ var (
 // Allowed enum values from the schema.
 var (
 	subjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true}
-	profiles     = map[string]bool{ProfileDormouse: true, ProfileSwitchTender: true, ProfileV1: true}
+	profiles     = map[string]bool{ProfileSwitchTender: true, ProfileV1: true}
 	anchorTypes  = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
 )
 

@@ -3,7 +3,15 @@
   // custom domains stay attached; rename in the dashboard requires re-attaching them.
   "name": "loomseal-redirect",
   "compatibility_date": "2026-07-01",
-  "assets": { "directory": "./public", "html_handling": "drop-trailing-slash" },
+  "main": "src/index.js",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "drop-trailing-slash",
+    // The worker must run before assets or it never sees requests for files that exist,
+    // and the www redirect would only fire on 404s.
+    "run_worker_first": true
+  },
   "routes": [
     { "pattern": "loomseal.com", "custom_domain": true },
     { "pattern": "www.loomseal.com", "custom_domain": true }

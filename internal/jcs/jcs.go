@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // maxSafeInt is the largest integer magnitude an IEEE double represents exactly, 2^53.
@@ -28,8 +29,12 @@ func Canonicalize(raw []byte) ([]byte, error) {
 }
 
 // Parse returns the value tree of raw as nil, bool, json.Number, string, []any, and
-// map[string]any. It rejects duplicate object keys and trailing data.
+// map[string]any. It rejects duplicate object keys, trailing data, invalid UTF-8, and lone
+// surrogate escapes, all of which RFC 8785 forbids.
 func Parse(raw []byte) (any, error) {
+	if err := validateStrings(raw); err != nil {
+		return nil, err
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	v, err := parseValue(dec)
@@ -229,6 +234,86 @@ func writeString(b *bytes.Buffer, s string) {
 		}
 	}
 	b.WriteByte('"')
+}
+
+// validateStrings rejects input that RFC 8785 forbids before Go's decoder can hide it. Go's
+// json decoder coerces invalid UTF-8 and lone surrogate escapes to U+FFFD, which would let
+// distinct documents share one canonical form and one signature. The scan walks string
+// literals, tracking escapes, and requires every \u surrogate escape to be a well-formed
+// high-low pair.
+func validateStrings(raw []byte) error {
+	if !utf8.Valid(raw) {
+		return fmt.Errorf("%w: input is not valid UTF-8", ErrString)
+	}
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		if !inString {
+			if raw[i] == '"' {
+				inString = true
+			}
+			continue
+		}
+		switch raw[i] {
+		case '"':
+			inString = false
+		case '\\':
+			if i+1 >= len(raw) {
+				return fmt.Errorf("%w: dangling escape", ErrString)
+			}
+			if raw[i+1] != 'u' {
+				i++
+				continue
+			}
+			hi, err := readHex4(raw, i+2)
+			if err != nil {
+				return err
+			}
+			switch {
+			case utf16.IsSurrogate(rune(hi)) && hi <= 0xDBFF:
+				if i+12 > len(raw) || raw[i+6] != '\\' || raw[i+7] != 'u' {
+					return fmt.Errorf("%w: high surrogate escape without a low surrogate", ErrString)
+				}
+				lo, err := readHex4(raw, i+8)
+				if err != nil {
+					return err
+				}
+				if lo < 0xDC00 || lo > 0xDFFF {
+					return fmt.Errorf("%w: high surrogate escape not followed by a low surrogate",
+						ErrString)
+				}
+				i += 11
+			case utf16.IsSurrogate(rune(hi)):
+				return fmt.Errorf("%w: lone low surrogate escape", ErrString)
+			default:
+				i += 5
+			}
+		}
+	}
+	return nil
+}
+
+// readHex4 reads four hex digits at offset at and returns their value.
+func readHex4(raw []byte, at int) (uint16, error) {
+	if at+4 > len(raw) {
+		return 0, fmt.Errorf("%w: truncated \\u escape", ErrString)
+	}
+	var v uint16
+	for j := 0; j < 4; j++ {
+		d := raw[at+j]
+		var nyb uint16
+		switch {
+		case d >= '0' && d <= '9':
+			nyb = uint16(d - '0')
+		case d >= 'a' && d <= 'f':
+			nyb = uint16(d-'a') + 10
+		case d >= 'A' && d <= 'F':
+			nyb = uint16(d-'A') + 10
+		default:
+			return 0, fmt.Errorf("%w: invalid hex digit in \\u escape", ErrString)
+		}
+		v = v<<4 | nyb
+	}
+	return v, nil
 }
 
 // utf16Less orders strings by their UTF-16 code units, which differs from rune order for

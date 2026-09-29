@@ -84,9 +84,16 @@ func renderReport(w io.Writer, r *verify.Report) {
 	case r.ChainPresent:
 		fmt.Fprintf(w, "chain      %s FAILED\n", r.ChainProfile)
 	}
+	if r.ChainPresent && r.ChainOK && !r.HeadMatched {
+		fmt.Fprintln(w, "note       declared head is ahead of the bundled claims; its link is not verified here")
+	}
 	if r.AnchorsMatched > 0 || r.AnchorProofsCarried > 0 {
 		fmt.Fprintf(w, "anchors    %d matched by coordinates, %d proofs carried, not validated in this version\n",
 			r.AnchorsMatched, r.AnchorProofsCarried)
+	}
+	if r.AnchorsToDeclaredHead > 0 {
+		fmt.Fprintf(w, "note       %d anchor(s) reference only the unverified declared head, not a claim in this bundle\n",
+			r.AnchorsToDeclaredHead)
 	}
 	fmt.Fprintf(w, "evidence   %d verified, %d missing, %d referenced only\n",
 		r.EvidenceVerified, r.EvidenceMissing, r.EvidenceReferenced)

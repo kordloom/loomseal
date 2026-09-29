@@ -287,13 +287,6 @@
         </span>
         <span class="menu-ext" aria-hidden="true">&#8599;</span>
       </a>
-      <a class="menu-item" href="https://dormousehq.com" target="_blank" rel="noopener">
-        <span class="mi-text">
-          <span class="m-name">Dormouse</span>
-          <span class="m-desc">Watches every page. Proves every check.</span>
-        </span>
-        <span class="menu-ext" aria-hidden="true">&#8599;</span>
-      </a>
       <a class="menu-item" href="https://switchtender.com" target="_blank" rel="noopener">
         <span class="mi-text">
           <span class="m-name">SwitchTender</span>
@@ -343,14 +336,12 @@
     <p>KordLoom products speak it, one verifier checks it:</p>
     <ul>
       <li>SwitchTender proves what you run.</li>
-      <li>Dormouse proves what you watch.</li>
       <li>Future products register new claim types and inherit the same verifier.</li>
     </ul>
-    <p>This spec generalizes what Dormouse and SwitchTender already do in shipped code. It
-    invents no new cryptography. Dormouse chains checks with a keyed HMAC-SHA256 and
-    content-addresses every snapshot. SwitchTender chains audit entries with SHA-256 and
-    already exports the chain signed with ed25519 for offline verification. LoomSeal is the
-    shared envelope around those primitives.</p>
+    <p>This spec generalizes constructions KordLoom already ships. It invents no new
+    cryptography. SwitchTender chains audit entries with SHA-256 and already exports the
+    chain signed with ed25519 for offline verification. LoomSeal is the shared envelope
+    around those primitives.</p>
 
     <h2>Design rules</h2>
     <ol>
@@ -383,24 +374,24 @@
         <tr><td><code>signatures</code></td><td>yes</td><td>At least one producer signature over the bundle</td></tr>
       </table>
     </div>
-    <p>Example, a Dormouse bundle at level 3 (digests are illustrative):</p>
+    <p>Example, a bundle at level 3 on the generic profile (digests are illustrative):</p>
     <pre><code>{
   "loomseal": "0.1",
   "bundle_id": "lsb_9c41d0a2b7e3",
   "created_at": "2026-07-27T15:04:05Z",
   "producer": {
-    "product": "dormouse",
-    "product_version": "0.4.0",
+    "product": "switchtender",
+    "product_version": "1.33.0",
     "install_id": "in_7f3a9b2c",
     "public_key": "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=",
     "key_id": "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
   },
   "subject": {
-    "type": "url",
-    "id": "https://vendor.example.com/legal/subprocessors"
+    "type": "host",
+    "id": "web-07.fleet.example.com"
   },
   "chain": {
-    "profile": "dormouse-audit-chain-v2",
+    "profile": "loomseal-chain-v1",
     "keyed": true,
     "params": { "install_id": "in_7f3a9b2c" },
     "head": {
@@ -410,29 +401,29 @@
   },
   "claims": [
     {
-      "type": "dormouse.check/1",
+      "type": "switchtender.audit/1",
       "at": "2026-07-27T14:00:11Z",
       "payload": {
-        "target_id": "tg_4b1e",
-        "url": "https://vendor.example.com/legal/subprocessors",
-        "outcome": "changed",
-        "status": 200,
+        "actor": "u_4b1e",
+        "method": "POST",
+        "path": "/api/jobs/deploy-web",
+        "outcome": "applied",
         "elapsed_ns": 412000000,
         "error": ""
       },
       "evidence": [
         {
-          "role": "snapshot",
+          "role": "transcript",
           "digest": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-          "media_type": "text/html",
+          "media_type": "application/json",
           "present": false
         }
       ],
       "verdict": {
-        "policy": "vendor-subprocessors/3",
+        "policy": "fleet-change-control/3",
         "policy_digest": "sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
         "decision": "notify",
-        "detail": "entity added: Example Analytics GmbH"
+        "detail": "changed hosts: 4 of 210"
       },
       "chain": {
         "seq": 18209,
@@ -447,7 +438,7 @@
       "seq": 18000,
       "link": "1f2d3c4b5a69788766554433221100ffeeddccbbaa99887766554433221100ff",
       "at": "2026-07-26T00:00:00Z",
-      "ref": "https://github.com/acme/dormouse-anchors/commit/8f14e45fceea167a"
+      "ref": "https://github.com/acme/audit-anchors/commit/8f14e45fceea167a"
     }
   ],
   "signatures": [
@@ -461,11 +452,20 @@
 
     <h2>Canonical form and digests</h2>
     <p>The canonical form of a bundle is the RFC 8785 (JSON Canonicalization Scheme)
-    serialization of the bundle object. Digest strings are <code>sha256:</code> followed by 64
-    lowercase hex characters. Times are RFC 3339 in UTC; fractional seconds are allowed where
-    a chain profile requires them. Numbers in a bundle are integers with absolute value at
-    most 2^53; anything else is invalid, because RFC 8785 serializes numbers as IEEE doubles
-    and larger or fractional values do not round-trip.</p>
+    serialization of the bundle object. Object keys are ordered by their UTF-16 code units,
+    which RFC 8785 requires and which differs from code point order above the basic
+    multilingual plane. Object keys must be unique within an object; a repeated key has no
+    canonical form and the bundle is rejected. Strings must be valid UTF-8, and every
+    <code>\u</code> escape must
+    denote a valid Unicode scalar value. A lone surrogate, whether written as a
+    <code>\uD800</code>-through-<code>\uDFFF</code> escape or as raw bytes, is rejected at
+    parse and never coerced to the replacement character; coercion would let two different
+    documents share one canonical form and one signature. Digest strings are
+    <code>sha256:</code> followed by 64 lowercase hex characters. Times are RFC 3339 in UTC;
+    fractional seconds are allowed where a chain profile requires them. Numbers in a bundle are
+    written as plain integer literals with absolute value at most 2^53; fractions, exponents,
+    and larger magnitudes are invalid, because RFC 8785 serializes numbers as IEEE doubles and
+    those forms do not round-trip.</p>
 
     <h2>Producer and signatures</h2>
     <p><code>producer.public_key</code> is the producer's raw 32-byte ed25519 public key,
@@ -496,37 +496,36 @@
     <code>chain.profile</code>. Claims carry <code>chain.seq</code>, <code>chain.prev</code>,
     and <code>chain.link</code>. Claims in a bundle are sorted by ascending <code>seq</code>
     and must be contiguous; discontinuous history means separate bundles.</p>
-
-    <h3>dormouse-audit-chain-v2</h3>
-    <p>The shipped Dormouse construction. Each check's link is HMAC-SHA256 (keyed) or SHA-256
-    (unkeyed) over a length-prefixed field list: the domain string
-    <code>dormouse-audit-chain-v2</code>, the install identifier, the previous link, then the
-    check's target id, outcome, status, snapshot hash, error, elapsed nanoseconds, and
-    checked-at Unix nanoseconds. Each field is serialized as <code>length:value</code>, so
-    field boundaries are unambiguous. The genesis previous link is the empty string. Sequence
-    numbers are the 1-based trail position, matching the product's position-based head
-    anchoring.</p>
-    <p>The keyed form is by design not recomputable by third parties: the chain key is the
-    secret that prevents forgery by parties who can write the database. Relying parties
-    verify keyed chains structurally (each claim's <code>prev</code> equals the prior claim's
-    <code>link</code>) and against anchors. The operator, holding the key, verifies fully
-    with <code>dormouse verify</code>.</p>
+    <p><code>chain.head</code> records the newest coordinates the producer attests for the whole
+    chain, which may lead the claims a bundle carries: a bundle is a window into a longer
+    history. When the head sequence equals the newest bundled claim, the verifier confirms the
+    head link against that claim and reports the head as matched. When the head leads the claims,
+    its link cannot be recomputed from the bundle and stays unverified; the report says so and
+    does not treat that head as proof of anything beyond the window.</p>
 
     <h3>switchtender-audit-v1</h3>
     <p>The shipped SwitchTender construction. Each audit entry's link is SHA-256 over the
-    JSON array of its sequence (decimal string), time (RFC 3339 with nanoseconds, UTC),
-    actor, method, path, and previous link. Sequence starts at 1; the genesis previous link
-    is the empty string. This profile is unkeyed: any verifier recomputes every link from the
-    claim payloads alone. Recomputation formats the parsed time back to RFC 3339 nanosecond
-    form in UTC, which round-trips the stored form exactly.</p>
+    compact JSON array, no insignificant whitespace, of six strings: its sequence as a decimal
+    string, the time, actor, method, path, and previous link. Sequence starts at 1; the genesis
+    previous link is the empty string. This profile is unkeyed: any verifier recomputes every
+    link from the claim payloads alone. The time is the claim's <code>at</code> in UTC, RFC 3339
+    with nanosecond precision, trailing zeros in the fractional part trimmed and the fractional
+    part and its dot omitted entirely when the fraction is zero, so an <code>at</code> of
+    <code>2026-07-27T15:00:00Z</code> serializes back to <code>2026-07-27T15:00:00Z</code>. That
+    round-trips the stored form exactly.</p>
 
     <h3>loomseal-chain-v1</h3>
-    <p>The generic profile for future producers. The claim digest is <code>sha256:</code>
+    <p>The generic profile for new producers. The claim digest is <code>sha256:</code>
     over the canonical form of the claim object with its <code>chain</code> member removed.
     The link is HMAC-SHA256 (keyed) or SHA-256 (unkeyed) over the canonical form of:</p>
     <pre><code>{ "domain": "loomseal-chain-v1", "install_id": "...", "seq": 1, "prev": "", "claim": "sha256:..." }</code></pre>
     <p>Keyed chains state <code>"keyed": true</code> in the bundle's <code>chain</code>
     member.</p>
+    <p>The keyed form is by design not recomputable by third parties: the chain key is the
+    secret that prevents forgery by a party who can write the underlying store. Relying
+    parties verify keyed chains structurally, checking that each claim's <code>prev</code>
+    equals the prior claim's <code>link</code>, and against anchors. The operator, holding the
+    key, verifies fully.</p>
 
     <h2>Anchors</h2>
     <p>An anchor fixes a chain link in time, in a place the producer cannot rewrite alone. An
@@ -543,11 +542,15 @@
       </table>
     </div>
     <p>The verifier checks that each anchor's <code>seq</code> and <code>link</code> match a
-    claim in the bundle or the declared head. Verifier v0.1 reports embedded
-    <code>rfc3161</code> tokens as carried without validating them; token validation lands in
-    v0.2, and until then the report says anchored by reference and the relying party confirms
-    the ref out of band. Anchoring cadence bounds the window in which a compromised producer
-    key could rewrite unanchored history; anchor often.</p>
+    coordinate it verified: a claim in the bundle, or the head when the head tied to the newest
+    claim. An anchor that matches only a declared head beyond the bundled claims is reported, but
+    because that head link is unverified the anchor binds nothing the verifier confirmed and does
+    not by itself earn the anchored level. An anchor that matches no verified coordinate fails
+    the bundle. Verifier v0.1 reports embedded <code>rfc3161</code> tokens as carried without
+    validating them; token validation lands in v0.2, and until then a matched anchor reports as
+    anchored by reference and the relying party confirms the ref out of band. Anchoring cadence
+    bounds the window in which a compromised producer key could rewrite unanchored history;
+    anchor often.</p>
 
     <h2>Conformance levels</h2>
     <div class="table-wrap">
@@ -600,9 +603,8 @@
     <div class="table-wrap">
       <table>
         <tr><th>Type</th><th>Emitted by</th><th>Status</th><th>Payload minimum</th></tr>
-        <tr><td><code>dormouse.check/1</code></td><td>Dormouse</td><td>v0.1</td><td>target_id, url, outcome, status</td></tr>
-        <tr><td><code>dormouse.change/1</code></td><td>Dormouse</td><td>draft</td><td>target_id, url, from and to snapshots</td></tr>
-        <tr><td><code>dormouse.coverage/1</code></td><td>Dormouse</td><td>draft</td><td>target_id, window, expected, performed</td></tr>
+
+
         <tr><td><code>switchtender.audit/1</code></td><td>SwitchTender</td><td>v0.1</td><td>actor, method, path</td></tr>
         <tr><td><code>switchtender.run/1</code></td><td>SwitchTender</td><td>draft</td><td>run id, kind, hosts, approver</td></tr>
       </table>

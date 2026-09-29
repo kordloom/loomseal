@@ -19,7 +19,7 @@ func base() map[string]any {
 		"bundle_id":  "lsb_test",
 		"created_at": "2026-07-27T12:00:00Z",
 		"producer": map[string]any{
-			"product":         "dormouse",
+			"product":         "switchtender",
 			"product_version": "0.4.0",
 			"install_id":      "in_1",
 			"public_key":      base64.StdEncoding.EncodeToString(make([]byte, 32)),
@@ -27,7 +27,7 @@ func base() map[string]any {
 		},
 		"subject": map[string]any{"type": "url", "id": "https://example.com"},
 		"claims": []any{map[string]any{
-			"type":    "dormouse.check/1",
+			"type":    "switchtender.audit/1",
 			"at":      "2026-07-27T12:00:00Z",
 			"payload": map[string]any{"target_id": "tg_1"},
 		}},
@@ -90,7 +90,7 @@ func TestParse(t *testing.T) {
 	}, { // Test 8: A bundle without claims is rejected.
 		Mutate: func(m map[string]any) { m["claims"] = []any{} }, Want: ErrSchema,
 	}, { // Test 9: A malformed claim type is rejected.
-		Mutate: func(m map[string]any) { claimOf(m)["type"] = "Dormouse.Check" }, Want: ErrSchema,
+		Mutate: func(m map[string]any) { claimOf(m)["type"] = "SwitchTender.Audit" }, Want: ErrSchema,
 	}, { // Test 10: A non-object payload is rejected.
 		Mutate: func(m map[string]any) { claimOf(m)["payload"] = []any{1} }, Want: ErrSchema,
 	}, { // Test 11: A malformed evidence digest is rejected.

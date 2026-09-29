@@ -135,6 +135,24 @@
     color: var(--deep);
     text-wrap: balance;
   }
+  .asks { max-width: 40rem; margin: 1.6rem auto 0; text-align: left; }
+  .ask {
+    display: flex; gap: 0.85rem; align-items: baseline;
+    padding: 0.5rem 0; font-size: 0.94rem; line-height: 1.6; color: var(--body-c);
+  }
+  .ask::before {
+    content: ""; flex: 0 0 auto; width: 5px; height: 5px; margin-top: 0.55rem;
+    border-radius: 50%; background: var(--meta-c);
+  }
+  .objs { max-width: 40rem; margin: 2rem auto 0; text-align: left; }
+  .obj { padding: 1.05rem 0; border-top: 1px solid var(--rule-c); }
+  .obj:first-child { border-top: 0; padding-top: 0; }
+  .obj-say {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-style: italic; font-size: 1.06rem; line-height: 1.4;
+    color: var(--ink); margin-bottom: 0.4rem;
+  }
+  .obj-ans { font-size: 0.94rem; line-height: 1.65; color: var(--body-c); }
   .prose {
     max-width: 42rem;
     margin: 1.9rem auto 0;
@@ -331,6 +349,7 @@
     <nav class="menu-panel" aria-label="LoomSeal menu">
       <p class="menu-label">LoomSeal</p>
       <a class="menu-item" href="#about"><span class="m-name">Why it exists</span></a>
+      <a class="menu-item" href="#how"><span class="m-name">How it works</span></a>
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
       <a class="menu-item" href="#proves"><span class="m-name">What a bundle proves</span></a>
       <a class="menu-item" href="#producers"><span class="m-name">For producers</span></a>
@@ -361,13 +380,6 @@
         <span class="mi-text">
           <span class="m-name">kordloom.com</span>
           <span class="m-desc">Software that proves itself.</span>
-        </span>
-        <span class="menu-ext" aria-hidden="true">&#8599;</span>
-      </a>
-      <a class="menu-item" href="https://dormousehq.com" target="_blank" rel="noopener">
-        <span class="mi-text">
-          <span class="m-name">Dormouse</span>
-          <span class="m-desc">Watches every page. Proves every check.</span>
         </span>
         <span class="menu-ext" aria-hidden="true">&#8599;</span>
       </a>
@@ -405,18 +417,106 @@
 
   <section id="about" class="section reveal" aria-label="Why LoomSeal exists">
     <p class="eyebrow">Why it exists</p>
-    <p class="thesis">When everything can be fabricated, the only evidence worth sending is
-    evidence a stranger can check.</p>
+    <p class="thesis">The hard part is not proving what happened. It is proving nothing else
+    did.</p>
     <div class="prose">
-      <p>Anyone can generate a convincing screenshot now. A log can be edited, a dashboard can
-      lie, and a compliance PDF can be written five minutes before the meeting. The old ways of
-      showing your work stopped being evidence the day generating them became free.</p>
-      <p>LoomSeal is the KordLoom answer: when a KordLoom product says proved, this is the
-      receipt. One JSON bundle carries the claims, the digests of the evidence behind them,
-      their position in an append-only hash chain, the external anchors that fix that chain in
-      time, and the producer's signature. A small open verifier checks all of it in seconds,
-      offline. Send the file to an auditor, a security reviewer, a customer, a regulator, or
-      another machine. None of them has to believe a word you say. That is the point.</p>
+      <p>Sooner or later somebody asks you to prove something.</p>
+    </div>
+
+    <div class="asks">
+      <p class="ask">A customer asks whether you patched what you said you patched, on the day
+      you said you patched it.</p>
+      <p class="ask">An auditor asks who changed production the day it went down, and whether
+      the record was touched afterward.</p>
+      <p class="ask">A regulator asks for evidence of a control you have supposedly been running
+      for two years.</p>
+      <p class="ask">A buyer's security team asks you to prove your change process, not describe
+      it.</p>
+    </div>
+
+    <div class="prose">
+      <p>So you go and pull the logs, and somewhere on the way to the meeting it lands on you
+      that your logs are a table in a database you control. You know you did not edit them. You
+      have no way to show it.</p>
+      <p>That is the gap LoomSeal closes, and it closes it by answering the only three things a
+      skeptic gets to say.</p>
+    </div>
+
+    <div class="objs">
+      <div class="obj">
+        <p class="obj-say">&ldquo;You made this up.&rdquo;</p>
+        <p class="obj-ans">The file is signed by the machine that produced it. Change one byte
+        anywhere in it and the signature fails.</p>
+      </div>
+      <div class="obj">
+        <p class="obj-say">&ldquo;You deleted the parts that made you look bad.&rdquo;</p>
+        <p class="obj-ans">Every entry carries the hash of the one before it. Remove or reorder
+        a single line and every link after it stops recomputing, and the verifier tells you
+        exactly which one broke.</p>
+      </div>
+      <div class="obj">
+        <p class="obj-say">&ldquo;You wrote this last night.&rdquo;</p>
+        <p class="obj-ans">The head of the chain was published outside your reach long before
+        anyone asked. Those entries existed before that anchor did, or the anchor would not
+        match.</p>
+      </div>
+    </div>
+
+    <div class="prose">
+      <p>None of that is new cryptography. It is three ordinary ideas stacked so that the person
+      holding the file never has to take your word for anything.</p>
+      <p>A timestamp gets you part of the way and then stops. It proves one document existed at
+      one moment, which is worth having, but it says nothing about the documents you chose not to
+      stamp. Stamp the clean deploys, skip the incident, and every stamp you hand over is
+      individually true and collectively a lie. A chain has no such seam. The entries hold each
+      other, so the set is whole or it is visibly broken. Proving what happened is the easy half.
+      Proving nothing was left out is the half worth paying for.</p>
+      <p>Sending it is the dull part, which is the point. One JSON file, small enough to email.
+      The recipient runs a free, open-source verifier, offline, with no account and nothing
+      installed from you, and a few seconds later they have a yes or a no.</p>
+      <p>We use it on our own products for a reason that is a little uncomfortable.
+      SwitchTender's promise is that it proves every change. Without a bundle that promise is a
+      sentence on a website, and you would simply have to believe us that the audit trail behind
+      it is honest. Building a company on <em>do not take our word for it</em> and then asking you
+      to take our word for it is not a position we can defend. So SwitchTender emits them.
+      <code>switchtender audit bundle</code> turns its audit chain into a signed bundle, and you
+      can check the claim on the box without asking us anything.</p>
+      <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
+      A bundle is worth the same to a stranger as it is to your oldest customer, because checking
+      it never involves you at all.</p>
+    </div>
+  </section>
+
+  <section id="how" class="section reveal" aria-label="How it works">
+    <p class="eyebrow">How it works</p>
+    <p class="thesis">The chain is built as you go. That is the entire trick.</p>
+    <div class="prose">
+      <p>Three things happen while your software runs, and one happens when somebody asks. Your
+      software records what it did, which it already does. Each entry is hashed together with the
+      one before it, so the entries form a chain. And every so often the current head of that
+      chain, a single 64-character string, is published somewhere you do not control: a git
+      commit, a timestamp authority, a transparency log.</p>
+    </div>
+    <pre><code>entry 1    link1 = H(claim1, "")
+entry 2    link2 = H(claim2, link1)
+entry 3    link3 = H(claim3, link2)
+
+head       link3  --published-->  git commit, timestamp, transparency log</code></pre>
+    <div class="prose">
+      <p>Alter or delete anything earlier and every link after it changes. There is no way to edit
+      the middle of a chain and leave the end intact. So when somebody asks for evidence, you
+      export the claims for the window they care about, the digests of any files behind them, the
+      chain coordinates, the anchors, and one signature over the whole document.</p>
+      <p>The verifier runs that backwards, offline. It confirms the signature, recomputes every
+      link from the claim contents, checks that each entry points at the one before it, and
+      matches the anchors against links in the chain. A removed or reordered entry is not merely
+      detected. The verifier names where the break is.</p>
+      <p>Notice what the anchor changes. A hash chain on its own only proves internal
+      consistency, and anyone could sit down and build a perfectly consistent one this afternoon.
+      Publishing the head as you go is what makes that worthless to a forger: a convincing fake
+      would have required lying from the very first entry and publishing the false heads to a
+      third party the entire time. The security here is not really the cryptography. It is that
+      history cannot be backfilled.</p>
     </div>
   </section>
 
@@ -441,6 +541,8 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
 
   <section id="proves" class="section reveal" aria-label="What a verified bundle means">
     <p class="eyebrow">What a verified bundle means</p>
+    <p class="thesis">Three mechanisms, one guarantee: the set is whole, or the break has a
+    name.</p>
     <div class="tenets">
       <div class="tenet">
         <span class="tenet-num" aria-hidden="true">01</span>
@@ -479,9 +581,10 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
     <p class="eyebrow">For producers</p>
     <p class="thesis">One format across products, one verifier for everyone.</p>
     <div class="prose">
-      <p>Dormouse and SwitchTender speak LoomSeal, and their exporters ship with their next
-      releases; until then the example bundle and the <code>seal</code> package are the
-      reference producers. If you build software that should prove what it did, import
+      <p>SwitchTender is the first shipping producer. The example bundle and the
+      <code>seal</code> package are the reference implementations. The chain profiles in the spec were derived from software KordLoom already
+      ships, so the format describes real constructions rather than hypothetical ones. If
+      you build software that should prove what it did, import
       <code>github.com/kordloom/loomseal/seal</code> to sign bundles and compute chain links,
       follow the bundle shape in the spec, and register your claim types through the registry.
       The envelope, chain profiles, and verification stay common, so one verifier checks

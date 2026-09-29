@@ -99,6 +99,15 @@
   .page-head .lead { animation-delay: 0.4s; }
   .page-head .crumb { animation-delay: 0.52s; }
   .qa-wrap { width: 100%; max-width: 46rem; padding-bottom: 2rem; }
+  .qa-group {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 2.2rem 0 0.9rem 0.3rem;
+  }
+  .qa-wrap > .qa-group:first-child { margin-top: 0; }
   .qa {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -289,13 +298,6 @@
         </span>
         <span class="menu-ext" aria-hidden="true">&#8599;</span>
       </a>
-      <a class="menu-item" href="https://dormousehq.com" target="_blank" rel="noopener">
-        <span class="mi-text">
-          <span class="m-name">Dormouse</span>
-          <span class="m-desc">Watches every page. Proves every check.</span>
-        </span>
-        <span class="menu-ext" aria-hidden="true">&#8599;</span>
-      </a>
       <a class="menu-item" href="https://switchtender.com" target="_blank" rel="noopener">
         <span class="mi-text">
           <span class="m-name">SwitchTender</span>
@@ -329,8 +331,9 @@
 
   <div class="qa-wrap">
 
+    <h2 class="qa-group">Start here</h2>
     <details class="qa">
-      <summary>Why does LoomSeal exist?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <summary>Why can't I just send my logs?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>Because generating convincing artifacts became free. Screenshots, logs, dashboards,
         and compliance documents can all be produced or edited in seconds, which means none of
@@ -340,11 +343,94 @@
         digests of the evidence behind it, its position in an append-only chain, the external
         anchors that fix that chain in time, and a signature. The verifier checks all of it
         offline, with no account and no trust in the producer or in KordLoom.</p>
+        <p>The claim that makes it worth having is narrower than tamper evidence, which is table
+        stakes and which a timestamp already gives you. It is completeness. The entries are
+        linked to one another, so you are not only shown what happened, you are shown that
+        nothing was removed.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>How does it actually work?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Three things happen while your software runs, and one happens when somebody asks.</p>
+        <p>Your software records what it did, which it already does. Each entry is hashed
+        together with the one before it, so entry three's link covers entry three and entry
+        two's link. Alter or delete anything earlier and every link after it changes. And every
+        so often the current head of that chain, one 64-character string, is published somewhere
+        you do not control: a git commit, a timestamp authority, a transparency log.</p>
+        <p>When somebody asks for evidence, you export a bundle. The claims for the window they
+        care about, the digests of any files behind them, the chain coordinates, the anchors, and
+        one ed25519 signature over the whole document.</p>
+        <p>The verifier runs that backwards, offline. It checks the signature, recomputes every
+        link from the claim contents, confirms each entry points at the one before it, and
+        matches the anchors against links in the chain. A break is named, not merely detected.</p>
+        <p>The anchor is the part doing the real work. A chain on its own only proves internal
+        consistency, and anyone could sit down and build a consistent one this afternoon.
+        Publishing the head as you go is what makes that worthless to a forger, because a
+        convincing fake would have required lying from the very first entry and publishing the
+        false heads the entire time. Worked through at length on the
+        <a href="/#how">home page</a>.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What does a bundle actually prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Three things. The producer holding the signing key assembled these exact claims. Any
+        artifacts supplied match their recorded digests. And the one that is hard to get any
+        other way: the claims sit in an append-only order that has not been reordered,
+        rewritten, or trimmed since its heads were anchored.</p>
+        <p>That third one is completeness, and it is the point. Not merely that these entries
+        are genuine, but that they are all of them. The conformance wording is exactly three
+        words: signed, chained, anchored.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>What does it deliberately not prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>That the producer observed the world honestly at capture time. A chain fixes the
+        record, not the character of the recorder. A dishonest producer can record fiction;
+        what it cannot do is rewrite that fiction later without breaking the chain, or
+        backdate a history it never kept.</p>
+        <p>Keyed chains verify structurally for third parties and fully for the key holder,
+        and in the current verifier anchor proofs are carried but not validated, so relying
+        parties confirm anchor references out of band. Stating this boundary plainly is a
+        feature: proof that overclaims is just marketing.</p>
       </div>
     </details>
 
+    <h2 class="qa-group">Instead of what?</h2>
     <details class="qa">
-      <summary>What is the value if I operate a system?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <summary>How is this different from a timestamp?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>A trusted timestamp proves one document existed at one moment. That is genuinely
+        useful, and LoomSeal uses timestamps as one kind of anchor rather than competing with
+        them. But a timestamp says nothing about the documents you chose not to stamp.</p>
+        <p>Nobody can tell from a stamped file whether it was the only record or the flattering
+        one out of nine. Stamp the clean deploys and skip the incident, and every stamp you hand
+        over is individually valid and collectively a lie by omission.</p>
+        <p>A chain closes that gap, because the entries are linked to each other rather than
+        each standing alone. Remove one and every link after it fails to recompute, and the
+        verifier names where. So the set is either whole or visibly broken. A timestamp answers
+        <em>did this happen</em>. A chain answers <em>is this all of it</em>, and that is the
+        question an auditor is really asking.</p>
+      </div>
+    </details>
+    <details class="qa">
+      <summary>Why not a blockchain?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Because the property needed is tamper evidence, not distributed consensus. An
+        append-only keyed chain plus anchors published where the producer cannot rewrite them,
+        a timestamp authority, a public repository, a transparency log, delivers that property
+        without gas fees, without volatility, and without asking an auditor to believe in a
+        coin.</p>
+        <p>Anchoring borrows exactly one idea from that world, publishing a commitment where
+        you cannot take it back, and leaves the rest.</p>
+      </div>
+    </details>
+
+    <h2 class="qa-group">Using it</h2>
+    <details class="qa">
+      <summary>I run a system. What do I actually get?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>You stop asking people to believe you. When an auditor, a security reviewer, a
         customer, or a regulator asks how you know your controls ran, you send a file they can
@@ -354,16 +440,27 @@
         compounds.</p>
       </div>
     </details>
-
     <details class="qa">
-      <summary>What is the value if I am the one reviewing?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <summary>Someone sent me a bundle. Now what?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>You verify instead of trusting. No vendor portal, no screenshots, no phone calls to
         confirm a PDF. One command, offline, and the math either holds or it does not. If the
         bundle was altered, verification fails loudly and names the break.</p>
       </div>
     </details>
+    <details class="qa">
+      <summary>How do I emit bundles from my own software?<span class="qa-ind" aria-hidden="true">+</span></summary>
+      <div class="qa-body">
+        <p>Import the <code>seal</code> package from the
+        <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">repository</a>
+        to sign bundles and compute generic chain links, follow the bundle shape in
+        <a href="/spec">the spec</a> and the schema, and register new claim types through the
+        registry. Producers own their payloads; the envelope, chain profiles, and verification
+        procedure stay common so one verifier checks everyone.</p>
+      </div>
+    </details>
 
+    <h2 class="qa-group">Trusting it</h2>
     <details class="qa">
       <summary>Why should I trust the verifier?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -375,7 +472,6 @@
         who implements it.</p>
       </div>
     </details>
-
     <details class="qa">
       <summary>Why is the format open if KordLoom is a business?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -388,7 +484,6 @@
         part of the code license.</p>
       </div>
     </details>
-
     <details class="qa">
       <summary>What cryptography does it use, and why so plain?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -399,7 +494,6 @@
         security model is a private ledger with a maker's mark, not a coin.</p>
       </div>
     </details>
-
     <details class="qa">
       <summary>How is it kept secure?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -411,7 +505,6 @@
         evidence and the person checking it.</p>
       </div>
     </details>
-
     <details class="qa">
       <summary>What about quantum computers?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -427,44 +520,6 @@
         before such forgery was possible. A quantum computer does not un-publish a hash.</p>
       </div>
     </details>
-
-    <details class="qa">
-      <summary>What does verification prove, exactly?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>Three things: the producer holding the signing key assembled these exact claims;
-        the claims sit in an append-only order that has not been reordered, rewritten, or
-        trimmed since its heads were anchored; and any artifacts supplied match their recorded
-        digests. The conformance wording is exactly three words: signed, chained, anchored.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>What does it deliberately not prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>That the producer observed the world honestly at capture time. A chain fixes the
-        record, not the character of the recorder. A dishonest producer can record fiction;
-        what it cannot do is rewrite that fiction later without breaking the chain, or
-        backdate a history it never kept.</p>
-        <p>Keyed chains verify structurally for third parties and fully for the key holder,
-        and in the current verifier anchor proofs are carried but not validated, so relying
-        parties confirm anchor references out of band. Stating this boundary plainly is a
-        feature: proof that overclaims is just marketing.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>Why not a blockchain?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>Because the property needed is tamper evidence, not distributed consensus. An
-        append-only keyed chain plus anchors published where the producer cannot rewrite them,
-        a timestamp authority, a public repository, a transparency log, delivers that property
-        without gas fees, without volatility, and without asking an auditor to believe in a
-        coin.</p>
-        <p>Anchoring borrows exactly one idea from that world, publishing a commitment where
-        you cannot take it back, and leaves the rest.</p>
-      </div>
-    </details>
-
     <details class="qa">
       <summary>What happens if KordLoom disappears?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
@@ -474,18 +529,6 @@
         KordLoom too.</p>
         <p>A proof format you could lose in a vendor's shutdown would not be worth adopting,
         so LoomSeal is built to outlive its author.</p>
-      </div>
-    </details>
-
-    <details class="qa">
-      <summary>How do I emit bundles from my own software?<span class="qa-ind" aria-hidden="true">+</span></summary>
-      <div class="qa-body">
-        <p>Import the <code>seal</code> package from the
-        <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">repository</a>
-        to sign bundles and compute generic chain links, follow the bundle shape in
-        <a href="/spec">the spec</a> and the schema, and register new claim types through the
-        registry. Producers own their payloads; the envelope, chain profiles, and verification
-        procedure stay common so one verifier checks everyone.</p>
       </div>
     </details>
 

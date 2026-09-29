@@ -216,6 +216,35 @@ func TestRunAnchorMismatch(t *testing.T) {
 	}
 }
 
+// Test that an anchor matching only a declared head beyond the bundled claims does not earn
+// the anchored conformance word: the head link is unverified, so the anchor binds nothing.
+func TestRunAnchorToDeclaredHead(t *testing.T) {
+	t.Parallel()
+	invented := strings.Repeat("de", 32)
+	signed := signedBundle(t, func(m map[string]any) {
+		c, _ := m["chain"].(map[string]any)
+		c["head"] = map[string]any{"seq": 99, "link": invented}
+		anchors, _ := m["anchors"].([]any)
+		first, _ := anchors[0].(map[string]any)
+		first["seq"] = 99
+		first["link"] = invented
+	})
+	got := Run(signed, Options{})
+	if !got.OK {
+		t.Fatalf("bundle did not verify: %v", got.Problems)
+	}
+	if got.Level != "signed, chained (full)" {
+		t.Errorf("level %q, want %q", got.Level, "signed, chained (full)")
+	}
+	if got.HeadMatched {
+		t.Errorf("head matched %t, want false", got.HeadMatched)
+	}
+	if got.AnchorsMatched != 0 || got.AnchorsToDeclaredHead != 1 {
+		t.Errorf("anchor counts: matched %d, to declared head %d", got.AnchorsMatched,
+			got.AnchorsToDeclaredHead)
+	}
+}
+
 // Test that a keyed chain verifies structurally.
 func TestRunKeyedStructural(t *testing.T) {
 	t.Parallel()

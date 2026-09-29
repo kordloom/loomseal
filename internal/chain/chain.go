@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
@@ -107,11 +106,6 @@ func checkLinks(raw []byte, b *bundle.Bundle) (string, error) {
 				bundle.ProfileSwitchTender)
 		}
 		return ModeFull, checkSwitchTender(b)
-	case bundle.ProfileDormouse:
-		if b.Chain.Keyed {
-			return ModeStructural, nil
-		}
-		return ModeFull, checkDormouse(b)
 	case bundle.ProfileV1:
 		if b.Chain.Keyed {
 			return ModeStructural, nil
@@ -155,63 +149,6 @@ func checkSwitchTender(b *bundle.Bundle) error {
 			return fmt.Errorf("%w: claim %d: %w", ErrClaim, i, err)
 		}
 		sum := sha256.Sum256(payload)
-		if hex.EncodeToString(sum[:]) != claim.Chain.Link {
-			return fmt.Errorf("%w: claim %d link does not recompute", ErrBroken, i)
-		}
-	}
-	return nil
-}
-
-// dormousePayload is the payload minimum of a dormouse.check claim.
-type dormousePayload struct {
-	// TargetID is the watched target's identifier.
-	TargetID string `json:"target_id"`
-	// Outcome is the check outcome word.
-	Outcome string `json:"outcome"`
-	// Status is the HTTP status of the check.
-	Status int64 `json:"status"`
-	// Error is the check error text, empty on success.
-	Error string `json:"error"`
-	// ElapsedNS is the check duration in nanoseconds.
-	ElapsedNS int64 `json:"elapsed_ns"`
-}
-
-// checkDormouse recomputes the shipped Dormouse construction for unkeyed chains: SHA-256
-// over length-prefixed fields in the fixed order the product hashes them.
-func checkDormouse(b *bundle.Bundle) error {
-	installID := b.Chain.Params["install_id"]
-	if installID == "" {
-		return fmt.Errorf("%w: %s requires params.install_id", ErrProfile, bundle.ProfileDormouse)
-	}
-	for i := range b.Claims {
-		claim := &b.Claims[i]
-		var p dormousePayload
-		if err := json.Unmarshal(claim.Payload, &p); err != nil {
-			return fmt.Errorf("%w: claim %d payload: %w", ErrClaim, i, err)
-		}
-		at, err := time.Parse(time.RFC3339Nano, claim.At)
-		if err != nil {
-			return fmt.Errorf("%w: claim %d at: %w", ErrClaim, i, err)
-		}
-		snapshot := ""
-		for _, e := range claim.Evidence {
-			if e.Role == "snapshot" {
-				snapshot = strings.TrimPrefix(e.Digest, "sha256:")
-				break
-			}
-		}
-		fields := []string{
-			bundle.ProfileDormouse, installID, claim.Chain.Prev, p.TargetID, p.Outcome,
-			strconv.FormatInt(p.Status, 10), snapshot, p.Error,
-			strconv.FormatInt(p.ElapsedNS, 10), strconv.FormatInt(at.UnixNano(), 10),
-		}
-		var sb strings.Builder
-		for _, f := range fields {
-			sb.WriteString(strconv.Itoa(len(f)))
-			sb.WriteByte(':')
-			sb.WriteString(f)
-		}
-		sum := sha256.Sum256([]byte(sb.String()))
 		if hex.EncodeToString(sum[:]) != claim.Chain.Link {
 			return fmt.Errorf("%w: claim %d link does not recompute", ErrBroken, i)
 		}

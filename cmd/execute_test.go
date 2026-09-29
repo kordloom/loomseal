@@ -32,7 +32,7 @@ func writeBundle(t *testing.T) string {
 		},
 		"subject": map[string]any{"type": "url", "id": "https://example.com"},
 		"claims": []any{map[string]any{
-			"type": "dormouse.check/1", "at": "2026-07-27T12:00:00Z",
+			"type": "switchtender.audit/1", "at": "2026-07-27T12:00:00Z",
 			"payload": map[string]any{"target_id": "tg_1"},
 		}},
 	}

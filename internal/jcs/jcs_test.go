@@ -76,6 +76,52 @@ func TestCanonicalize(t *testing.T) {
 	}
 }
 
+func TestValidateStrings(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		In         string
+		WantResult string
+		Want       error
+	}{{ // Test 0: A literal astral character passes and stays literal UTF-8.
+		In: `"😀"`, WantResult: `"😀"`,
+	}, { // Test 1: A well-formed surrogate pair escape decodes to its code point.
+		In: `"\uD83D\uDE00"`, WantResult: `"😀"`,
+	}, { // Test 2: A lone high surrogate escape is rejected.
+		In: `"\uD800"`, Want: ErrString,
+	}, { // Test 3: A lone low surrogate escape is rejected.
+		In: `"\uDFFF"`, Want: ErrString,
+	}, { // Test 4: A high surrogate followed by a non-low escape is rejected.
+		In: `"\uD800\u0041"`, Want: ErrString,
+	}, { // Test 5: A high surrogate followed by a literal is rejected.
+		In: `"\uD800A"`, Want: ErrString,
+	}, { // Test 6: A truncated escape is rejected.
+		In: `"\uD80"`, Want: ErrString,
+	}, { // Test 7: Raw invalid UTF-8 is rejected.
+		In: "\"demo\xed\xa0\x80yard\"", Want: ErrString,
+	}, { // Test 8: An escaped backslash leaves the following uXXXX as literal text.
+		In: `"\\uD800"`, WantResult: `"\\uD800"`,
+	}, { // Test 9: A plain BMP escape passes and re-serializes as literal UTF-8.
+		In: `"A"`, WantResult: `"A"`,
+	}, { // Test 10: The replacement character escape is valid and stays literal.
+		In: `"\uFFFD"`, WantResult: `"�"`,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			got, err := Canonicalize([]byte(test.In))
+			if !errors.Is(err, test.Want) {
+				t.Fatalf("error mismatch: got %v, want %v", err, test.Want)
+			}
+			if test.Want != nil {
+				return
+			}
+			if diff := cmp.Diff(test.WantResult, string(got)); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestSerializeGoValues(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

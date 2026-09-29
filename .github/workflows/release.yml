@@ -47,7 +47,7 @@ jobs:
               bin="loomseal.exe"
             fi
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
-              -ldflags "-s -w -X github.com/kordloom/loomseal/cmd.Version=${version#v}" \
+              -ldflags "-s -w -X github.com/kordloom/loomseal/cmd.version=${version#v}" \
               -o "$stage/$bin" .
             cp LICENSE README.md FORMAT.md "$stage/"
             name="loomseal_${version#v}_${goos}_${goarch}"

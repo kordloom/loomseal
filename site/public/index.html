@@ -296,12 +296,15 @@
     transition: color 0.15s ease, border-color 0.15s ease;
   }
   .toc-item:hover .toc-name { color: var(--ink); border-color: var(--faint); }
-  #contents .toc-grid:not(.toc-more) { grid-template-rows: repeat(4, auto); }
-  .toc-more { grid-template-rows: repeat(3, auto); margin-top: 0.1rem; }
-  .toc-more .toc-num { color: var(--meta-c); }
-  @media (max-width: 560px) {
-    .toc-grid, .toc-more { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; }
+  .explore-nav { max-width: 22rem; margin: 2.4rem auto 0; }
+  .explore-nav a {
+    display: block; text-align: center; padding: 0.85rem 0.5rem;
+    border-top: 1px solid var(--rule-c);
+    font-size: 0.98rem; letter-spacing: 0.01em; color: var(--body-c);
+    text-decoration: none; transition: color 0.15s ease;
   }
+  .explore-nav a:last-child { border-bottom: 1px solid var(--rule-c); }
+  .explore-nav a:hover { color: var(--ink); }
   .tenets {
     margin: 2.75rem auto 0;
     display: grid;
@@ -666,17 +669,17 @@
   <section id="explore" class="section reveal" aria-label="Explore">
     <p class="eyebrow">Explore</p>
     <p class="thesis">The short version is above. Everything else is one click away.</p>
-    <nav class="toc-grid" style="margin-top:2.4rem;" aria-label="Pages">
-      <a class="toc-item" href="/overview"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Overview</span></a>
-      <a class="toc-item" href="/how"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">How it works</span></a>
-      <a class="toc-item" href="/proves"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">What it proves</span></a>
-      <a class="toc-item" href="/examples"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Worked examples</span></a>
-      <a class="toc-item" href="/verifiers"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Two verifiers</span></a>
-      <a class="toc-item" href="/producers"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">For producers</span></a>
-      <a class="toc-item" href="/span"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">LoomSpan</span></a>
-      <a class="toc-item" href="/spec"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">The spec</span></a>
-      <a class="toc-item" href="/faq"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">FAQ</span></a>
-      <a class="toc-item" href="/verify"><span class="toc-num" aria-hidden="true">&rarr;</span><span class="toc-name">Verify a bundle</span></a>
+    <nav class="explore-nav" aria-label="Pages">
+      <a href="/overview">Overview</a>
+      <a href="/how">How it works</a>
+      <a href="/proves">What it proves</a>
+      <a href="/examples">Worked examples</a>
+      <a href="/span">LoomSpan</a>
+      <a href="/verifiers">Two verifiers</a>
+      <a href="/producers">For producers</a>
+      <a href="/spec">The spec</a>
+      <a href="/faq">FAQ</a>
+      <a href="/verify">Verify a bundle</a>
     </nav>
   </section>
 

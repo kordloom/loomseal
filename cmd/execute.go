@@ -33,7 +33,7 @@ func Execute(args []string, stdout, stderr io.Writer) int {
 	case "verify":
 		return runVerify(args[1:], stdout, stderr)
 	case "version":
-		fmt.Fprintln(stdout, Version)
+		fmt.Fprintln(stdout, Version())
 		return CodeOK
 	case "help", "-h", "--help":
 		fmt.Fprintln(stdout, usage)

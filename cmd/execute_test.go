@@ -132,7 +132,7 @@ func TestExecuteUsage(t *testing.T) {
 		t.Errorf("absent file: code %d", code)
 	}
 	code, stdout, _ := run("version")
-	if code != CodeOK || !strings.Contains(stdout, Version) {
+	if code != CodeOK || !strings.Contains(stdout, Version()) {
 		t.Errorf("version: code %d stdout %q", code, stdout)
 	}
 }

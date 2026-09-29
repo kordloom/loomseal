@@ -34,6 +34,11 @@ const installID = "in_vectors"
 // at is the fixed claim and bundle time for every vector.
 const at = "2026-07-27T15:00:00Z"
 
+// atNanos carries sub-microsecond digits, the precision a Linux clock hands a producer and the
+// precision no Python or JavaScript time type can hold. It exists so a verifier that parses the
+// claim time and re-serializes it, rather than hashing the stored bytes, fails the suite.
+const atNanos = "2026-07-27T15:00:00.123456789Z"
+
 // Chain profile names, duplicated here so the generator needs no internal imports.
 const (
 	profileV1           = "loomseal-chain-v1"
@@ -143,6 +148,14 @@ func (s *state) positives() {
 	// Shipped SwitchTender construction.
 	s.add("switchtender-audit", true, "signed, chained (full)", "",
 		"The shipped SwitchTender profile recomputes every link.", s.sign(s.switchTender()))
+
+	// Sub-microsecond claim time. A verifier that parses the time into its language's own type and
+	// formats it back loses digits wherever that type is not nanosecond-capable, and reports an
+	// intact bundle as a broken chain. Hashing the stored bytes is what makes this verify.
+	s.add("switchtender-audit-nanosecond-at", true, "signed, chained (full)", "",
+		"A claim time carrying sub-microsecond digits verifies, because the profile hashes the "+
+			"stored time bytes rather than parsing and re-serializing them.",
+		s.sign(s.switchTenderNanos()))
 
 	// Unknown claim type still verifies and is reported as unknown.
 	m = s.v1(1, false)
@@ -367,6 +380,20 @@ func (s *state) switchTender() map[string]any {
 	m := s.base()
 	link := switchTenderLink(1, at, "release-token", "POST", "/api/runs", "")
 	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+	m["chain"] = map[string]any{
+		"profile": profileSwitchTender, "keyed": false,
+		"head": map[string]any{"seq": int64(1), "link": link},
+	}
+	return m
+}
+
+// switchTenderNanos builds the shipped SwitchTender chain with a sub-microsecond claim time.
+func (s *state) switchTenderNanos() map[string]any {
+	m := s.base()
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["at"] = atNanos
+	link := switchTenderLink(1, atNanos, "release-token", "POST", "/api/runs", "")
 	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
 	m["chain"] = map[string]any{
 		"profile": profileSwitchTender, "keyed": false,

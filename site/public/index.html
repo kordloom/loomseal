@@ -135,7 +135,7 @@
     color: var(--deep);
     text-wrap: balance;
   }
-  .asks { max-width: 40rem; margin: 1.6rem auto 0; text-align: left; }
+  .asks { max-width: 46rem; margin: 1.6rem auto 0; text-align: left; }
   .ask {
     display: flex; gap: 0.85rem; align-items: baseline;
     padding: 0.5rem 0; font-size: 0.94rem; line-height: 1.6; color: var(--body-c);
@@ -144,7 +144,7 @@
     content: ""; flex: 0 0 auto; width: 5px; height: 5px; margin-top: 0.55rem;
     border-radius: 50%; background: var(--meta-c);
   }
-  .objs { max-width: 40rem; margin: 2rem auto 0; text-align: left; }
+  .objs { max-width: 46rem; margin: 2rem auto 0; text-align: left; }
   .obj { padding: 1.05rem 0; border-top: 1px solid var(--rule-c); }
   .obj:first-child { border-top: 0; padding-top: 0; }
   .obj-say {
@@ -153,12 +153,19 @@
     color: var(--ink); margin-bottom: 0.4rem;
   }
   .obj-ans { font-size: 0.94rem; line-height: 1.65; color: var(--body-c); }
-  .prose {
-    max-width: 42rem;
-    margin: 1.9rem auto 0;
-    text-align: center;
+  .uses { max-width: 46rem; margin: 1.6rem auto 0; }
+  .uses-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.35rem 1.6rem; margin-top: 0.9rem;
   }
-  .prose p { font-size: 0.95rem; line-height: 1.7; color: var(--body-c); margin-bottom: 1rem; }
+  .use { display: flex; gap: 0.6rem; align-items: baseline; font-size: 0.92rem; color: var(--body-c); }
+  .use::before { content: "\2713"; color: var(--faint); font-size: 0.8rem; flex: 0 0 auto; }
+  .prose {
+    max-width: 46rem;
+    margin: 1.9rem auto 0;
+    text-align: left;
+  }
+  .prose p { text-wrap: pretty; font-size: 0.95rem; line-height: 1.7; color: var(--body-c); margin-bottom: 1rem; }
   .prose p:last-child { margin-bottom: 0; }
   .prose a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
   .prose a:hover { text-decoration-color: var(--ink); }
@@ -184,9 +191,9 @@
   }
   pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--deep); }
   .note {
-    max-width: 44rem;
+    max-width: 46rem;
     margin: 1rem auto 0;
-    text-align: center;
+    text-align: left;
     font-size: 0.82rem;
     color: var(--faint);
   }
@@ -348,11 +355,13 @@
     </summary>
     <nav class="menu-panel" aria-label="LoomSeal menu">
       <p class="menu-label">LoomSeal</p>
-      <a class="menu-item" href="#about"><span class="m-name">Why it exists</span></a>
-      <a class="menu-item" href="#how"><span class="m-name">How it works</span></a>
+      <a class="menu-item" href="#about"><span class="m-name">The problem</span></a>
+      <a class="menu-item" href="#timestamp"><span class="m-name">Why not a timestamp</span></a>
       <a class="menu-item" href="#verify"><span class="m-name">Verify one right now</span></a>
+      <a class="menu-item" href="#how"><span class="m-name">How it works</span></a>
       <a class="menu-item" href="#proves"><span class="m-name">What a bundle proves</span></a>
       <a class="menu-item" href="#producers"><span class="m-name">For producers</span></a>
+      <a class="menu-item" href="#ourselves"><span class="m-name">Why we use it ourselves</span></a>
       <div class="menu-div"></div>
       <p class="menu-label">Documentation</p>
       <a class="menu-item" href="/spec">
@@ -416,7 +425,7 @@
   </main>
 
   <section id="about" class="section reveal" aria-label="Why LoomSeal exists">
-    <p class="eyebrow">Why it exists</p>
+    <p class="eyebrow">The problem</p>
     <p class="thesis">The hard part is not proving what happened. It is proving nothing else
     did.</p>
     <div class="prose">
@@ -424,22 +433,17 @@
     </div>
 
     <div class="asks">
-      <p class="ask">A customer asks whether you patched what you said you patched, on the day
-      you said you patched it.</p>
-      <p class="ask">An auditor asks who changed production the day it went down, and whether
-      the record was touched afterward.</p>
-      <p class="ask">A regulator asks for evidence of a control you have supposedly been running
-      for two years.</p>
-      <p class="ask">A buyer's security team asks you to prove your change process, not describe
-      it.</p>
+      <p class="ask">A customer asks whether you patched what you said you patched, when you said you did.</p>
+      <p class="ask">An auditor asks who changed production the day it broke, and whether the log was edited.</p>
+      <p class="ask">A regulator asks for evidence of a control you have supposedly run for two years.</p>
+      <p class="ask">A buyer's security team asks you to prove your change process, not describe it.</p>
     </div>
 
     <div class="prose">
       <p>So you go and pull the logs, and somewhere on the way to the meeting it lands on you
       that your logs are a table in a database you control. You know you did not edit them. You
       have no way to show it.</p>
-      <p>That is the gap LoomSeal closes, and it closes it by answering the only three things a
-      skeptic gets to say.</p>
+      <p>That is the gap LoomSeal closes, and it closes it by answering the three things a skeptic always says.</p>
     </div>
 
     <div class="objs">
@@ -465,31 +469,50 @@
     <div class="prose">
       <p>None of that is new cryptography. It is three ordinary ideas stacked so that the person
       holding the file never has to take your word for anything.</p>
+</div>
+  </section>
+
+  <section id="timestamp" class="section reveal" aria-label="Why not a timestamp">
+    <p class="eyebrow">Why not a timestamp</p>
+    <p class="thesis">A timestamp proves a document existed. It cannot prove it was the only
+    one.</p>
+    <div class="prose">
       <p>A timestamp gets you part of the way and then stops. It proves one document existed at
       one moment, which is worth having, but it says nothing about the documents you chose not to
       stamp. Stamp the clean deploys, skip the incident, and every stamp you hand over is
       individually true and collectively a lie. A chain has no such seam. The entries hold each
       other, so the set is whole or it is visibly broken. Proving what happened is the easy half.
       Proving nothing was left out is the half worth paying for.</p>
+    </div>
+  </section>
+
+  <section id="verify" class="section reveal" aria-label="Verify one right now">
+    <p class="eyebrow">Verify one right now</p>
+    <p class="thesis">Sixty seconds from clone to verdict.</p>
+    <div class="prose">
       <p>Sending it is the dull part, which is the point. One JSON file, small enough to email.
       The recipient runs a free, open-source verifier, offline, with no account and nothing
       installed from you, and a few seconds later they have a yes or a no.</p>
-      <p>We use it on our own products for a reason that is a little uncomfortable.
-      SwitchTender's promise is that it proves every change. Without a bundle that promise is a
-      sentence on a website, and you would simply have to believe us that the audit trail behind
-      it is honest. Building a company on <em>do not take our word for it</em> and then asking you
-      to take our word for it is not a position we can defend. So SwitchTender emits them.
-      <code>switchtender audit bundle</code> turns its audit chain into a signed bundle, and you
-      can check the claim on the box without asking us anything.</p>
-      <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
-      A bundle is worth the same to a stranger as it is to your oldest customer, because checking
-      it never involves you at all.</p>
     </div>
+    <pre><code>go install github.com/kordloom/loomseal@latest
+git clone https://github.com/kordloom/loomseal
+cd loomseal
+loomseal verify examples/audit.loomseal.json --evidence examples/evidence</code></pre>
+    <pre><code>bundle     lsb_example_0001 from loomseal-demo 0.1.0
+subject    fleet demo-yard
+signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
+chain      loomseal-chain-v1, full, 2 claims, head matched true
+anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
+evidence   1 verified, 0 missing, 0 referenced only
+VERIFIED   signed, chained (full), anchored by reference</code></pre>
+    <p class="note">Real output, reproducible from the public repository. The verifier is built
+    on the Go standard library alone, so every line that touches a verdict is readable in an
+    afternoon.</p>
   </section>
 
   <section id="how" class="section reveal" aria-label="How it works">
     <p class="eyebrow">How it works</p>
-    <p class="thesis">The chain is built as you go. That is the entire trick.</p>
+    <p class="thesis">The chain is built as you go, not assembled when somebody asks.</p>
     <div class="prose">
       <p>Three things happen while your software runs, and one happens when somebody asks. Your
       software records what it did, which it already does. Each entry is hashed together with the
@@ -512,31 +535,12 @@ head       link3  --published-->  git commit, timestamp, transparency log</code>
       matches the anchors against links in the chain. A removed or reordered entry is not merely
       detected. The verifier names where the break is.</p>
       <p>Notice what the anchor changes. A hash chain on its own only proves internal
-      consistency, and anyone could sit down and build a perfectly consistent one this afternoon.
+      consistency, and anyone could sit down and build a consistent one this afternoon.
       Publishing the head as you go is what makes that worthless to a forger: a convincing fake
-      would have required lying from the very first entry and publishing the false heads to a
-      third party the entire time. The security here is not really the cryptography. It is that
+      would have required lying from the first entry and publishing the false heads to a
+      third party the entire time. The security is not the cryptography. It is that
       history cannot be backfilled.</p>
     </div>
-  </section>
-
-  <section id="verify" class="section reveal" aria-label="Verify one right now">
-    <p class="eyebrow">Verify one right now</p>
-    <p class="thesis">Sixty seconds from clone to verdict.</p>
-    <pre><code>go install github.com/kordloom/loomseal@latest
-git clone https://github.com/kordloom/loomseal
-cd loomseal
-loomseal verify examples/audit.loomseal.json --evidence examples/evidence</code></pre>
-    <pre><code>bundle     lsb_example_0001 from loomseal-demo 0.1.0
-subject    fleet demo-yard
-signature  ok, key sha256:f8840a25992b58b823321187e1c44d36ee1a748023034a46d26ea93419edaf07
-chain      loomseal-chain-v1, full, 2 claims, head matched true
-anchors    1 matched by coordinates, 0 proofs carried, not validated in this version
-evidence   1 verified, 0 missing, 0 referenced only
-VERIFIED   signed, chained (full), anchored by reference</code></pre>
-    <p class="note">Real output, reproducible from the public repository. The verifier is built
-    on the Go standard library alone, so every line that touches a verdict is readable in an
-    afternoon.</p>
   </section>
 
   <section id="proves" class="section reveal" aria-label="What a verified bundle means">
@@ -556,7 +560,7 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
         <p class="tenet-name">Chained</p>
         <p class="tenet-text">The claims sit in an append-only chain that has not been
         reordered, rewritten, or trimmed. Anchored history cannot be manufactured after the
-        fact. Whoever has been recording, wins.</p>
+        fact.</p>
       </div>
       <div class="tenet">
         <span class="tenet-num" aria-hidden="true">03</span>
@@ -567,9 +571,9 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
       </div>
     </div>
     <div class="prose">
-      <p>And the boundary, stated plainly, because proof that overclaims is just marketing: a
-      chain fixes the record, not the character of the recorder. What verification cannot prove
-      is spelled out in the <a href="/spec">spec</a> right next to what it can.</p>
+      <p>The boundary is stated just as plainly, because proof that overclaims is only
+      marketing. A chain fixes the record, not the character of the recorder. What verification
+      cannot prove sits in the <a href="/spec">spec</a> next to what it can.</p>
     </div>
     <div class="spine">
       <div class="rule spine-rule" aria-hidden="true"></div>
@@ -580,18 +584,56 @@ VERIFIED   signed, chained (full), anchored by reference</code></pre>
   <section id="producers" class="section reveal" aria-label="For producers">
     <p class="eyebrow">For producers</p>
     <p class="thesis">One format across products, one verifier for everyone.</p>
+    <div class="uses">
+      <p style="font-size:0.92rem;line-height:1.7;color:var(--body-c);">The format does not care
+      what the claims are about. Anything a machine records in order, and somebody later has to
+      believe, fits the same envelope.</p>
+      <div class="uses-grid">
+        <span class="use">Audit and access logs</span>
+        <span class="use">Deployments and change control</span>
+        <span class="use">CI and CD runs</span>
+        <span class="use">Build provenance and SBOMs</span>
+        <span class="use">Incident timelines</span>
+        <span class="use">Backup and restore records</span>
+        <span class="use">Compliance evidence</span>
+        <span class="use">Agent and model run logs</span>
+      </div>
+      <p style="font-size:0.82rem;line-height:1.6;color:var(--faint);margin-top:1rem;">
+      SwitchTender emits audit bundles today. The rest are uses the format supports, not
+      integrations that ship.</p>
+    </div>
+
     <div class="prose">
       <p>SwitchTender is the first shipping producer. The example bundle and the
       <code>seal</code> package are the reference implementations. The chain profiles in the spec were derived from software KordLoom already
-      ships, so the format describes real constructions rather than hypothetical ones. If
-      you build software that should prove what it did, import
+      ships, so the format describes real constructions rather than hypothetical ones.</p>
+      <p>If you build software that should prove what it did, import
       <code>github.com/kordloom/loomseal/seal</code> to sign bundles and compute chain links,
-      follow the bundle shape in the spec, and register your claim types through the registry.
-      The envelope, chain profiles, and verification stay common, so one verifier checks
-      everyone, and the format is Apache-2.0, so adopting it requires no negotiation and no
+      follow the bundle shape in the spec, and register your claim types through the registry.</p>
+      <p>The envelope, chain profiles, and verification stay common, so one verifier checks every
+      producer. The format is Apache-2.0, so adopting it needs no negotiation and no
       permission.</p>
     </div>
   </section>
+
+  <section id="ourselves" class="section reveal" aria-label="Why we use it ourselves">
+    <p class="eyebrow">Why we use it ourselves</p>
+    <p class="thesis">Building on do not take our word for it, then asking you to take our word
+    for it, is not a position we can defend.</p>
+    <div class="prose">
+      <p>We use it on our own products for a reason that is a little uncomfortable.
+      SwitchTender's promise is that it proves every change. Without a bundle that promise is a
+      sentence on a website, and you would simply have to believe us that the audit trail behind
+      it is honest. Building a company on <em>do not take our word for it</em> and then asking you
+      to take our word for it is not a position we can defend. So SwitchTender emits them.
+      <code>switchtender audit bundle</code> turns its audit chain into a signed bundle, and you
+      can check the claim on the box without asking us anything.</p>
+      <p>An audit log is worth exactly as much as the recipient's trust in whoever is holding it.
+      A bundle is worth the same to a stranger as it is to your oldest customer, because checking
+      it never involves you at all.</p>
+        </div>
+  </section>
+
 
   <footer>
     <div class="foot-links">

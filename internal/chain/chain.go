@@ -136,12 +136,25 @@ func checkSwitchTender(b *bundle.Bundle) error {
 		if err := json.Unmarshal(claim.Payload, &p); err != nil {
 			return fmt.Errorf("%w: claim %d payload: %w", ErrClaim, i, err)
 		}
-		at, err := time.Parse(time.RFC3339Nano, claim.At)
-		if err != nil {
+		// The time is validated but hashed verbatim, exactly as it appears in the bundle.
+		//
+		// Parsing and reformatting it was meant to be an identity, and for this implementation it
+		// was, because Go's time carries nanoseconds. It is not an identity everywhere: Python's
+		// datetime carries microseconds, so the reference verifier silently dropped the last three
+		// digits of a nanosecond timestamp and recomputed a different link. The same bundle verified
+		// here and failed there, reported as "link does not recompute", which reads as tampering
+		// when nothing has been tampered with. A format whose two verifiers disagree on valid input
+		// is worse than one that is merely strict.
+		//
+		// Hashing the stored bytes removes the disagreement and the whole class of it. It also drops
+		// the requirement that a verifier own a nanosecond-capable time type, which JavaScript and
+		// Python do not, and it is what this profile always meant: the spec says the serialization
+		// round-trips the stored form exactly.
+		if _, err := time.Parse(time.RFC3339, claim.At); err != nil {
 			return fmt.Errorf("%w: claim %d at: %w", ErrClaim, i, err)
 		}
 		fields := []string{
-			strconv.FormatInt(claim.Chain.Seq, 10), at.UTC().Format(time.RFC3339Nano),
+			strconv.FormatInt(claim.Chain.Seq, 10), claim.At,
 			p.Actor, p.Method, p.Path, claim.Chain.Prev,
 		}
 		payload, err := json.Marshal(fields)

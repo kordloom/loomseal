@@ -143,6 +143,10 @@
   .qa-body { padding: 0.1rem 1.25rem 1.15rem; }
   .qa[open] .qa-body { animation: qaIn 0.25s ease both; }
   @keyframes qaIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .qa-body ol, .qa-body ul { margin: 0.7rem 0 0.85rem; padding-left: 1.3rem; }
+  .qa-body li { font-size: 0.92rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.5rem; }
+  .qa-body li:last-child { margin-bottom: 0; }
+  .qa-body li::marker { color: var(--faint); }
   .qa-body p { font-size: 0.92rem; line-height: 1.7; color: var(--body-c); margin-bottom: 0.8rem; }
   .qa-body p:last-child { margin-bottom: 0; }
   .qa-body a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
@@ -343,31 +347,34 @@
         digests of the evidence behind it, its position in an append-only chain, the external
         anchors that fix that chain in time, and a signature. The verifier checks all of it
         offline, with no account and no trust in the producer or in KordLoom.</p>
-        <p>The claim that makes it worth having is narrower than tamper evidence, which is table
-        stakes and which a timestamp already gives you. It is completeness. The entries are
-        linked to one another, so you are not only shown what happened, you are shown that
-        nothing was removed.</p>
+        <p>The claim that makes it worth having is narrower than tamper evidence, which a
+        timestamp already gives you. It is completeness. The entries are linked to one another,
+        so you are not only shown what happened, you are shown that nothing was removed.</p>
       </div>
     </details>
     <details class="qa">
       <summary>How does it actually work?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>Three things happen while your software runs, and one happens when somebody asks.</p>
-        <p>Your software records what it did, which it already does. Each entry is hashed
-        together with the one before it, so entry three's link covers entry three and entry
-        two's link. Alter or delete anything earlier and every link after it changes. And every
-        so often the current head of that chain, one 64-character string, is published somewhere
-        you do not control: a git commit, a timestamp authority, a transparency log.</p>
-        <p>When somebody asks for evidence, you export a bundle. The claims for the window they
-        care about, the digests of any files behind them, the chain coordinates, the anchors, and
-        one ed25519 signature over the whole document.</p>
+        <ol>
+          <li>Your software records what it did, which it already does.</li>
+          <li>Each entry is hashed together with the one before it, so entry three's link covers
+          entry three and entry two's link. Alter or delete anything earlier and every link after
+          it changes.</li>
+          <li>Every so often the current head of that chain, one 64-character string, is published
+          somewhere you do not control: a git commit, a timestamp authority, a transparency
+          log.</li>
+          <li>When somebody asks for evidence, you export a bundle: the claims for the window they
+          care about, the digests of any files behind them, the chain coordinates, the anchors,
+          and one ed25519 signature over the whole document.</li>
+        </ol>
         <p>The verifier runs that backwards, offline. It checks the signature, recomputes every
-        link from the claim contents, confirms each entry points at the one before it, and
-        matches the anchors against links in the chain. A break is named, not merely detected.</p>
+        link from the claim contents, confirms each entry points at the one before it, and matches
+        the anchors against links in the chain. A break is named, not merely detected.</p>
         <p>The anchor is the part doing the real work. A chain on its own only proves internal
         consistency, and anyone could sit down and build a consistent one this afternoon.
         Publishing the head as you go is what makes that worthless to a forger, because a
-        convincing fake would have required lying from the very first entry and publishing the
+        convincing fake would have required lying from the first entry and publishing the
         false heads the entire time. Worked through at length on the
         <a href="/#how">home page</a>.</p>
       </div>
@@ -375,26 +382,33 @@
     <details class="qa">
       <summary>What does a bundle actually prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
-        <p>Three things. The producer holding the signing key assembled these exact claims. Any
-        artifacts supplied match their recorded digests. And the one that is hard to get any
-        other way: the claims sit in an append-only order that has not been reordered,
-        rewritten, or trimmed since its heads were anchored.</p>
-        <p>That third one is completeness, and it is the point. Not merely that these entries
-        are genuine, but that they are all of them. The conformance wording is exactly three
-        words: signed, chained, anchored.</p>
+        <p>Three things.</p>
+        <ol>
+          <li>The producer holding the signing key assembled these exact claims.</li>
+          <li>Any artifacts supplied match their recorded digests.</li>
+          <li>The claims sit in an append-only order that has not been reordered, rewritten, or
+          trimmed since its heads were anchored.</li>
+        </ol>
+        <p>The third is the point, and it is the one that is hard to get any other way. It is
+        completeness: not merely that these entries are genuine, but that they are all of them.
+        The conformance wording is exactly three words: signed, chained, anchored.</p>
       </div>
     </details>
     <details class="qa">
       <summary>What does it deliberately not prove?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>That the producer observed the world honestly at capture time. A chain fixes the
-        record, not the character of the recorder. A dishonest producer can record fiction;
-        what it cannot do is rewrite that fiction later without breaking the chain, or
-        backdate a history it never kept.</p>
-        <p>Keyed chains verify structurally for third parties and fully for the key holder,
-        and in the current verifier anchor proofs are carried but not validated, so relying
-        parties confirm anchor references out of band. Stating this boundary plainly is a
-        feature: proof that overclaims is just marketing.</p>
+        record, not the character of the recorder. A dishonest producer can record fiction. What
+        it cannot do is rewrite that fiction later without breaking the chain, or backdate a
+        history it never kept.</p>
+        <p>Two limits in the current verifier, stated plainly rather than buried.</p>
+        <ul>
+          <li>Keyed chains verify structurally for third parties, and fully for the key
+          holder.</li>
+          <li>Anchor proofs are carried but not validated, so relying parties confirm anchor
+          references out of band.</li>
+        </ul>
+        <p>Proof that overclaims is just marketing.</p>
       </div>
     </details>
 
@@ -455,7 +469,7 @@
         <a href="https://github.com/kordloom/loomseal" target="_blank" rel="noopener">repository</a>
         to sign bundles and compute generic chain links, follow the bundle shape in
         <a href="/spec">the spec</a> and the schema, and register new claim types through the
-        registry. Producers own their payloads; the envelope, chain profiles, and verification
+        registry. Producers own their payloads. The envelope, chain profiles, and verification
         procedure stay common so one verifier checks everyone.</p>
       </div>
     </details>
@@ -468,7 +482,7 @@
         built on the Go standard library alone, so every line that touches a verification
         decision is in the repository and readable in an afternoon.</p>
         <p>If you would rather not run our binary, build it from source, or implement your own
-        verifier from <a href="/spec">the spec</a> and the schema; the format belongs to anyone
+        verifier from <a href="/spec">the spec</a> and the schema. The format belongs to anyone
         who implements it.</p>
       </div>
     </details>
@@ -476,7 +490,7 @@
       <summary>Why is the format open if KordLoom is a business?<span class="qa-ind" aria-hidden="true">+</span></summary>
       <div class="qa-body">
         <p>A sealed format cannot be a standard, and proof that only its vendor can check is
-        not proof. KordLoom's products are the business; the proof language they speak is
+        not proof. KordLoom's products are the business. The proof language they speak is
         public on purpose.</p>
         <p>The license tiers are deliberate: the products carry their own licenses, while the
         format, schema, and verifier are Apache-2.0 so adopting them requires no negotiation
@@ -499,7 +513,7 @@
       <div class="qa-body">
         <p>The chain key is the secret that prevents forgery, it is generated on the producing
         install, and it never travels: not in bundles, not to KordLoom, not anywhere. Signing
-        keys likewise stay on the install; only the public key travels, and relying parties
+        keys likewise stay on the install. Only the public key travels, and relying parties
         can pin its fingerprint from the operator's trust page.</p>
         <p>Verification is offline by design, so there is no service to compromise between the
         evidence and the person checking it.</p>

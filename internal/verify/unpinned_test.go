@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/kordloom/loomseal/seal"
@@ -36,7 +37,8 @@ func TestUnpinnedRunSaysTheSignerWasNotChecked(t *testing.T) {
 		Name: "matching pin reports pinned", Pin: keyID,
 		WantPinned: true, WantOK: true,
 	}, { // Test 2: Wrong pin is a failure, not a note.
-		Name: "mismatched pin fails the bundle", Pin: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000ff",
+		Name:       "mismatched pin fails the bundle",
+		Pin:        "sha256:" + strings.Repeat("0", 62) + "ff",
 		WantPinned: true, WantOK: false,
 	}}
 
@@ -177,7 +179,7 @@ func TestDisclosuresDoNotSoftenAFailure(t *testing.T) {
 	}
 	// A bundle pinned to the wrong key fails, and a failing run must not be able to reach the
 	// unpinned notice at all: it is pinned, so the condition is false for that reason too.
-	bad := Run(raw, Options{Fingerprint: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000ff"})
+	bad := Run(raw, Options{Fingerprint: "sha256:" + strings.Repeat("0", 62) + "ff"})
 	if bad.OK {
 		t.Fatal("a mismatched pin must fail the bundle")
 	}

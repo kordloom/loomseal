@@ -131,7 +131,7 @@ func hashBytesForTest(b []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck // Irrelevant for this test.
 	p := filepath.Join(dir, "artifact")
 	if err := os.WriteFile(p, b, 0o600); err != nil {
 		return "", err

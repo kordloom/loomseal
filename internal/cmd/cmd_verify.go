@@ -282,8 +282,11 @@ func renderReport(w io.Writer, r *verify.Report) {
 		}
 	}
 	// Selective disclosure: how many redactable fields were shown against how many were committed. The
-	// link covers the committed set, so the count holds whether or not the holder revealed a field.
-	if r.DisclosuresPresent {
+	// link covers the committed set, so the count holds only while the link itself held: gated on the
+	// whole verdict, because "1 field(s) revealed" printed under a failed signature asserts a
+	// revelation against a commitment nothing binds any more, and a positive line must not argue
+	// against the verdict beside it.
+	if r.OK && r.DisclosuresPresent {
 		line := fmt.Sprintf("disclosed  %d field(s) revealed, %d redacted", r.FieldsRevealed,
 			r.FieldsRedacted)
 		if len(r.RevealedFields) > 0 {

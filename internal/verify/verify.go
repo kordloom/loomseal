@@ -42,6 +42,12 @@ type Options struct {
 	EvidenceDir string
 	// Fingerprint, when set, requires the producer key to match this sha256: fingerprint.
 	Fingerprint string
+	// Attestors, when non-empty, is the set of sha256: fingerprints a counter-signature may be
+	// signed by. Attestations sit outside the producer signature so a counterparty can add one
+	// later, which means any holder of a bundle can add one too, under any role. Without a set
+	// to compare against, a verified counter-signature establishes that some key signed the
+	// link and nothing whatever about whose key it was.
+	Attestors []string
 }
 
 // Report is the outcome of one verification run.
@@ -176,6 +182,13 @@ type Report struct {
 	// HeadAttestors lists each verified head attestation as role and key, with its signed time
 	// when carried.
 	HeadAttestors []string `json:"head_attestors,omitempty"`
+	// AttestorsPinned reports whether the run compared every counter-signer against a set of
+	// fingerprints the caller supplied. False means the counter-signatures were checked and the
+	// counter-signers were not: an attestation travels outside the producer signature, so a
+	// holder can attach one signed by any key under any role and it verifies. Always emitted
+	// once attestations are present, because "vouched" reads as third-party endorsement and a
+	// reader needs to see when nothing established the third party.
+	AttestorsPinned bool `json:"attestors_pinned,omitempty"`
 	// Attestors lists each verified counter-signer as its role and key fingerprint, so a reader can
 	// decide whether the vouching party is worth trusting.
 	Attestors []string `json:"attestors,omitempty"`
@@ -232,8 +245,18 @@ func Run(raw []byte, opts Options) *Report {
 	r.checkClaimTypes(b)
 	r.checkChain(raw, b)
 	r.checkDisclosures(raw, b)
-	r.checkAttestations(b)
-	r.checkHeadAttestations(b)
+	// Built here rather than stored on the report, because it is an input to the run and a
+	// report is a finding. Nil when the caller named nobody, which is the unpinned case.
+	var expected map[string]bool
+	if len(opts.Attestors) > 0 {
+		expected = make(map[string]bool, len(opts.Attestors))
+		for _, a := range opts.Attestors {
+			expected[a] = true
+		}
+		r.AttestorsPinned = true
+	}
+	r.checkAttestations(b, expected)
+	r.checkHeadAttestations(b, expected)
 	r.checkAnchors(b)
 	r.checkSpan(b)
 	r.checkEvidence(b, opts.EvidenceDir)

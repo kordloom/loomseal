@@ -23,7 +23,7 @@ import (
 // the head's link, its seq, and the role under its own domain tag, so a head attestation can never
 // be replayed as a claim attestation or against a different head, and re-anchoring custody has a
 // place to live on an already-signed bundle.
-func (r *Report) checkHeadAttestations(b *bundle.Bundle) {
+func (r *Report) checkHeadAttestations(b *bundle.Bundle, expected map[string]bool) {
 	if len(b.Attestations) == 0 {
 		return
 	}
@@ -74,6 +74,14 @@ func (r *Report) checkHeadAttestations(b *bundle.Bundle) {
 			r.problem("head attestation %d by %s does not verify over the chain head", j, a.KeyID)
 			continue
 		}
+		// A head attestation is the strongest thing a third party says about a bundle, that
+		// the whole chain up to this point existed when they signed. It travels outside the
+		// producer signature like any other attestation, so the same expectation applies.
+		if len(expected) > 0 && !expected[a.KeyID] {
+			r.problem("head attestation %d is signed by %s, which is not among the expected "+
+				"attestors", j, a.KeyID)
+			continue
+		}
 		r.HeadAttestationsVerified++
 		entry := a.Role + " " + a.KeyID
 		if a.At != "" {
@@ -83,7 +91,7 @@ func (r *Report) checkHeadAttestations(b *bundle.Bundle) {
 	}
 }
 
-func (r *Report) checkAttestations(b *bundle.Bundle) {
+func (r *Report) checkAttestations(b *bundle.Bundle, expected map[string]bool) {
 	for i := range b.Claims {
 		c := &b.Claims[i]
 		if len(c.Attestations) == 0 {
@@ -137,6 +145,14 @@ func (r *Report) checkAttestations(b *bundle.Bundle) {
 			if !ed25519.Verify(pub, preimage, sig) {
 				r.problem("claim %d attestation %d by %s does not verify over the claim link", i, j,
 					a.KeyID)
+				continue
+			}
+			// A counter-signature that holds proves a key signed the link. Which key that was
+			// is only established when the caller says which keys are acceptable, because the
+			// attestation is outside the producer signature and any holder can attach one.
+			if len(expected) > 0 && !expected[a.KeyID] {
+				r.problem("attestation %d on claim %d is signed by %s, which is not among the "+
+					"expected attestors", j, i, a.KeyID)
 				continue
 			}
 			r.AttestationsVerified++

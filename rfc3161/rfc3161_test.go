@@ -202,6 +202,9 @@ func tsaCert(t *testing.T, serial int64, cn string) (*x509.Certificate, []byte) 
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageTimeStamping},
+		// A real authority's certificate carries one, and it is the other form a signer identifier
+		// may name a certificate by, so the fixtures have to have it for that path to be reachable.
+		SubjectKeyId: []byte{byte(serial >> 8), byte(serial), 0xAA, 0xBB},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -237,6 +240,69 @@ func TestSignerCertificateNamesBothFields(t *testing.T) {
 	}
 
 	got, err := signerCertificate(sd, asn1.RawValue{FullBytes: sidDER})
+	if err != nil {
+		t.Fatalf("signer certificate: %v", err)
+	}
+	if got.SerialNumber.Cmp(signer.SerialNumber) != 0 {
+		t.Errorf("selected serial %v, want %v", got.SerialNumber, signer.SerialNumber)
+	}
+	if got.SerialNumber.Cmp(decoy.SerialNumber) == 0 {
+		t.Error("selected the decoy certificate")
+	}
+}
+
+// TestSignerCertificateRefusesToFallBack pins the rule the format states: a token whose named signer
+// certificate is absent fails, rather than being graded against another certificate it carries.
+//
+// This verifier used to fall back to the first certificate marked for timestamping. That made the
+// outcome depend on the order certificates appear in, which the format says carries no meaning, and
+// it meant a token could be reported as validly signed by a certificate its own signer identifier
+// never named. The token here carries a perfectly good timestamping certificate; it is simply not
+// the one the token points at, and that has to be a refusal.
+func TestSignerCertificateRefusesToFallBack(t *testing.T) {
+	t.Parallel()
+	_, carriedDER := tsaCert(t, 1000, "Acme TSA")
+	absent, _ := tsaCert(t, 9999, "Acme TSA")
+
+	sd := signedData{}
+	sd.Certificates.Bytes = carriedDER
+
+	named := issuerAndSerial{
+		Issuer:       asn1.RawValue{FullBytes: absent.RawIssuer},
+		SerialNumber: absent.SerialNumber,
+	}
+	sidDER, err := asn1.Marshal(named)
+	if err != nil {
+		t.Fatalf("marshal signer id: %v", err)
+	}
+	got, err := signerCertificate(sd, asn1.RawValue{FullBytes: sidDER})
+	if err == nil {
+		t.Fatalf("a token resolved to serial %v, which its signer identifier never named",
+			got.SerialNumber)
+	}
+	if !errors.Is(err, ErrParse) {
+		t.Errorf("error = %v, want it to wrap ErrParse", err)
+	}
+}
+
+// TestSignerCertificateResolvesASubjectKeyIdentifier covers the other signer identifier form.
+//
+// A CMS signer identifier is a choice of an issuer and serial number or a subject key identifier
+// tagged [0]. Reading only the first form meant a conforming token using the second was unresolvable,
+// and the previous fallback hid that by quietly picking a certificate by position instead.
+func TestSignerCertificateResolvesASubjectKeyIdentifier(t *testing.T) {
+	t.Parallel()
+	decoy, decoyDER := tsaCert(t, 1000, "Acme TSA")
+	signer, signerDER := tsaCert(t, 2000, "Other TSA")
+	if len(signer.SubjectKeyId) == 0 {
+		t.Skip("test certificates carry no subject key identifier")
+	}
+
+	sd := signedData{}
+	sd.Certificates.Bytes = append(append([]byte{}, decoyDER...), signerDER...)
+
+	sid := asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, Bytes: signer.SubjectKeyId}
+	got, err := signerCertificate(sd, sid)
 	if err != nil {
 		t.Fatalf("signer certificate: %v", err)
 	}

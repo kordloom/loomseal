@@ -224,6 +224,53 @@ def _find(content, want_tag):
     return None, None
 
 
+def _timestamp_signer(si, certs, index):
+    """Return the carried certificate the SignerInfo's signer identifier names.
+
+    A signer identifier is a choice: an IssuerAndSerialNumber SEQUENCE, or a SubjectKeyIdentifier
+    tagged [0]. Both are read, because an authority may use either and a verifier that understands
+    only one reports a conforming token as unresolvable. A named certificate the token does not
+    carry is a refusal, not an invitation to pick another.
+    """
+    kids = list(_children(si))
+    if len(kids) < 2:
+        raise VError("anchor", f"anchor {index} proof has a malformed signer info")
+    tag, body, _full = kids[1]
+
+    match = None
+    if tag == 0x80:
+        for cert in certs:
+            try:
+                ski = cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
+            except x509.ExtensionNotFound:
+                continue
+            if ski.digest == body:
+                match = cert
+                break
+    elif tag == 0x30:
+        issuer_body, issuer_full = _find(body, 0x30)
+        serial_body, _ = _find(body, 0x02)
+        if issuer_full is None or serial_body is None:
+            raise VError("anchor", f"anchor {index} proof has a malformed signer identifier")
+        serial = int.from_bytes(serial_body, "big")
+        for cert in certs:
+            if cert.serial_number == serial and cert.issuer.public_bytes() == issuer_full:
+                match = cert
+                break
+    else:
+        raise VError("anchor", f"anchor {index} proof has an unreadable signer identifier")
+
+    if match is None:
+        raise VError("anchor", f"anchor {index} proof names a signer certificate it does not carry")
+    try:
+        eku = match.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    except x509.ExtensionNotFound:
+        raise VError("anchor", f"anchor {index} proof signer is not marked for timestamping")
+    if x509.oid.ExtendedKeyUsageOID.TIME_STAMPING not in eku:
+        raise VError("anchor", f"anchor {index} proof signer is not marked for timestamping")
+    return match
+
+
 def _verify_timestamp(token, link, index):
     """Check that an RFC 3161 token attests to link and is signed by the certificate it carries.
 
@@ -288,9 +335,6 @@ def _verify_timestamp(token, link, index):
     if certs_der is None or signer_infos is None:
         raise VError("anchor", f"anchor {index} proof carries no certificate or signer")
     # A timestamp token has exactly one signer. Zero is malformed and more than one is ambiguous.
-    # This verifier resolves the signer certificate by the timestamping usage rather than by the
-    # signer id, which the Go verifier resolves; the two agree wherever a token names a single
-    # timestamping certificate, which every conformance vector does.
     signer_count = sum(1 for t, _b, _f in _children(signer_infos) if t == 0x30)
     if signer_count != 1:
         raise VError("anchor", f"anchor {index} proof carries {signer_count} signers, want one")
@@ -300,19 +344,14 @@ def _verify_timestamp(token, link, index):
         # A token that does not open as PKCS#7 is a failed anchor, never a crash: the bundle
         # carried a proof and the proof is garbage.
         raise VError("anchor", f"anchor {index} proof is not a parseable timestamp token: {exc}")
-    signer_cert = None
-    for cert in certs:
-        try:
-            eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
-            if x509.oid.ExtendedKeyUsageOID.TIME_STAMPING in eku:
-                signer_cert = cert
-                break
-        except x509.ExtensionNotFound:
-            continue
-    if signer_cert is None:
-        raise VError("anchor", f"anchor {index} proof has no timestamping certificate")
 
     _, _, si, _ = _der(signer_infos)
+
+    # The signer certificate is the one the signer identifier names, never merely the first one
+    # carried that happens to be marked for timestamping. Resolving by usage alone made the result
+    # depend on the order certificates appear in, which the format says carries no meaning, and it
+    # would grade a token against a certificate its own identifier never pointed at.
+    signer_cert = _timestamp_signer(si, certs, index)
     signed_attrs = signature = digest_name = None
     pending_algo = None
     for tag, body, full in _children(si):

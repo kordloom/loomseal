@@ -242,7 +242,7 @@ var (
 	reSubjectType = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 	// subjectTypes is the known vocabulary. Membership is reported, never enforced.
 	SubjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true, "agent": true,
-		"host": true, "run": true}
+		"host": true, "run": true, "org": true}
 	profiles    = map[string]bool{ProfileSwitchTender: true, ProfileV1: true, ProfileMerkle: true}
 	anchorTypes = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
 )

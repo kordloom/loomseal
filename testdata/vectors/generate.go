@@ -349,6 +349,21 @@ func (s *state) positives() {
 			"content, so a chain-v1 link recomputes whatever way this copy packages its evidence.",
 		s.sign(m))
 
+	// The same property in the tree profile. The comment above says packaging stays outside the
+	// commitment "in both hashing profiles", and until now only one of them had a vector proving it,
+	// so a mirror could allowlist the three members every other merkle vector happens to carry and
+	// still pass the whole corpus.
+	s.add("merkle-evidence-packaging", true, "signed, chained (tree of 4)", "",
+		"An evidence entry's present and location are packaging details outside the committed "+
+			"content, so a merkle leaf recomputes whatever way this copy packages its evidence. "+
+			"Every other member of the entry, the digest included, is inside the leaf.",
+		s.sign(s.merkleBundleShaped(4, []int{1}, 0, func(log []map[string]any) {
+			log[1]["evidence"] = []any{map[string]any{
+				"role": "snapshot", "digest": "sha256:" + strings.Repeat("cd", 32),
+				"media_type": "text/html", "present": true, "location": "evidence/snap.html",
+			}}
+		})))
+
 	s.add("head-attestation-role-swapped", false, "", "attestation",
 		"A head attestation whose role is rewritten after signing fails, because the role sits "+
 			"inside the signed preimage.",
@@ -1430,7 +1445,19 @@ func merkleLog(n int) []map[string]any {
 // merkleBundle builds a tree bundle over a log of size, disclosing the leaves at the given indexes
 // and, when fromSize is above zero, carrying a consistency proof from that earlier size.
 func (s *state) merkleBundle(size int, disclose []int, fromSize int) map[string]any {
+	return s.merkleBundleShaped(size, disclose, fromSize, nil)
+}
+
+// merkleBundleShaped builds a tree bundle whose log is adjusted before its leaves are computed, so a
+// vector can place members inside the committed content rather than only around it. Without a hook
+// here every merkle vector's claims carry the same three members, and the profile's handling of any
+// other member goes unexercised.
+func (s *state) merkleBundleShaped(size int, disclose []int, fromSize int,
+	shape func(log []map[string]any)) map[string]any {
 	log := merkleLog(size)
+	if shape != nil {
+		shape(log)
+	}
 	leaves := make([][]byte, 0, size)
 	for _, c := range log {
 		leaves = append(leaves, merkleLeafData(c))

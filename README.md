@@ -89,6 +89,19 @@ Or build from source:
 The binary has no dependencies outside the Go standard library, so every line that touches a
 verification decision is in this repository.
 
+Archives for Linux, macOS, and Windows are on the
+[releases page](https://github.com/kordloom/loomseal/releases). From v1.5.4 on, each release's
+SHA256SUMS carries a keyless Sigstore signature made by this repository's release workflow, and
+every archive carries SLSA build provenance. Check a download before you run it:
+
+    cosign verify-blob SHA256SUMS \
+      --signature SHA256SUMS.sig \
+      --certificate SHA256SUMS.pem \
+      --certificate-identity-regexp '^https://github.com/kordloom/loomseal/\.github/workflows/release\.yml@refs/tags/v' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+    shasum -a 256 -c SHA256SUMS --ignore-missing
+    gh attestation verify loomseal_<version>_linux_amd64.tar.gz --repo kordloom/loomseal
+
 ## Verify a bundle
 
     loomseal verify examples/audit.loomseal.json --evidence examples/evidence

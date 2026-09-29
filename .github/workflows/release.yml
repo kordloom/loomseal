@@ -7,6 +7,10 @@ on:
 
 permissions:
   contents: write
+  # Keyless signing and build provenance: the job's OIDC token mints the short-lived signing
+  # certificate, and the attestation is stored against this repository.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -57,6 +61,43 @@ jobs:
           done
           rm -rf dist/stage
           (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        if: github.event_name == 'release'
+
+      # One keyless signature over SHA256SUMS covers every archive through its checksum. Only a
+      # published release is signed, because a signature minted by a hand-run dispatch would carry
+      # the same workflow identity as a real one. The check after signing is the one the README
+      # gives, so a release cannot ship a signature its own instructions reject.
+      - name: Sign the checksums
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          cd dist
+          for i in 1 2 3; do
+            if cosign sign-blob --yes SHA256SUMS \
+                --output-signature SHA256SUMS.sig \
+                --output-certificate SHA256SUMS.pem; then
+              break
+            fi
+            if [ "$i" = 3 ]; then exit 1; fi
+            sleep 15
+          done
+          cosign verify-blob SHA256SUMS \
+            --signature SHA256SUMS.sig \
+            --certificate SHA256SUMS.pem \
+            --certificate-identity-regexp '^https://github.com/kordloom/loomseal/\.github/workflows/release\.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          shasum -a 256 -c SHA256SUMS --ignore-missing
+
+      # SLSA build provenance for every archive, checkable with `gh attestation verify`.
+      - name: Attest build provenance
+        if: github.event_name == 'release'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
 
       - name: Attach the archives to the release
         if: github.event_name == 'release'

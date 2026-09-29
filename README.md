@@ -22,12 +22,10 @@ and get a yes or a no in seconds, offline. You are not in the loop, which is the
 
 ## Free, and structurally so
 
-This is not a trial, an open-core tease, or a format with a paid tier waiting behind it.
-
 - **Apache-2.0.** Adopt it, fork it, re-implement it, ship it in a competing product. No
   negotiation, no license call, no per-seat price, no permission.
 - **Nothing to charge for.** LoomSeal is a file format and a checker. There is no server to rent
-  and no seat to meter, which is why it is free permanently rather than free for now.
+  and no seat to meter.
 - **Verification never phones home.** No account, no server, no network, no telemetry. The
   verifier works on a machine that has never heard of KordLoom and never will.
 - **Auditable end to end.** The binary has no dependencies outside the Go standard library, so

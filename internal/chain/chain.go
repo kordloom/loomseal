@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
@@ -124,11 +123,17 @@ type switchTenderPayload struct {
 	Method string `json:"method"`
 	// Path is the request path of the mutation.
 	Path string `json:"path"`
+	// ActorType is how the actor authenticated, empty on an entry recorded before the field existed.
+	ActorType string `json:"actor_type"`
+	// OnBehalfOf is the account whose authority the actor used, empty when it acted as itself.
+	OnBehalfOf string `json:"on_behalf_of"`
+	// ContentDigest covers the canonical change payload, empty when the request carried no body.
+	ContentDigest string `json:"content_digest"`
 }
 
-// checkSwitchTender recomputes the shipped SwitchTender construction: SHA-256 over the
-// JSON array of sequence, RFC 3339 nanosecond UTC time, actor, method, path, and the
-// previous link.
+// checkSwitchTender recomputes the shipped SwitchTender construction: SHA-256 over the canonical
+// JSON object of the claim's sequence, time, actor, method, path, and previous link, plus the actor
+// type, delegated account, and content digest when the entry carries them.
 func checkSwitchTender(b *bundle.Bundle) error {
 	for i := range b.Claims {
 		claim := &b.Claims[i]
@@ -153,21 +158,31 @@ func checkSwitchTender(b *bundle.Bundle) error {
 		if _, err := time.Parse(time.RFC3339, claim.At); err != nil {
 			return fmt.Errorf("%w: claim %d at: %w", ErrClaim, i, err)
 		}
-		// Held as []any because the JCS encoder works over parsed JSON values, which is what makes
-		// it the same encoder a verifier applies to a whole document.
-		fields := []any{
-			strconv.FormatInt(claim.Chain.Seq, 10), claim.At,
-			p.Actor, p.Method, p.Path, claim.Chain.Prev,
+		// Held as a map because the link commits to the canonical JSON object of the claim's
+		// fields, not to a fixed list in a fixed order. That is what makes the record extensible: a
+		// verifier canonicalizes whatever fields an entry carries, so an entry written before a field
+		// existed and one written after both recompute, and adding a field is not a revision that
+		// invalidates existing bundles. The previous construction hashed six values positionally,
+		// which made every new field a breaking change to this profile and to every implementation.
+		fields := map[string]any{
+			"seq":    claim.Chain.Seq,
+			"at":     claim.At,
+			"actor":  p.Actor,
+			"method": p.Method,
+			"path":   p.Path,
+			"prev":   claim.Chain.Prev,
 		}
-		// Serialized with this module's own JCS encoder rather than encoding/json.
-		//
-		// encoding/json escapes &, <, >, U+2028, and U+2029 for embedding in HTML. RFC 8785 emits
-		// them raw, which is what the producer and the Python reference both do. A single recorded
-		// path containing an ampersand therefore recomputed to a different link here than at the
-		// two other implementations, and this verifier called an honest chain broken. The entry is
-		// append-only, so every future bundle covering it failed the same way, and the only escape
-		// was to truncate the trail past it. This module already had the correct encoder; this call
-		// site simply did not use it.
+		// A field added later is hashed only when the entry carries it, exactly as the producer omits
+		// it, so an entry recorded before it existed recomputes unchanged.
+		for key, value := range map[string]string{
+			"actor_type":     p.ActorType,
+			"on_behalf_of":   p.OnBehalfOf,
+			"content_digest": p.ContentDigest,
+		} {
+			if value != "" {
+				fields[key] = value
+			}
+		}
 		payload, err := jcs.Serialize(fields)
 		if err != nil {
 			return fmt.Errorf("%w: claim %d: %w", ErrClaim, i, err)

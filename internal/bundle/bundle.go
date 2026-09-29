@@ -68,7 +68,7 @@ type Producer struct {
 
 // Subject is the thing the claims describe.
 type Subject struct {
-	// Type is the subject kind: url, fleet, or repo.
+	// Type is the subject kind: url, fleet, repo, or agent.
 	Type string `json:"type"`
 	// ID names the subject, such as the watched URL.
 	ID string `json:"id"`
@@ -175,7 +175,7 @@ var (
 
 // Allowed enum values from the schema.
 var (
-	subjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true}
+	subjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true, "agent": true}
 	profiles     = map[string]bool{ProfileSwitchTender: true, ProfileV1: true}
 	anchorTypes  = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
 )

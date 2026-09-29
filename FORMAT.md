@@ -195,11 +195,24 @@ anything beyond the window.
 
 ### switchtender-audit-v1
 
-The shipped SwitchTender construction. Each audit entry's link is SHA-256 over the compact JSON
-array, no insignificant whitespace, of six strings: its sequence as a decimal string, the time,
-actor, method, path, and previous link. Sequence starts at 1; the genesis previous link is the
-empty string. This profile is unkeyed: any verifier recomputes every link from the claim payloads
-alone.
+The shipped SwitchTender construction. Each audit entry's link is SHA-256 over the RFC 8785 canonical
+JSON **object** of the claim's fields: `seq` (a JSON number, starting at 1), `at` (the time, exactly
+as it appears in the bundle), `actor`, `method`, `path`, and `prev` (the previous link, the empty
+string at genesis). Sequence starts at 1. This profile is unkeyed: any verifier recomputes every link
+from the claim payloads alone.
+
+The object carries three further fields when, and only when, the entry has them, each a non-empty
+string: `actor_type` (how the actor authenticated), `on_behalf_of` (the account whose authority the
+actor used), and `content_digest` (`sha256:` and the hex digest of the canonical, redacted change
+payload). An empty field is omitted from the object rather than written as an empty string, so an
+entry recorded before a field existed and one that simply does not use it hash identically. Because
+the link commits to a canonical object rather than a fixed positional array, a field added later is
+committed without changing how any earlier entry hashes, which is what lets this profile carry new
+evidence without a new profile version. A verifier hashes exactly the fields present and no others.
+
+An earlier revision of this construction hashed six values as a positional array. Nothing consumed
+that form outside this repository, so the profile was redefined in place rather than versioned; a
+future addition, once the format has outside adopters, would take a new profile name instead.
 
 The time is the claim's `at` **exactly as it appears in the bundle**. A verifier hashes those bytes
 and must not parse the value and re-serialize it. A producer writes `at` in UTC, RFC 3339, ending in

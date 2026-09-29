@@ -15,6 +15,11 @@
     // and the www redirect would only fire on 404s.
     "run_worker_first": true
   },
+  // Page views and downloads are counted server side so a launch can be read afterward. Nothing
+  // about the visitor is stored, and no script runs in the browser.
+  "analytics_engine_datasets": [
+    { "binding": "SITE_EVENTS", "dataset": "loomseal_site_events" }
+  ],
   "routes": [
     { "pattern": "loomseal.com", "custom_domain": true },
     { "pattern": "www.loomseal.com", "custom_domain": true }

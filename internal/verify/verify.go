@@ -26,6 +26,7 @@ var knownClaimTypes = map[string]bool{
 	"switchtender.audit/1": true,
 	"switchtender.run/1":   true,
 	"loomseal.span/1":      true,
+	"loomseal.agentrun/1":  true,
 }
 
 // Options carries the caller's verification inputs.

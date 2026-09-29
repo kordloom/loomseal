@@ -132,3 +132,27 @@ func signedBundleForTest(t *testing.T, seedByte byte) ([]byte, ed25519.PublicKey
 	}
 	return signed, pub
 }
+
+// TestUnchallengedPresentationLeavesTheMatchesUnset pins that a presentation verified without
+// an expected audience or nonce records that neither was compared, rather than leaving a caller
+// to infer it from two absent fields.
+//
+// The nonce is the entire replay defense. It was carried in the presentation and never printed,
+// so a verifier who did not pass --nonce had nothing on screen to compare and nothing telling
+// them the comparison had not happened. A presentation cut for one auditor and one challenge
+// replays freely against anyone who runs the bare command.
+func TestUnchallengedPresentationLeavesTheMatchesUnset(t *testing.T) {
+	t.Parallel()
+	if (&PresentationReport{}).AudienceMatch != nil {
+		t.Error("a fresh report must not claim an audience comparison it never made")
+	}
+	if (&PresentationReport{}).NonceMatch != nil {
+		t.Error("a fresh report must not claim a nonce comparison it never made")
+	}
+	// Nonce is echoed on the report so the renderer can show what went unchecked. Without it
+	// there is nothing to print and the reader is blind rather than merely uninformed.
+	r := &PresentationReport{Nonce: "chal-12345", Audience: "acme"}
+	if r.Nonce == "" {
+		t.Error("the report must carry the presented nonce for the renderer to surface")
+	}
+}

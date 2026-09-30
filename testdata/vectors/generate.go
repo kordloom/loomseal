@@ -513,6 +513,25 @@ func (s *state) negatives() {
 		"A switchtender-audit-v1 chain.params.install_id that is not the producer's is refused: the "+
 			"param is informational and the per-claim install_id is what binds.", s.sign(m))
 
+	// Install ids minted from a key. The switchtender profile mints an install id from the install's
+	// first key, so the signing key and the id it names match by construction. A different key
+	// presenting a minted id is a rotation or another install's history re-signed, which the bundle
+	// alone cannot tell apart, so it is refused until the relying party pairs the key with the install.
+	other := ed25519.NewKeyFromSeed(bytesRepeat(21)).Public().(ed25519.PublicKey)
+	s.add("switchtender-install-minted-from-producer-key", true, "", "",
+		"A switchtender-audit-v1 install id minted from the producer's own key verifies unpinned.",
+		s.sign(s.switchTenderBoundAs(mintedInstallID(s.pub))))
+	s.add("switchtender-install-legacy-from-producer-key", true, "", "",
+		"A switchtender-audit-v1 install id in the legacy form, the producer key's first six bytes, "+
+			"verifies unpinned.", s.sign(s.switchTenderBoundAs(legacyInstallID(s.pub))))
+	s.add("switchtender-install-minted-from-another-key", false, "", "install",
+		"A switchtender-audit-v1 install id minted from another key is refused: it is a key rotation "+
+			"or another install's history re-signed, and only the relying party can accept a rotation, "+
+			"by pinning the key and naming the install.", s.sign(s.switchTenderBoundAs(mintedInstallID(other))))
+	s.add("switchtender-install-legacy-from-another-key", false, "", "install",
+		"A switchtender-audit-v1 install id in the legacy form minted from another key is refused for "+
+			"the same reason.", s.sign(s.switchTenderBoundAs(legacyInstallID(other))))
+
 	// A window that opens past sequence one with no prev link. Its first claim recomputes as though
 	// it were genesis, so only the window-genesis rule catches that it names no predecessor.
 	m = s.v1(1, false)
@@ -1107,6 +1126,34 @@ func (s *state) switchTenderBound() map[string]any {
 		"head": map[string]any{"seq": int64(1), "link": link},
 	}
 	return m
+}
+
+// switchTenderBoundAs builds the bound SwitchTender chain of switchTenderBound for another install
+// id, carried on the producer and folded into the link, so the chain itself is well formed.
+func (s *state) switchTenderBoundAs(install string) map[string]any {
+	m := s.base()
+	m["producer"].(map[string]any)["install_id"] = install
+	link := switchTenderLinkBound(1, at, "release-token", "POST", "/api/runs", "", install)
+	claim := m["claims"].([]any)[0].(map[string]any)
+	claim["payload"].(map[string]any)["install_id"] = install
+	claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+	m["chain"] = map[string]any{
+		"profile": profileSwitchTender, "keyed": false,
+		"head": map[string]any{"seq": int64(1), "link": link},
+	}
+	return m
+}
+
+// mintedInstallID is the install id the switchtender profile mints from a key: in_ and the first 32
+// hex digits of the key's SHA-256.
+func mintedInstallID(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return "in_" + hex.EncodeToString(sum[:16])
+}
+
+// legacyInstallID is the legacy switchtender install id, in_ and the hex of the key's first six bytes.
+func legacyInstallID(pub ed25519.PublicKey) string {
+	return "in_" + hex.EncodeToString(pub[:6])
 }
 
 // switchTenderDeclaredHeadProof pushes the head of the anchored-proof bundle beyond the disclosed

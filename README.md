@@ -165,6 +165,17 @@ In `--json` the same distinction is `producer_pinned`, always emitted, so a pipe
 gates on `ok` can also see whether the signer was established. Treat an unpinned `ok` as
 "this document is internally consistent," never as "this document is from who it says."
 
+An install id raises the same question about the install. SwitchTender mints an install's id from
+its first key, so a bundle whose install id was minted from some other key is either that install
+after a key rotation or another install's history re-signed under a new key, links and third-party
+anchors intact. The bundle alone cannot tell the two apart, so verification refuses it and says
+why. Accepting a rotation is a statement only you can make: pin the new key and name the install.
+
+    loomseal verify bundle.loomseal.json --fingerprint sha256:69f25ff6... --accept-install in_7f3a...
+
+A pin alone does not accept it, because a pin trusts the key as itself, not as a speaker for an
+install. `install_binding` in `--json` says which case applied.
+
 A counter-signature needs the same treatment, and needs it more. An attestation sits outside
 the producer signature, deliberately, so a counterparty can vouch for a claim after the
 producer signed it. That also means anyone holding a bundle can attach one, signed by a key

@@ -42,6 +42,11 @@ type Options struct {
 	EvidenceDir string
 	// Fingerprint, when set, requires the producer key to match this sha256: fingerprint.
 	Fingerprint string
+	// AcceptInstall, set together with Fingerprint, pairs the pinned key with this install id. It is
+	// how a relying party accepts a key rotation: a switchtender-audit-v1 install id minted from one
+	// key and presented by another verifies only when the caller names that install for the key it
+	// pinned. Without a pin it is refused, because only a key the caller has verified can be paired.
+	AcceptInstall string
 	// Attestors, when non-empty, is the set of sha256: fingerprints a counter-signature may be
 	// signed by. Attestations sit outside the producer signature so a counterparty can add one
 	// later, which means any holder of a bundle can add one too, under any role. Without a set
@@ -80,6 +85,11 @@ type Report struct {
 	// a bundle was signed, never by whom. Always emitted, because a reader deciding what a
 	// verdict is worth needs to see the absence, not infer it from a missing field.
 	ProducerPinned bool `json:"producer_pinned"`
+	// InstallBinding reports how a switchtender-audit-v1 install id relates to the producer key when
+	// the id is in a form minted from a key: "minted from the producer key", or "rotation accepted"
+	// when the caller paired the pinned key with the install. Empty when the id is in no key-minted
+	// form, which establishes nothing either way.
+	InstallBinding string `json:"install_binding,omitempty"`
 	// ChainPresent reports whether the bundle declares a chain.
 	ChainPresent bool `json:"chain_present"`
 	// ChainProfile is the declared chain profile.
@@ -240,6 +250,7 @@ func Run(raw []byte, opts Options) *Report {
 	r.Subject = b.Subject.Type + " " + b.Subject.ID
 
 	r.checkSignature(raw, b, opts.Fingerprint)
+	r.checkInstallKey(b, opts)
 	if !bundle.SubjectTypes[b.Subject.Type] {
 		r.UnknownSubjectType = b.Subject.Type
 	}
@@ -321,6 +332,74 @@ func (r *Report) checkSignature(raw []byte, b *bundle.Bundle, pin string) {
 			r.problem("producer key %s does not match pinned fingerprint %s", r.KeyID, pin)
 		}
 	}
+}
+
+// checkInstallKey refuses a switchtender-audit-v1 bundle whose install id was minted from a key
+// other than the one that signed it, unless the caller pinned the key and named the install.
+//
+// The switchtender profile mints an install id from the install's first public key, so a key and
+// the id minted from it match by construction. A different key presenting that id is either the
+// same install after a key rotation or another install's history re-signed and passed off as its
+// own, anchors and all, and the two are byte-identical from the bundle alone. The format makes a
+// new key claiming an existing install a rotation to accept explicitly, never silently, so the
+// verdict stays short of verified until the caller pairs the key with the install. A pin alone is
+// not that pairing: it trusts the key as itself, and a fingerprint copied out of the very bundle
+// being checked would otherwise accept the lift.
+func (r *Report) checkInstallKey(b *bundle.Bundle, opts Options) {
+	id := b.Producer.InstallID
+	if opts.AcceptInstall != "" {
+		if opts.Fingerprint == "" {
+			r.problem("install: accepting install %s needs the producer key pinned with a fingerprint",
+				opts.AcceptInstall)
+			return
+		}
+		if opts.AcceptInstall != id {
+			r.problem("install: accepted install %s, but this bundle names %s", opts.AcceptInstall, id)
+			return
+		}
+	}
+	if !r.SignatureOK || b.Chain == nil || b.Chain.Profile != bundle.ProfileSwitchTender {
+		return
+	}
+	pub, err := base64.StdEncoding.DecodeString(b.Producer.PublicKey)
+	if err != nil || len(pub) != ed25519.PublicKeySize || !keyMintedForm(id) {
+		return
+	}
+	current, legacy := keyMintedInstallIDs(pub)
+	switch {
+	case id == current || id == legacy:
+		r.InstallBinding = "minted from the producer key"
+	case opts.AcceptInstall == id && r.FingerprintMatch != nil && *r.FingerprintMatch:
+		r.InstallBinding = "rotation accepted"
+	default:
+		r.problem("install: %s was minted from a different key than the one that signed this bundle, "+
+			"so it is either a key rotation or another install's history re-signed; pin the install's "+
+			"current key and accept the install to verify it", id)
+	}
+}
+
+// keyMintedInstallIDs returns the two install ids the switchtender profile mints from a public key:
+// the current form, in_ and the first 128 bits of the key's SHA-256, and the legacy form, in_ and
+// the key's first six bytes.
+func keyMintedInstallIDs(pub ed25519.PublicKey) (current, legacy string) {
+	sum := sha256.Sum256(pub)
+	return "in_" + hex.EncodeToString(sum[:16]), "in_" + hex.EncodeToString(pub[:6])
+}
+
+// keyMintedForm reports whether an install id has the shape of one minted from a key, in_ followed
+// by 32 or 12 lowercase hex digits. An id of any other shape was assigned some other way, and
+// nothing about the key follows from it.
+func keyMintedForm(id string) bool {
+	rest, ok := strings.CutPrefix(id, "in_")
+	if !ok || (len(rest) != 32 && len(rest) != 12) {
+		return false
+	}
+	for _, c := range rest {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // checkClaimTypes records claim types outside the registry.

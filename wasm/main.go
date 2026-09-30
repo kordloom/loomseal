@@ -53,7 +53,8 @@ func verifyPresentation(_ js.Value, args []js.Value) any {
 // The first argument is a Uint8Array holding the file exactly as it was read. Bytes are copied
 // rather than taken as a string because a signature covers the canonical form of the document,
 // and any re-encoding on the way in could change the verdict. The optional second argument is a
-// sha256: fingerprint to pin the producer key against.
+// sha256: fingerprint to pin the producer key against, and the optional third an install id to
+// accept for that key after a rotation.
 func verifyBundle(_ js.Value, args []js.Value) any {
 	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
 		return errorReport("no bundle supplied")
@@ -64,6 +65,11 @@ func verifyBundle(_ js.Value, args []js.Value) any {
 	var opts verify.Options
 	if len(args) > 1 && args[1].Type() == js.TypeString {
 		opts.Fingerprint = args[1].String()
+	}
+	// A third argument pairs the pinned key with an install id, accepting a key rotation. It means
+	// nothing without the pin, and the verifier refuses it alone.
+	if len(args) > 2 && args[2].Type() == js.TypeString {
+		opts.AcceptInstall = args[2].String()
 	}
 
 	// Evidence artifacts live on the relying party's disk, which the page cannot read. Digests

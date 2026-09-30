@@ -18,6 +18,8 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	evidence := fs.String("evidence", "", "directory of evidence artifacts to check")
 	fingerprint := fs.String("fingerprint", "", "required producer key fingerprint, sha256:<hex>")
+	acceptInstall := fs.String("accept-install", "",
+		"with --fingerprint, accept a key rotation: the pinned key speaks for this install id")
 	// Repeatable, because a bundle can legitimately carry counter-signatures from several
 	// parties and a relying party usually knows all of them by fingerprint.
 	var attestors stringList
@@ -60,7 +62,7 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		return CodeUsage
 	}
 	bundleOpts := verify.Options{EvidenceDir: *evidence, Fingerprint: *fingerprint,
-		Attestors: attestors}
+		AcceptInstall: *acceptInstall, Attestors: attestors}
 	// One command accepts either a bundle or a holder presentation that wraps one, told apart by the
 	// presentation version member.
 	if verify.LooksLikePresentation(raw) {
@@ -167,6 +169,12 @@ func renderReport(w io.Writer, r *verify.Report) {
 	}
 	if r.FingerprintMatch != nil {
 		fmt.Fprintf(w, "pin        match %t\n", *r.FingerprintMatch)
+	}
+	switch r.InstallBinding {
+	case "minted from the producer key":
+		fmt.Fprintln(w, "install    minted from the producer key")
+	case "rotation accepted":
+		fmt.Fprintln(w, "install    minted from another key, rotation accepted for the pinned key")
 	}
 	// Any key signs its own bundle, so a valid signature says a bundle was signed, never by
 	// whom. Without a pin the reader sees "signature ok" and a key id they have nothing to

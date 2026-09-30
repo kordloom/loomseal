@@ -429,6 +429,33 @@ def _verify_cert_signature(cert, signature, signed, digest_name):
 
 # ---------- verification ----------
 
+# _MINTED_FORM is the shape of a switchtender install id minted from a key: in_ and 32 hex digits of
+# the key's SHA-256, or the legacy in_ and 12 hex digits, the key's first six bytes.
+_MINTED_FORM = re.compile(r"in_(?:[0-9a-f]{32}|[0-9a-f]{12})")
+
+
+def _check_install_key(b, report):
+    """Refuse a switchtender-audit-v1 install id minted from a key other than the one that signed.
+
+    A different key presenting a minted id is a key rotation or another install's history re-signed,
+    and the bundle alone cannot tell them apart. Accepting a rotation takes a pinned key paired with
+    the install, and this verifier takes no pin, so here the case is always refused.
+    """
+    chain = b.get("chain")
+    if not report["signature_ok"] or not chain or chain.get("profile") != SWITCHTENDER:
+        return
+    install = b["producer"].get("install_id", "")
+    if not _MINTED_FORM.fullmatch(install):
+        return
+    pub = base64.b64decode(b["producer"]["public_key"])
+    if install in ("in_" + hashlib.sha256(pub).hexdigest()[:32], "in_" + pub[:6].hex()):
+        report["install_binding"] = "minted from the producer key"
+        return
+    raise VError("install", f"{install} was minted from a different key than the one that signed this "
+                            "bundle, so it is either a key rotation or another install's history "
+                            "re-signed; pin the install's current key and accept the install to verify it")
+
+
 def verify(raw_bytes, evidence_dir=None):
     """Verify one bundle and return a report dict. Failure is a report, never an exception."""
     report = {"ok": False, "level": "not verified", "unsupported": False, "problems": [],
@@ -443,7 +470,7 @@ def verify(raw_bytes, evidence_dir=None):
               "disclosures_present": False, "fields_revealed": 0, "fields_redacted": 0,
               "revealed_fields": [], "attestations_present": False, "attestations_verified": 0,
               "head_attestations_verified": 0, "head_attestors": [],
-              "attestors": []}
+              "attestors": [], "install_binding": ""}
     try:
         b = parse_strict(raw_bytes)
         _schema_check(b)
@@ -452,6 +479,7 @@ def verify(raw_bytes, evidence_dir=None):
         if b["subject"].get("type") not in _KNOWN_SUBJECTS:
             report["unknown_subject_type"] = b["subject"].get("type")
         _check_chain(b, report)
+        _check_install_key(b, report)
         _check_disclosures(b, report)
         _check_attestations(b, report)
         _check_head_attestations(b, report)
@@ -1347,6 +1375,11 @@ def failing_check_error(check, r):
                                                          any("head attestation" in p for p in r["problems"])))
         if not present or not any("attestation" in p for p in r["problems"]):
             return f"attestation case did not fail on an attestation: {r['problems']}"
+    elif check == "install":
+        if not r["signature_ok"] or not r["chain_ok"]:
+            return "install case failed earlier than the install check"
+        if not any(p.startswith("install") for p in r["problems"]):
+            return f"install case did not fail on the install check: {r['problems']}"
     elif check == "unsupported":
         if not r.get("unsupported"):
             return f"unsupported case did not set the unsupported verdict: {r['problems']}"

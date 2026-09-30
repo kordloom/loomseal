@@ -177,6 +177,13 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 			t.Errorf("attestation case did not fail on an attestation: claim %t head %t problems %v",
 				r.AttestationsPresent, r.HeadAttestationsPresent, r.Problems)
 		}
+	case "install":
+		if !r.SignatureOK || !r.ChainOK {
+			t.Errorf("install case failed earlier than the install check: %v", r.Problems)
+		}
+		if !hasProblem(r, "install") {
+			t.Errorf("install case did not fail on the install check: %v", r.Problems)
+		}
 	case "unsupported":
 		if !r.Unsupported {
 			t.Errorf("unsupported case did not set the unsupported verdict: %v", r.Problems)

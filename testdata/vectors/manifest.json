@@ -436,6 +436,32 @@
       "why": "A bound switchtender-audit-v1 entry whose folded install_id is not the producer's is refused, which is what stops a published receipt from being lifted into another install's bundle."
     },
     {
+      "name": "switchtender-install-legacy-from-another-key",
+      "file": "switchtender-install-legacy-from-another-key.loomseal.json",
+      "must_verify": false,
+      "failing_check": "install",
+      "why": "A switchtender-audit-v1 install id in the legacy form minted from another key is refused for the same reason."
+    },
+    {
+      "name": "switchtender-install-legacy-from-producer-key",
+      "file": "switchtender-install-legacy-from-producer-key.loomseal.json",
+      "must_verify": true,
+      "why": "A switchtender-audit-v1 install id in the legacy form, the producer key's first six bytes, verifies unpinned."
+    },
+    {
+      "name": "switchtender-install-minted-from-another-key",
+      "file": "switchtender-install-minted-from-another-key.loomseal.json",
+      "must_verify": false,
+      "failing_check": "install",
+      "why": "A switchtender-audit-v1 install id minted from another key is refused: it is a key rotation or another install's history re-signed, and only the relying party can accept a rotation, by pinning the key and naming the install."
+    },
+    {
+      "name": "switchtender-install-minted-from-producer-key",
+      "file": "switchtender-install-minted-from-producer-key.loomseal.json",
+      "must_verify": true,
+      "why": "A switchtender-audit-v1 install id minted from the producer's own key verifies unpinned."
+    },
+    {
       "name": "switchtender-params-disagrees",
       "file": "switchtender-params-disagrees.loomseal.json",
       "must_verify": false,

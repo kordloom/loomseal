@@ -258,6 +258,17 @@ and the type `loomseal.rotation/1` is reserved in the registry for that statemen
 party's trust is pin-based: it pins the key it has verified for an install, and a new key
 claiming an existing install id is a rotation event to accept explicitly, never silently.
 
+The switchtender profile makes that checkable. It mints an install id from a key in one of two
+forms: `in_` followed by the first 32 hex digits of the SHA-256 of the public key, or the legacy
+`in_` followed by the hex of the key's first six bytes. When a switchtender-audit-v1 bundle's
+`producer.install_id` has either form and was not minted from `producer.public_key`, a verifier
+**refuses** it, as a check of its own named `install`, unless the relying party pinned the producer
+key and named that install as accepted for it. A pin alone does not accept the rotation. It trusts
+the key as itself, not as a speaker for an install, and a fingerprint copied out of the bundle under
+test would otherwise accept another install's history re-signed under a new key, with every link
+and every third-party anchor intact. An install id in neither form was assigned some other way and
+establishes nothing about the key, so it is not checked.
+
 ## Chain profiles
 
 **What a link or leaf commits to.** Every hashing profile shares one committed-content rule: a

@@ -42,7 +42,7 @@ every release from 1.0 onward.
 
 **What 1.0 freezes.** The bundle schema, the canonical form (JCS with the integer-only number
 profile), the signature preimages, the three chain profiles as specified here, the anchor and
-attestation constructions, and every conformance vector shipped at the tag. A shipped vector is
+attestation constructions, and every conformance vector shipped at `snapshot/v1.0.0`. A shipped vector is
 never invalidated: a change that would flip any existing vector's verdict is not a revision of
 this format, it is a different format under a different version string.
 

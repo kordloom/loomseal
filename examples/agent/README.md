@@ -27,7 +27,8 @@ describe a demonstration rather than a recorded hour.
 The cryptography is real. The links recompute from the claim contents, the signature verifies
 against the producer key, the span counts are checked rather than asserted, and the Go and
 Python verifiers agree on the result independently. `HEAD` carries the chain head and is
-committed to this repository, which is what the bundle's anchor references.
+committed to this repository, which is what the bundle's anchor references. The anchor's time is
+the commit that first published `HEAD` in this repository's history, so its commit list confirms it.
 
 ## Format support
 

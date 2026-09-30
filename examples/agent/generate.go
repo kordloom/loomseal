@@ -44,6 +44,12 @@ const (
 	anchorRef = "https://github.com/kordloom/loomseal/commits/main/examples/agent/HEAD"
 )
 
+// headPublished is when HEAD first appeared in this repository's public history, in the commit
+// holding the public snapshot of v0.8.0. The anchor claims the head existed by then, which anyone
+// can confirm from the file's commit history, so it names that commit's time rather than a moment
+// inside the demonstration session.
+const headPublished = "2026-09-29T23:10:01Z"
+
 // start is the session's first beat time. Later times are offsets from it.
 var start = time.Date(2026, 8, 4, 17, 0, 0, 0, time.UTC)
 
@@ -211,7 +217,7 @@ func addAnchor(m map[string]any) {
 	m["anchors"] = []any{map[string]any{
 		"type": "git",
 		"ref":  anchorRef,
-		"at":   iso(start.Add(180 * time.Second)),
+		"at":   headPublished,
 		"seq":  head["seq"],
 		"link": head["link"],
 	}}

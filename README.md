@@ -257,9 +257,9 @@ verify offline with the binary in this repo.
 
 ## History
 
-LoomSeal was developed privately before its first public release, v1.5.4. The commits before it hold
-the code of every earlier release, v0.1.0 through v1.5.3, tagged `snapshot/vX.Y.Z`. Every release
-from v1.5.4 on is built from this repository.
+The commits before v1.5.4 each hold the code of an earlier release, v0.1.0 through v1.5.3, tagged
+`snapshot/vX.Y.Z`. Those releases were published from an earlier repository that is no longer
+public. Every release from v1.5.4 on is built and signed from this repository.
 
 ## License
 

@@ -88,7 +88,7 @@ jobs:
             --certificate SHA256SUMS.pem \
             --certificate-identity-regexp '^https://github.com/kordloom/loomseal/\.github/workflows/release\.yml@refs/tags/v' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          shasum -a 256 -c SHA256SUMS --ignore-missing
+          sha256sum -c SHA256SUMS
 
       # SLSA build provenance for every archive, checkable with `gh attestation verify`.
       - name: Attest build provenance

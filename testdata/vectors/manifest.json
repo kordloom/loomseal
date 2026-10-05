@@ -58,6 +58,125 @@
       "why": "A loomseal-chain-v1 claim carrying a counterparty attestation over its link verifies; the counter-signature is checked against the signer's own key and reported as vouched."
     },
     {
+      "name": "casefold-coords-seq",
+      "file": "casefold-coords-seq.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A case variant of a claim's chain seq is refused at parse rather than folded onto the seq coordinate."
+    },
+    {
+      "name": "casefold-head-attestation-key-id",
+      "file": "casefold-head-attestation-key-id.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A case variant of a head attestation's key_id is refused at parse rather than folded onto the key the attestation is checked against."
+    },
+    {
+      "name": "casefold-head-seq",
+      "file": "casefold-head-seq.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A case variant of the chain head's seq is refused at parse rather than folded onto the coordinate the head match reads."
+    },
+    {
+      "name": "casefold-producer-install-id",
+      "file": "casefold-producer-install-id.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A case variant of producer.install_id is refused at parse rather than folded onto the install_id field."
+    },
+    {
+      "name": "casefold-signature-key-id",
+      "file": "casefold-signature-key-id.loomseal.json",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A case variant of a signature's key_id is refused at parse rather than folded onto the key_id field."
+    },
+    {
+      "name": "casefold-span-beat",
+      "file": "casefold-span-beat.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "The span field beat is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
+    },
+    {
+      "name": "casefold-span-cadence-s",
+      "file": "casefold-span-cadence-s.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "The span field cadence_s is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
+    },
+    {
+      "name": "casefold-span-cadence-s-chain-v1",
+      "file": "casefold-span-cadence-s-chain-v1.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Under a profile whose link commits the whole claim, the span field cadence_s is still read from its exact key, so a variant that folds onto it does not stand in for it."
+    },
+    {
+      "name": "casefold-span-count",
+      "file": "casefold-span-count.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "The span field count is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
+    },
+    {
+      "name": "casefold-span-stream",
+      "file": "casefold-span-stream.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "The span field stream is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
+    },
+    {
+      "name": "casefold-switchtender-actor",
+      "file": "casefold-switchtender-actor.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "The bound member actor is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
+    },
+    {
+      "name": "casefold-switchtender-actor-type",
+      "file": "casefold-switchtender-actor-type.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "The bound member actor_type is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
+    },
+    {
+      "name": "casefold-switchtender-content-digest",
+      "file": "casefold-switchtender-content-digest.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "The bound member content_digest is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
+    },
+    {
+      "name": "casefold-switchtender-install-id",
+      "file": "casefold-switchtender-install-id.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "The bound member install_id is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
+    },
+    {
+      "name": "casefold-switchtender-method",
+      "file": "casefold-switchtender-method.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "The bound member method is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
+    },
+    {
+      "name": "casefold-switchtender-on-behalf-of",
+      "file": "casefold-switchtender-on-behalf-of.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "The bound member on_behalf_of is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
+    },
+    {
+      "name": "casefold-switchtender-path",
+      "file": "casefold-switchtender-path.loomseal.json",
+      "must_verify": false,
+      "failing_check": "chain",
+      "why": "The bound member path is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
+    },
+    {
       "name": "chain-broken-prev",
       "file": "chain-broken-prev.loomseal.json",
       "must_verify": false,
@@ -121,6 +240,13 @@
       "why": "A head at the newest sequence must carry that claim's link."
     },
     {
+      "name": "keyed-anchored-structural",
+      "file": "keyed-anchored-structural.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (structural)",
+      "why": "A keyed chain verifies structurally only, so an anchor over its head is matched and reported but earns no anchored wording: the verifier never recomputed the link to tie it to the claim content."
+    },
+    {
       "name": "keyed-structural",
       "file": "keyed-structural.loomseal.json",
       "must_verify": true,
@@ -140,6 +266,13 @@
       "must_verify": false,
       "failing_check": "parse",
       "why": "A lone low surrogate escape is invalid and is rejected, not coerced."
+    },
+    {
+      "name": "merkle-anchor-on-consistency-root",
+      "file": "merkle-anchor-on-consistency-root.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 6, append-only from 4), anchored by reference",
+      "why": "An anchor on the root a verified consistency proof starts from matches, because the proof shows the log grew from exactly the root the anchor fixed."
     },
     {
       "name": "merkle-bad-inclusion-path",
@@ -266,6 +399,16 @@
       "must_verify": false,
       "failing_check": "parse",
       "why": "Invalid UTF-8 input is rejected, not coerced to the replacement character."
+    },
+    {
+      "name": "record-member-on-nonrecord",
+      "file": "record-member-on-nonrecord.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A reserved disclosed-records member on a non-record claim is an ordinary payload member the link does not commit, so a conforming bundle carrying one still verifies, with the member reported unchecked.",
+      "unchecked": [
+        "claim 0 reason_text"
+      ]
     },
     {
       "name": "signature-alg-rewritten",
@@ -462,6 +605,39 @@
       "why": "A switchtender-audit-v1 install id minted from the producer's own key verifies unpinned."
     },
     {
+      "name": "switchtender-outcome-exact",
+      "file": "switchtender-outcome-exact.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An outcome committed under the exact form reproduces its entry's digest from the bytes carried, and the spec beside it hashes to the spec digest the outcome names."
+    },
+    {
+      "name": "switchtender-outcome-exact-altered",
+      "file": "switchtender-outcome-exact-altered.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A receipt whose exact-form outcome was changed and re-signed fails, because the bytes carried no longer reproduce the digest the entry committed and the link fixed."
+    },
+    {
+      "name": "switchtender-outcome-legacy",
+      "file": "switchtender-outcome-legacy.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "An outcome committed under an older form, over the producer's own redaction of the record, verifies as carried and unchecked, never as verified, and the spec beside it has nothing verified to be held against.",
+      "unchecked": [
+        "claim 1 outcome_body",
+        "claim 1 outcome_nonce",
+        "claim 1 spec_body"
+      ]
+    },
+    {
+      "name": "switchtender-outcome-spec-altered",
+      "file": "switchtender-outcome-spec-altered.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A receipt with no decision whose disclosed spec was changed and re-signed fails, because the spec no longer hashes to the spec digest the verified outcome names."
+    },
+    {
       "name": "switchtender-params-disagrees",
       "file": "switchtender-params-disagrees.loomseal.json",
       "must_verify": false,
@@ -474,6 +650,625 @@
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "A switchtender-audit-v1 chain that stamps chain.params.install_id without folding it into its links verifies as pre-binding: the param is not part of this profile's link, so a producer adopting per-entry binding keeps every receipt it already published."
+    },
+    {
+      "name": "switchtender-record-correction",
+      "file": "switchtender-record-correction.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A correction appended to a decision's reason reproduces its own entry's content digest, and its text opens the commitment bound to the correction's id."
+    },
+    {
+      "name": "switchtender-record-correction-altered",
+      "file": "switchtender-record-correction-altered.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A receipt whose disclosed correction text was changed and re-signed fails, because the text no longer opens the commitment the correction body carries."
+    },
+    {
+      "name": "switchtender-record-decision-altered",
+      "file": "switchtender-record-decision-altered.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A receipt whose disclosed decision body was changed and re-signed fails, because the body no longer reproduces the content digest its entry committed and the link fixed."
+    },
+    {
+      "name": "switchtender-record-names-chain-v1",
+      "file": "switchtender-record-names-chain-v1.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The same names on a claim that is no record, under a profile whose link commits the whole claim, are committed members like any other and verify."
+    },
+    {
+      "name": "switchtender-record-names-off-record",
+      "file": "switchtender-record-names-off-record.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Record member names on a claim whose committed method and path make it no record are ordinary members, whatever they hold: a bundle that used them as plain fields before records existed verifies as it always did, with each reported unchecked.",
+      "unchecked": [
+        "claim 0 Outcome_body",
+        "claim 0 decision_body",
+        "claim 0 decision_nonce",
+        "claim 0 reason_text",
+        "claim 0 spec_body"
+      ]
+    },
+    {
+      "name": "switchtender-record-reason",
+      "file": "switchtender-record-reason.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A decision body that reproduces its entry's keyed content digest, a reason that opens the commitment the body carries, and a spec that hashes to the digest the decision committed all verify."
+    },
+    {
+      "name": "switchtender-record-reason-altered",
+      "file": "switchtender-record-reason-altered.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A receipt whose disclosed reason was changed and re-signed by the producer keeps its signature and every link, and still fails, because the text no longer opens the commitment the decision body carries."
+    },
+    {
+      "name": "switchtender-record-reason-redacted",
+      "file": "switchtender-record-reason-redacted.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A reason removed by a privacy redaction is reported by its category and verifies: its text and random value are gone, its commitment stays, and it cannot be opened by design.",
+      "redacted": [
+        "claim 1 reason_redacted"
+      ]
+    },
+    {
+      "name": "switchtender-record-reason-uncommitted",
+      "file": "switchtender-record-reason-uncommitted.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A reason disclosed beside a decision body that commits none fails: it is text the chain never fixed, and a reader must not be shown it as part of the record."
+    },
+    {
+      "name": "switchtender-record-reason-withheld",
+      "file": "switchtender-record-reason-withheld.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A decision body that commits a reason the receipt does not disclose verifies, with the reason reported as committed and not disclosed."
+    },
+    {
+      "name": "switchtender-record-spec-altered",
+      "file": "switchtender-record-spec-altered.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A receipt whose disclosed spec was changed and re-signed fails, because it no longer hashes to the spec digest the verified decision committed."
+    },
+    {
+      "name": "switchtender-record-unkeyed",
+      "file": "switchtender-record-unkeyed.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A decision recorded before nonces carries the unkeyed content digest and an empty nonce, and its body verifies against the SHA-256 of its canonical bytes, reported as legacy, since nothing before it in the bundle is keyed.",
+      "legacy": [
+        "claim 1 decision_body"
+      ]
+    },
+    {
+      "name": "switchtender-record-unkeyed-after-keyed",
+      "file": "switchtender-record-unkeyed-after-keyed.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A decision under the unkeyed content digest after an entry under the keyed form fails: the producer was keying its digests by then, so the entry is not one from before nonces, and an unkeyed digest lets anyone holding the bundle confirm a guess of the body."
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-args",
+      "file": "tamper-loomseal-agentrun-1-args.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's args, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-args-case",
+      "file": "tamper-loomseal-agentrun-1-args-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Args\" beside args, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Args",
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-args-fold",
+      "file": "tamper-loomseal-agentrun-1-args-fold.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"argſ\" beside args, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 args",
+        "claim 0 argſ",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-outcome",
+      "file": "tamper-loomseal-agentrun-1-outcome.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's outcome, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-outcome-case",
+      "file": "tamper-loomseal-agentrun-1-outcome-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Outcome\" beside outcome, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Outcome",
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-session",
+      "file": "tamper-loomseal-agentrun-1-session.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's session, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-session-case",
+      "file": "tamper-loomseal-agentrun-1-session-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Session\" beside session, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Session",
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-session-fold",
+      "file": "tamper-loomseal-agentrun-1-session-fold.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"ſession\" beside session, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool",
+        "claim 0 ſession"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-tool",
+      "file": "tamper-loomseal-agentrun-1-tool.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's tool, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-agentrun-1-tool-case",
+      "file": "tamper-loomseal-agentrun-1-tool-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Tool\" beside tool, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Tool",
+        "claim 0 args",
+        "claim 0 outcome",
+        "claim 0 session",
+        "claim 0 tool"
+      ]
+    },
+    {
+      "name": "tamper-loomseal-span-1-beat",
+      "file": "tamper-loomseal-span-1-beat.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1's beat, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-loomseal-span-1-beat-case",
+      "file": "tamper-loomseal-span-1-beat-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1 carries \"Beat\" beside beat, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-loomseal-span-1-cadence_s",
+      "file": "tamper-loomseal-span-1-cadence_s.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1's cadence_s, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-loomseal-span-1-cadence_s-case",
+      "file": "tamper-loomseal-span-1-cadence_s-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1 carries \"Cadence_s\" beside cadence_s, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-loomseal-span-1-cadence_s-fold",
+      "file": "tamper-loomseal-span-1-cadence_s-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1 carries \"cadence_ſ\" beside cadence_s, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-loomseal-span-1-count",
+      "file": "tamper-loomseal-span-1-count.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1's count, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-loomseal-span-1-count-case",
+      "file": "tamper-loomseal-span-1-count-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1 carries \"Count\" beside count, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-loomseal-span-1-stream",
+      "file": "tamper-loomseal-span-1-stream.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1's stream, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-loomseal-span-1-stream-case",
+      "file": "tamper-loomseal-span-1-stream-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1 carries \"Stream\" beside stream, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-loomseal-span-1-stream-fold",
+      "file": "tamper-loomseal-span-1-stream-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "span",
+      "why": "Claim 1 carries \"ſtream\" beside stream, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-correction_body",
+      "file": "tamper-switchtender-audit-1-correction_body.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 2's correction_body, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-correction_body-case",
+      "file": "tamper-switchtender-audit-1-correction_body-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 2 carries \"Correction_body\" beside correction_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-correction_nonce",
+      "file": "tamper-switchtender-audit-1-correction_nonce.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 2's correction_nonce, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-correction_nonce-case",
+      "file": "tamper-switchtender-audit-1-correction_nonce-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 2 carries \"Correction_nonce\" beside correction_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-decision_body",
+      "file": "tamper-switchtender-audit-1-decision_body.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1's decision_body, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-decision_body-case",
+      "file": "tamper-switchtender-audit-1-decision_body-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"Decision_body\" beside decision_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-decision_body-fold",
+      "file": "tamper-switchtender-audit-1-decision_body-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"deciſion_body\" beside decision_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-decision_nonce",
+      "file": "tamper-switchtender-audit-1-decision_nonce.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1's decision_nonce, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-decision_nonce-case",
+      "file": "tamper-switchtender-audit-1-decision_nonce-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"Decision_nonce\" beside decision_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-decision_nonce-fold",
+      "file": "tamper-switchtender-audit-1-decision_nonce-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"deciſion_nonce\" beside decision_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-outcome_body",
+      "file": "tamper-switchtender-audit-1-outcome_body.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 3's outcome_body, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-outcome_body-case",
+      "file": "tamper-switchtender-audit-1-outcome_body-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 3 carries \"Outcome_body\" beside outcome_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-outcome_body-older",
+      "file": "tamper-switchtender-audit-1-outcome_body-older.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 1's outcome_body, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 1 outcome_body",
+        "claim 1 outcome_nonce",
+        "claim 1 spec_body"
+      ]
+    },
+    {
+      "name": "tamper-switchtender-audit-1-outcome_nonce",
+      "file": "tamper-switchtender-audit-1-outcome_nonce.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 3's outcome_nonce, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-outcome_nonce-case",
+      "file": "tamper-switchtender-audit-1-outcome_nonce-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 3 carries \"Outcome_nonce\" beside outcome_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-outcome_nonce-older",
+      "file": "tamper-switchtender-audit-1-outcome_nonce-older.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 1's outcome_nonce, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 1 outcome_body",
+        "claim 1 outcome_nonce",
+        "claim 1 spec_body"
+      ]
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_random",
+      "file": "tamper-switchtender-audit-1-reason_random.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1's reason_random, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_random-case",
+      "file": "tamper-switchtender-audit-1-reason_random-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"Reason_random\" beside reason_random, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_random-fold",
+      "file": "tamper-switchtender-audit-1-reason_random-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"reaſon_random\" beside reason_random, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_redacted",
+      "file": "tamper-switchtender-audit-1-reason_redacted.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 1's reason_redacted, altered and re-signed by the producer, verifies with the member reported redacted, as schema/claim-members.json declares.",
+      "redacted": [
+        "claim 1 reason_redacted"
+      ]
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_redacted-case",
+      "file": "tamper-switchtender-audit-1-reason_redacted-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"Reason_redacted\" beside reason_redacted, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_redacted-fold",
+      "file": "tamper-switchtender-audit-1-reason_redacted-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"reaſon_redacted\" beside reason_redacted, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_text",
+      "file": "tamper-switchtender-audit-1-reason_text.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1's reason_text, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_text-case",
+      "file": "tamper-switchtender-audit-1-reason_text-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"Reason_text\" beside reason_text, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-reason_text-fold",
+      "file": "tamper-switchtender-audit-1-reason_text-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 1 carries \"reaſon_text\" beside reason_text, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-spec_body",
+      "file": "tamper-switchtender-audit-1-spec_body.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 3's spec_body, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-spec_body-case",
+      "file": "tamper-switchtender-audit-1-spec_body-case.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 3 carries \"Spec_body\" beside spec_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-spec_body-fold",
+      "file": "tamper-switchtender-audit-1-spec_body-fold.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "Claim 3 carries \"ſpec_body\" beside spec_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-spec_body-older",
+      "file": "tamper-switchtender-audit-1-spec_body-older.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 1's spec_body, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 1 outcome_body",
+        "claim 1 outcome_nonce",
+        "claim 1 spec_body"
+      ]
+    },
+    {
+      "name": "tamper-whodar-knowledge-risk-1-critical",
+      "file": "tamper-whodar-knowledge-risk-1-critical.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's critical, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 critical",
+        "claim 0 finding",
+        "claim 0 topics_scored"
+      ]
+    },
+    {
+      "name": "tamper-whodar-knowledge-risk-1-critical-case",
+      "file": "tamper-whodar-knowledge-risk-1-critical-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Critical\" beside critical, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Critical",
+        "claim 0 critical",
+        "claim 0 finding",
+        "claim 0 topics_scored"
+      ]
+    },
+    {
+      "name": "tamper-whodar-knowledge-risk-1-finding",
+      "file": "tamper-whodar-knowledge-risk-1-finding.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's finding, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 critical",
+        "claim 0 finding",
+        "claim 0 topics_scored"
+      ]
+    },
+    {
+      "name": "tamper-whodar-knowledge-risk-1-finding-case",
+      "file": "tamper-whodar-knowledge-risk-1-finding-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Finding\" beside finding, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Finding",
+        "claim 0 critical",
+        "claim 0 finding",
+        "claim 0 topics_scored"
+      ]
+    },
+    {
+      "name": "tamper-whodar-knowledge-risk-1-topics_scored",
+      "file": "tamper-whodar-knowledge-risk-1-topics_scored.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's topics_scored, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 critical",
+        "claim 0 finding",
+        "claim 0 topics_scored"
+      ]
+    },
+    {
+      "name": "tamper-whodar-knowledge-risk-1-topics_scored-case",
+      "file": "tamper-whodar-knowledge-risk-1-topics_scored-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Topics_scored\" beside topics_scored, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Topics_scored",
+        "claim 0 critical",
+        "claim 0 finding",
+        "claim 0 topics_scored"
+      ]
+    },
+    {
+      "name": "tamper-whodar-knowledge-risk-1-topics_scored-fold",
+      "file": "tamper-whodar-knowledge-risk-1-topics_scored-fold.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"topicſ_scored\" beside topics_scored, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 critical",
+        "claim 0 finding",
+        "claim 0 topics_scored",
+        "claim 0 topicſ_scored"
+      ]
     },
     {
       "name": "tampered-payload",

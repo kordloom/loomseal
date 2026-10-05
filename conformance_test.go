@@ -2,10 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/kordloom/loomseal/internal/verify"
 )
@@ -35,6 +39,13 @@ type conformanceVector struct {
 	FailingCheck string `json:"failing_check"`
 	// Why explains the case.
 	Why string `json:"why"`
+	// Unchecked lists the disclosed members, as "claim N member", a verifier must report unchecked.
+	Unchecked []string `json:"unchecked"`
+	// Redacted lists the disclosed members a verifier must report redacted.
+	Redacted []string `json:"redacted"`
+	// Legacy lists the record bodies a verifier must report verified under the legacy unkeyed
+	// digest form.
+	Legacy []string `json:"legacy"`
 }
 
 // TestConformanceVectors drives the verifier from the manifest so the shipped verifier and the
@@ -68,6 +79,18 @@ func TestConformanceVectors(t *testing.T) {
 			if v.MustVerify {
 				if v.Level != "" && report.Level != v.Level {
 					t.Errorf("level %q, want %q", report.Level, v.Level)
+				}
+				// A verified bundle is only as good as what it leaves unchecked, so the states of
+				// its disclosed members are part of the verdict a vector pins.
+				unchecked, redacted := disclosedStates(report)
+				if diff := cmp.Diff(v.Unchecked, unchecked, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("unchecked members (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(v.Redacted, redacted, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("redacted members (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(v.Legacy, report.LegacyRecords, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("legacy records (-want +got):\n%s", diff)
 				}
 				return
 			}
@@ -177,6 +200,13 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 			t.Errorf("attestation case did not fail on an attestation: claim %t head %t problems %v",
 				r.AttestationsPresent, r.HeadAttestationsPresent, r.Problems)
 		}
+	case "record":
+		if !r.SignatureOK || !r.ChainOK {
+			t.Errorf("record case failed earlier than the record check: %v", r.Problems)
+		}
+		if !hasProblem(r, "record:") {
+			t.Errorf("record case did not fail on a disclosed record: %v", r.Problems)
+		}
 	case "install":
 		if !r.SignatureOK || !r.ChainOK {
 			t.Errorf("install case failed earlier than the install check: %v", r.Problems)
@@ -194,6 +224,20 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 	default:
 		t.Fatalf("manifest names an unknown failing_check %q", check)
 	}
+}
+
+// disclosedStates lists a report's unchecked and redacted disclosed members as "claim N member".
+func disclosedStates(r *verify.Report) (unchecked, redacted []string) {
+	for _, m := range r.Disclosed {
+		entry := fmt.Sprintf("claim %d %s", m.Claim, m.Member)
+		switch m.State {
+		case "unchecked":
+			unchecked = append(unchecked, entry)
+		case "redacted":
+			redacted = append(redacted, entry)
+		}
+	}
+	return unchecked, redacted
 }
 
 // hasProblem reports whether any recorded problem mentions substr.

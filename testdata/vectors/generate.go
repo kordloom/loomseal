@@ -11,6 +11,7 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -18,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -67,10 +69,19 @@ type vector struct {
 	// Level is the expected conformance wording when MustVerify is true.
 	Level string `json:"level,omitempty"`
 	// FailingCheck names the verification step that must fail when MustVerify is false: one of
-	// parse, signature, chain, anchor, or span.
+	// parse, signature, chain, anchor, span, disclosure, attestation, install, record, or
+	// unsupported.
 	FailingCheck string `json:"failing_check,omitempty"`
 	// Why explains the case in one sentence.
 	Why string `json:"why"`
+	// Unchecked lists, as "claim N member", every member a switchtender-audit-v1 link does not commit
+	// that a verifier must report unchecked in a bundle that must verify. Empty means none may be.
+	Unchecked []string `json:"unchecked,omitempty"`
+	// Redacted lists, the same way, every such member a verifier must report redacted.
+	Redacted []string `json:"redacted,omitempty"`
+	// Legacy lists, the same way, every record body a verifier must report verified under the
+	// legacy unkeyed digest form. Empty means none may be.
+	Legacy []string `json:"legacy,omitempty"`
 }
 
 // presentationManifest is the conformance document for holder presentations.
@@ -139,6 +150,9 @@ func main() {
 	s.negatives()
 	s.merkleNegatives()
 	s.spans()
+	s.records()
+	s.tampers()
+	s.hardening()
 	s.presentations()
 
 	if err := s.write(); err != nil {
@@ -259,6 +273,17 @@ func (s *state) positives() {
 		"A consistency proof from an earlier root verifies, proving the log grew by appending only, "+
 			"which a hash chain cannot state on its own.",
 		s.sign(s.merkleBundle(6, []int{0, 5}, 4)))
+
+	// An anchor on the root a verified consistency proof starts from. Both verifiers must match it:
+	// the reference verifier once refused it as matching nothing while the Go verifier accepted it,
+	// and no vector carried the shape, so the disagreement surfaced only on a producer's receipt.
+	m = s.merkleBundle(6, []int{0, 5}, 4)
+	cons := m["chain"].(map[string]any)["consistency"].(map[string]any)
+	m["anchors"] = []any{gitAnchor(4, cons["from_root"].(string))}
+	s.add("merkle-anchor-on-consistency-root", true,
+		"signed, chained (tree of 6, append-only from 4), anchored by reference", "",
+		"An anchor on the root a verified consistency proof starts from matches, because the proof "+
+			"shows the log grew from exactly the root the anchor fixed.", s.sign(m))
 
 	s.add("merkle-consistency-power-of-two", true, "signed, chained (tree of 9, append-only from 8)", "",
 		"A consistency proof whose earlier size is a power of two verifies. That case seeds the old "+
@@ -914,6 +939,229 @@ func rewriteAlg(signed []byte, alg string) []byte {
 	return out
 }
 
+// hardening emits the vectors that pin the red-team fixes: a keyed chain earns no anchored wording,
+// a reserved records member on a non-record claim still verifies, and a case variant of a bound
+// member is refused rather than folded onto its struct field. Every one is checked by all three
+// shipped verifiers through the manifest, which is how Go, Python, and the browser build are held
+// to the same verdict on the same bytes.
+func (s *state) hardening() {
+	// A keyed chain carrying an anchor over its head. It verifies structurally, and the anchor
+	// matches by coordinate, but a keyed link is never recomputed, so the verifier never tied the
+	// anchored link to the claim content and grants no anchored wording. Before the fix this reached
+	// "anchored by reference", which let a real token be laundered onto an invented keyed entry.
+	ka := s.v1(1, true)
+	head := ka["chain"].(map[string]any)["head"].(map[string]any)
+	ka["anchors"] = []any{gitAnchor(head["seq"].(int64), head["link"].(string))}
+	s.add("keyed-anchored-structural", true, "signed, chained (structural)", "",
+		"A keyed chain verifies structurally only, so an anchor over its head is matched and reported "+
+			"but earns no anchored wording: the verifier never recomputed the link to tie it to the "+
+			"claim content.", s.sign(ka))
+
+	// A switchtender.audit/1 claim whose payload carries a reserved records member on a claim that
+	// is no record. The member is not part of the link and no record check reads it, so the bundle
+	// verifies with the member reported unchecked. It pins that reserving these member names does not
+	// fail a conforming bundle that happens to carry one.
+	rm := s.switchTender()
+	rmClaim := rm["claims"].([]any)[0].(map[string]any)
+	rmPayload := rmClaim["payload"].(map[string]any)
+	rmPayload["reason_text"] = "a plain operator note, not a disclosed record"
+	s.add("record-member-on-nonrecord", true, "signed, chained (full)", "",
+		"A reserved disclosed-records member on a non-record claim is an ordinary payload member the "+
+			"link does not commit, so a conforming bundle carrying one still verifies, with the member "+
+			"reported unchecked.", s.sign(rm))
+	s.expect("record-member-on-nonrecord", []string{"claim 0 reason_text"}, nil)
+
+	s.casefoldSwitchTender()
+	s.casefoldSpan()
+	s.casefoldEnvelope()
+}
+
+// casefoldSwitchTender plants, for each bound field of the switchtender profile, a case variant
+// that holds the honest value while the exact member holds a lie. A verifier that folds the two
+// onto one struct field reads the honest value and reaches VERIFIED over a record no reader sees; a
+// verifier that reads the exact member recomputes the link over the lie and refuses the bundle.
+func (s *state) casefoldSwitchTender() {
+	honest := map[string]string{
+		"actor": "release-token", "method": "POST", "path": "/api/runs",
+		"actor_type": "interactive", "on_behalf_of": "u_admin",
+		"content_digest": "sha256:" + strings.Repeat("ab", 32), "install_id": installID,
+	}
+	optional := map[string]bool{"actor_type": true, "on_behalf_of": true, "content_digest": true,
+		"install_id": true}
+	for _, mem := range []string{"actor", "method", "path", "actor_type", "on_behalf_of",
+		"content_digest", "install_id"} {
+		payload := map[string]any{"actor": honest["actor"], "method": honest["method"],
+			"path": honest["path"]}
+		if optional[mem] {
+			payload[mem] = honest[mem]
+		}
+		link := switchTenderLinkFields(1, at, "", payload)
+		lie := "forged-" + mem
+		if mem == "install_id" {
+			lie = "in_forged"
+		}
+		payload[mem] = lie
+		payload[swapCase(mem)] = honest[mem]
+		m := s.base()
+		claim := m["claims"].([]any)[0].(map[string]any)
+		claim["payload"] = payload
+		claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+		m["chain"] = map[string]any{"profile": profileSwitchTender, "keyed": false,
+			"head": map[string]any{"seq": int64(1), "link": link}}
+		s.add("casefold-switchtender-"+strings.ReplaceAll(mem, "_", "-"), false, "", "chain",
+			"The bound member "+mem+" is read from the exact canonical key, so a case variant holding "+
+				"the honest value does not fold onto it and the link recomputes over the lie.",
+			s.sign(m))
+	}
+}
+
+// casefoldSpan plants a case variant of each span field. A span payload is not covered by the
+// switchtender link, so folding beat or count onto a struct field from a case variant let the span
+// check pass over a population the record does not state. Reading the exact member fails the check.
+func (s *state) casefoldSpan() {
+	auditLink := switchTenderLinkFields(1, at, "",
+		map[string]any{"actor": "release-token", "method": "POST", "path": "/api/runs"})
+	spanAt := "2026-07-27T15:01:00Z"
+	spanLink := switchTenderLinkFields(2, spanAt, auditLink, map[string]any{})
+	honest := map[string]any{"stream": "chain", "cadence_s": int64(60), "beat": int64(1),
+		"count": int64(1)}
+	lies := map[string]any{"stream": "other", "cadence_s": int64(0), "beat": int64(0),
+		"count": int64(999)}
+	for _, mem := range []string{"stream", "cadence_s", "beat", "count"} {
+		sp := map[string]any{}
+		for k, v := range honest {
+			sp[k] = v
+		}
+		sp[mem] = lies[mem]
+		sp[swapCase(mem)] = honest[mem]
+		m := s.base()
+		audit := map[string]any{"type": "switchtender.audit/1", "at": at,
+			"payload": map[string]any{"actor": "release-token", "method": "POST", "path": "/api/runs"},
+			"chain":   map[string]any{"seq": int64(1), "prev": "", "link": auditLink}}
+		span := map[string]any{"type": "loomseal.span/1", "at": spanAt, "payload": sp,
+			"chain": map[string]any{"seq": int64(2), "prev": auditLink, "link": spanLink}}
+		m["claims"] = []any{audit, span}
+		m["chain"] = map[string]any{"profile": profileSwitchTender, "keyed": false,
+			"head": map[string]any{"seq": int64(2), "link": spanLink}}
+		s.add("casefold-span-"+strings.ReplaceAll(mem, "_", "-"), false, "", "span",
+			"The span field "+mem+" is read from the exact canonical key, so a case variant holding a "+
+				"value that would pass does not fold onto it and the span check sees the lie.",
+			s.sign(m))
+	}
+
+	// The same read under loomseal-chain-v1, whose link commits the whole claim, so no path binds the
+	// span members and only the exact read stands between the record and a folded value. The honest
+	// cadence sits under a long s, which folds onto the s of cadence_s and sorts after it, so a reader
+	// that folds case and keeps the last member it meets would read the honest value.
+	m := s.spanBundle([]spanEntry{
+		{kind: "audit", at: "2026-07-27T15:00:10Z"},
+		{kind: "span", at: "2026-07-27T15:01:00Z", beat: 1, count: 1},
+	})
+	span := m["claims"].([]any)[1].(map[string]any)["payload"].(map[string]any)
+	span["cadence_\u017f"] = span["cadence_s"]
+	span["cadence_s"] = int64(0)
+	s.relinkV1(m, false)
+	head := m["chain"].(map[string]any)["head"].(map[string]any)
+	m["anchors"] = []any{gitAnchor(head["seq"].(int64), head["link"].(string))}
+	s.add("casefold-span-cadence-s-chain-v1", false, "", "span",
+		"Under a profile whose link commits the whole claim, the span field cadence_s is still read "+
+			"from its exact key, so a variant that folds onto it does not stand in for it.",
+		s.sign(m))
+}
+
+// casefoldEnvelope plants a case variant of an envelope member at three positions a verdict reads:
+// a producer field, a signature field, and a claim's chain coordinates. The exact-member check
+// refuses each at parse, rather than folding it onto a struct field.
+func (s *state) casefoldEnvelope() {
+	// producer.install_id, with a case variant beside it.
+	pm := s.switchTender()
+	pm["producer"].(map[string]any)["Install_ID"] = installID
+	s.add("casefold-producer-install-id", false, "", "parse",
+		"A case variant of producer.install_id is refused at parse rather than folded onto the "+
+			"install_id field.", s.sign(pm))
+
+	// A claim's chain seq, with a case variant beside it, signed so the only fault is the member.
+	cm := s.switchTender()
+	cm["claims"].([]any)[0].(map[string]any)["chain"].(map[string]any)["Seq"] = int64(1)
+	s.add("casefold-coords-seq", false, "", "parse",
+		"A case variant of a claim's chain seq is refused at parse rather than folded onto the seq "+
+			"coordinate.", s.sign(cm))
+
+	// signature.key_id, added after signing because the signatures array sits outside the signed
+	// bytes, so the bundle is validly signed and the only fault is the member.
+	sm := mutateSigned(s.sign(s.switchTender()), func(m map[string]any) {
+		sig := m["signatures"].([]any)[0].(map[string]any)
+		sig["Key_ID"] = sig["key_id"]
+	})
+	s.add("casefold-signature-key-id", false, "", "parse",
+		"A case variant of a signature's key_id is refused at parse rather than folded onto the "+
+			"key_id field.", sm)
+
+	// The chain head's seq, with a case variant beside it, signed so the only fault is the member.
+	hm := s.switchTender()
+	hm["chain"].(map[string]any)["head"].(map[string]any)["Seq"] = int64(1)
+	s.add("casefold-head-seq", false, "", "parse",
+		"A case variant of the chain head's seq is refused at parse rather than folded onto the "+
+			"coordinate the head match reads.", s.sign(hm))
+
+	// A head-level attestation's key_id, added after signing because head attestations sit outside
+	// the signed bytes, so the bundle is validly signed and the only fault is the member.
+	am := mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+		hPriv, hPub := counterpartyKey()
+		head := m["chain"].(map[string]any)["head"].(map[string]any)
+		att := headAttestation(hPriv, hPub, head["link"].(string), head["seq"], "witness",
+			"2026-08-30T12:00:00Z")
+		att["Key_ID"] = att["key_id"]
+		m["attestations"] = []any{att}
+	})
+	s.add("casefold-head-attestation-key-id", false, "", "parse",
+		"A case variant of a head attestation's key_id is refused at parse rather than folded onto "+
+			"the key the attestation is checked against.", am)
+}
+
+// switchTenderLinkFields recomputes a switchtender-audit-v1 link over the exact bound members a
+// payload carries, matching the verifier: seq, at, actor, method, path, prev, plus the four
+// optional fields when present as a non-empty string.
+func switchTenderLinkFields(seq int64, atStr, prev string, payload map[string]any) string {
+	fields := map[string]any{"seq": seq, "at": atStr, "prev": prev,
+		"actor": memberOrEmpty(payload, "actor"), "method": memberOrEmpty(payload, "method"),
+		"path": memberOrEmpty(payload, "path")}
+	for _, k := range []string{"actor_type", "on_behalf_of", "content_digest", "install_id"} {
+		if v, ok := payload[k].(string); ok && v != "" {
+			fields[k] = v
+		}
+	}
+	b, err := jcs.Serialize(fields)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// memberOrEmpty returns a payload member or the empty string, matching the verifier's read.
+func memberOrEmpty(payload map[string]any, key string) any {
+	if v, ok := payload[key]; ok {
+		return v
+	}
+	return ""
+}
+
+// swapCase flips the ASCII case of every letter, turning a member name into the case variant that a
+// case-insensitive struct decode folds back onto it.
+func swapCase(s string) string {
+	b := []byte(s)
+	for i := range b {
+		switch {
+		case b[i] >= 'a' && b[i] <= 'z':
+			b[i] -= 32
+		case b[i] >= 'A' && b[i] <= 'Z':
+			b[i] += 32
+		}
+	}
+	return string(b)
+}
+
 // base builds a minimal signed-ready bundle map with one generic claim and no chain.
 func (s *state) base() map[string]any {
 	return map[string]any{
@@ -1343,6 +1591,31 @@ func (s *state) add(name string, mustVerify bool, level, failing, why string, da
 	})
 }
 
+// expect records which disclosed members a verifier must report unchecked and redacted in a vector
+// that must verify.
+func (s *state) expect(name string, unchecked, redacted []string) {
+	for i := range s.man.Vectors {
+		if s.man.Vectors[i].Name == name {
+			s.man.Vectors[i].Unchecked = unchecked
+			s.man.Vectors[i].Redacted = redacted
+			return
+		}
+	}
+	panic("expect: no vector named " + name)
+}
+
+// expectLegacy records which record bodies a verifier must report verified under the legacy
+// unkeyed digest form in a vector that must verify.
+func (s *state) expectLegacy(name string, legacy []string) {
+	for i := range s.man.Vectors {
+		if s.man.Vectors[i].Name == name {
+			s.man.Vectors[i].Legacy = legacy
+			return
+		}
+	}
+	panic("expectLegacy: no vector named " + name)
+}
+
 // write emits the manifest, with vectors sorted by name for a stable diff.
 func (s *state) write() error {
 	sort.Slice(s.man.Vectors, func(i, j int) bool {
@@ -1403,6 +1676,40 @@ func (s *state) presentations() {
 	bf := s.writePresentationFile("present-bad-holder-sig", badSig)
 	s.addPresentation("present-bad-holder-sig", bf, "acme-verifier", "chal-1", false,
 		"A presentation whose holder signature was altered does not verify.")
+
+	// A member whose name differs from a presentation member only in case is refused, never folded
+	// onto the member a reader sees. Beside audience it holds the same value, so only the name is at
+	// fault. In the holder it holds the signed key id under a Kelvin sign, which folds onto the k of
+	// key_id, while key_id itself holds another, so a reader folding case would check a key the
+	// document does not show.
+	var cf map[string]any
+	if err := json.Unmarshal(valid, &cf); err != nil {
+		panic(err)
+	}
+	cf["Audience"] = cf["audience"]
+	folded, err := json.Marshal(cf)
+	if err != nil {
+		panic(err)
+	}
+	ff := s.writePresentationFile("present-casefold-audience", folded)
+	s.addPresentation("present-casefold-audience", ff, "acme-verifier", "chal-1", false,
+		"A presentation carrying Audience beside audience is refused at parse: member names are "+
+			"matched exactly, so the variant is not read as the audience a reader sees.")
+	var kf map[string]any
+	if err := json.Unmarshal(valid, &kf); err != nil {
+		panic(err)
+	}
+	holder := kf["holder"].(map[string]any)
+	holder["\u212aey_id"] = holder["key_id"]
+	holder["key_id"] = "sha256:" + strings.Repeat("00", 32)
+	folded, err = json.Marshal(kf)
+	if err != nil {
+		panic(err)
+	}
+	kff := s.writePresentationFile("present-casefold-holder-key-id", folded)
+	s.addPresentation("present-casefold-holder-key-id", kff, "acme-verifier", "chal-1", false,
+		"A holder carrying the signed key id under a name that folds onto key_id is refused at parse, "+
+			"rather than checked in place of the key_id the document shows.")
 }
 
 // writePresentationFile writes one presentation document and returns its file name.
@@ -1562,4 +1869,806 @@ func hexList(in [][]byte) []any {
 		out = append(out, hex.EncodeToString(h))
 	}
 	return out
+}
+
+// recordRun is the run every record vector is a receipt for.
+const recordRun = "run_vectors"
+
+// recordSpec is the run's spec as SwitchTender discloses it: the canonical redacted bytes its
+// decisions and its outcome commit by digest, carried as a string so nothing re-serializes them.
+const recordSpec = `{"command":"deploy","tool":"bash"}`
+
+// recordReason is the approver's reason. It carries the characters encoding/json escapes for HTML
+// and RFC 8785 does not, so a verifier that canonicalizes with its language's default encoder
+// recomputes a different commitment and fails an honest receipt.
+const recordReason = "approved after the change review & the on-call <sign-off>"
+
+// records emits the vectors for the records a switchtender.audit/1 claim discloses beside the
+// fields its link commits: approval decisions, corrections to a decision's reason, the reasons
+// they commit, the run's outcome, and the run's spec. Every altered vector is re-signed with the
+// producer's own key, which is the threat the record check exists for: the signature holds and
+// every link recomputes, because no disclosed member is part of the link, and only the commitments
+// catch the edit.
+func (s *state) records() {
+	s.add("switchtender-record-reason", true, "signed, chained (full)", "",
+		"A decision body that reproduces its entry's keyed content digest, a reason that opens the "+
+			"commitment the body carries, and a spec that hashes to the digest the decision "+
+			"committed all verify.", s.sign(s.recordReceipt(recordDisclosure{Reason: "text"})))
+
+	m := s.recordReceipt(recordDisclosure{Reason: "text"})
+	recordPayload(m, 1)["reason_text"] = "approved by the change board"
+	s.add("switchtender-record-reason-altered", false, "", "record",
+		"A receipt whose disclosed reason was changed and re-signed by the producer keeps its "+
+			"signature and every link, and still fails, because the text no longer opens the "+
+			"commitment the decision body carries.", s.sign(m))
+
+	s.add("switchtender-record-reason-redacted", true, "signed, chained (full)", "",
+		"A reason removed by a privacy redaction is reported by its category and verifies: its text "+
+			"and random value are gone, its commitment stays, and it cannot be opened by design.",
+		s.sign(s.recordReceipt(recordDisclosure{Reason: "redacted"})))
+	s.expect("switchtender-record-reason-redacted", nil, []string{"claim 1 reason_redacted"})
+
+	s.add("switchtender-record-reason-withheld", true, "signed, chained (full)", "",
+		"A decision body that commits a reason the receipt does not disclose verifies, with the "+
+			"reason reported as committed and not disclosed.",
+		s.sign(s.recordReceipt(recordDisclosure{Reason: "withheld"})))
+
+	s.add("switchtender-record-correction", true, "signed, chained (full)", "",
+		"A correction appended to a decision's reason reproduces its own entry's content digest, "+
+			"and its text opens the commitment bound to the correction's id.",
+		s.sign(s.recordReceipt(recordDisclosure{Reason: "text", Correction: true})))
+
+	m = s.recordReceipt(recordDisclosure{Reason: "text", Correction: true})
+	recordPayload(m, 2)["reason_text"] = "the reason was misstated, the window is approved"
+	s.add("switchtender-record-correction-altered", false, "", "record",
+		"A receipt whose disclosed correction text was changed and re-signed fails, because the "+
+			"text no longer opens the commitment the correction body carries.", s.sign(m))
+
+	m = s.recordReceipt(recordDisclosure{Reason: "text"})
+	recordPayload(m, 1)["decision_body"].(map[string]any)["verdict"] = "rejected"
+	s.add("switchtender-record-decision-altered", false, "", "record",
+		"A receipt whose disclosed decision body was changed and re-signed fails, because the body "+
+			"no longer reproduces the content digest its entry committed and the link fixed.",
+		s.sign(m))
+
+	m = s.recordReceipt(recordDisclosure{Reason: "text"})
+	recordPayload(m, 2)["spec_body"] = `{"command":"deploy --force","tool":"bash"}`
+	s.add("switchtender-record-spec-altered", false, "", "record",
+		"A receipt whose disclosed spec was changed and re-signed fails, because it no longer "+
+			"hashes to the spec digest the verified decision committed.", s.sign(m))
+
+	s.add("switchtender-record-unkeyed", true, "signed, chained (full)", "",
+		"A decision recorded before nonces carries the unkeyed content digest and an empty nonce, "+
+			"and its body verifies against the SHA-256 of its canonical bytes, reported as legacy, "+
+			"since nothing before it in the bundle is keyed.",
+		s.sign(s.recordReceipt(recordDisclosure{Unkeyed: true})))
+	s.expectLegacy("switchtender-record-unkeyed", []string{"claim 1 decision_body"})
+
+	s.add("switchtender-record-unkeyed-after-keyed", false, "", "record",
+		"A decision under the unkeyed content digest after an entry under the keyed form fails: the "+
+			"producer was keying its digests by then, so the entry is not one from before nonces, and "+
+			"an unkeyed digest lets anyone holding the bundle confirm a guess of the body.",
+		s.sign(s.recordReceipt(recordDisclosure{Unkeyed: true, KeyedCreation: true})))
+
+	m = s.recordReceipt(recordDisclosure{NoDecision: true})
+	plain := recordPayload(m, 0)
+	plain["decision_body"] = "approved by the change board"
+	plain["decision_nonce"] = "not a nonce"
+	plain["reason_text"] = "a note the request carried"
+	plain["spec_body"] = `{"command":"something else"}`
+	plain["Outcome_body"] = "a name that differs from a record member only in case"
+	s.add("switchtender-record-names-off-record", true, "signed, chained (full)", "",
+		"Record member names on a claim whose committed method and path make it no record are "+
+			"ordinary members, whatever they hold: a bundle that used them as plain fields before "+
+			"records existed verifies as it always did, with each reported unchecked.", s.sign(m))
+	s.expect("switchtender-record-names-off-record", []string{"claim 0 Outcome_body",
+		"claim 0 decision_body", "claim 0 decision_nonce", "claim 0 reason_text",
+		"claim 0 spec_body"}, nil)
+
+	m = s.v1(1, false)
+	plain = m["claims"].([]any)[0].(map[string]any)["payload"].(map[string]any)
+	plain["decision_body"] = "approved by the change board"
+	plain["reason_text"] = "a note the request carried"
+	plain["outcome_nonce"] = "not a nonce"
+	s.relinkV1(m, false)
+	s.add("switchtender-record-names-chain-v1", true, "signed, chained (full)", "",
+		"The same names on a claim that is no record, under a profile whose link commits the whole "+
+			"claim, are committed members like any other and verify.", s.sign(m))
+
+	m = s.recordReceipt(recordDisclosure{Unkeyed: true})
+	recordPayload(m, 1)["reason_text"] = recordReason
+	recordPayload(m, 1)["reason_random"] = hex.EncodeToString(recordBytes("random decision"))
+	s.add("switchtender-record-reason-uncommitted", false, "", "record",
+		"A reason disclosed beside a decision body that commits none fails: it is text the chain "+
+			"never fixed, and a reader must not be shown it as part of the record.", s.sign(m))
+
+	s.add("switchtender-outcome-exact", true, "signed, chained (full)", "",
+		"An outcome committed under the exact form reproduces its entry's digest from the bytes "+
+			"carried, and the spec beside it hashes to the spec digest the outcome names.",
+		s.sign(s.recordReceipt(recordDisclosure{NoDecision: true})))
+
+	m = s.recordReceipt(recordDisclosure{NoDecision: true})
+	recordPayload(m, 1)["outcome_body"] = recordOutcomeText("failed")
+	s.add("switchtender-outcome-exact-altered", false, "", "record",
+		"A receipt whose exact-form outcome was changed and re-signed fails, because the bytes "+
+			"carried no longer reproduce the digest the entry committed and the link fixed.", s.sign(m))
+
+	s.add("switchtender-outcome-legacy", true, "signed, chained (full)", "",
+		"An outcome committed under an older form, over the producer's own redaction of the "+
+			"record, verifies as carried and unchecked, never as verified, and the spec beside it "+
+			"has nothing verified to be held against.",
+		s.sign(s.recordReceipt(recordDisclosure{NoDecision: true, LegacyOutcome: true})))
+	s.expect("switchtender-outcome-legacy",
+		[]string{"claim 1 outcome_body", "claim 1 outcome_nonce", "claim 1 spec_body"}, nil)
+
+	m = s.recordReceipt(recordDisclosure{NoDecision: true})
+	recordPayload(m, 1)["spec_body"] = `{"command":"deploy --force","tool":"bash"}`
+	s.add("switchtender-outcome-spec-altered", false, "", "record",
+		"A receipt with no decision whose disclosed spec was changed and re-signed fails, because "+
+			"the spec no longer hashes to the spec digest the verified outcome names.", s.sign(m))
+}
+
+// recordDisclosure shapes the receipt recordReceipt builds.
+type recordDisclosure struct {
+	// Reason is how the decision's reason travels: text, redacted, withheld, or empty for a
+	// decision recorded without one.
+	Reason string
+	// Correction adds an entry correcting the decision's reason.
+	Correction bool
+	// Unkeyed records the decision with the unkeyed content digest of an entry written before
+	// nonces, which also predates reasons.
+	Unkeyed bool
+	// NoDecision leaves the decision out, a run that needed no approval.
+	NoDecision bool
+	// LegacyOutcome commits the outcome under the older keyed form, over the canonical record rather
+	// than the exact bytes carried.
+	LegacyOutcome bool
+	// KeyedCreation commits the request that created the run under the keyed form, so every entry
+	// after it postdates the keyed form.
+	KeyedCreation bool
+}
+
+// recordReceipt builds a SwitchTender run receipt on switchtender-audit-v1: the request that
+// created the run, the approval decision unless the run needed none, an optional correction to its
+// reason, and the outcome, which carries the spec and the outcome record. Each link recomputes from
+// its payload's bound fields, so only the disclosed members can disagree with what the chain
+// committed.
+func (s *state) recordReceipt(d recordDisclosure) map[string]any {
+	specSum := sha256.Sum256([]byte(recordSpec))
+	specDigest := "sha256:" + hex.EncodeToString(specSum[:])
+
+	decision := map[string]any{"run_id": recordRun, "verdict": "approved", "spec_digest": specDigest}
+	decisionPayload := map[string]any{
+		"actor": "ops-admin", "actor_type": "session", "on_behalf_of": "ops-admin",
+		"method": "DECISION", "path": "/runs/" + recordRun + "/decision/approved",
+	}
+	if d.Unkeyed {
+		decisionPayload["content_digest"] = unkeyedRecordDigest(decision)
+		decisionPayload["decision_nonce"] = ""
+	} else {
+		random := hex.EncodeToString(recordBytes("random decision"))
+		decision["decision_id"] = "aud_decision"
+		decision["reason_commitment"] = reasonCommitment("aud_decision", random, recordReason)
+		decision["separation_of_duties"] = map[string]any{
+			"required": true, "requester": "dev-lead", "decider": "ops-admin",
+			"independent": true, "result": "satisfied",
+		}
+		nonce := recordBytes("nonce decision")
+		decisionPayload["content_digest"] = keyedRecordDigest(nonce, decision)
+		decisionPayload["decision_nonce"] = hex.EncodeToString(nonce)
+		switch d.Reason {
+		case "text":
+			decisionPayload["reason_text"] = recordReason
+			decisionPayload["reason_random"] = random
+		case "redacted":
+			decisionPayload["reason_redacted"] = "personal_data"
+		}
+	}
+	decisionPayload["decision_body"] = decision
+
+	payloads := []map[string]any{{
+		"actor": "deploy-bot", "actor_type": "agent", "on_behalf_of": "dev-lead",
+		"method": "POST", "path": "/v1/runs",
+	}}
+	if d.KeyedCreation {
+		payloads[0]["content_digest"] = keyedRecordDigest(recordBytes("nonce request"),
+			map[string]any{"command": "deploy", "tool": "bash"})
+	}
+	if !d.NoDecision {
+		payloads = append(payloads, decisionPayload)
+	}
+
+	if d.Correction {
+		const correctionText = "approved after the change review, with the rollback plan attached"
+		random := hex.EncodeToString(recordBytes("random correction"))
+		correction := map[string]any{
+			"run_id": recordRun, "decision_id": "aud_decision", "correction_id": "aud_correction",
+			"reason_commitment": reasonCommitment("aud_correction", random, correctionText),
+		}
+		nonce := recordBytes("nonce correction")
+		path := "/runs/" + recordRun + "/decisions/aud_decision/corrections/aud_correction"
+		payloads = append(payloads, map[string]any{
+			"actor": "ops-admin", "actor_type": "session", "on_behalf_of": "ops-admin",
+			"method": "REASON", "path": path, "content_digest": keyedRecordDigest(nonce, correction),
+			"correction_body": correction, "correction_nonce": hex.EncodeToString(nonce),
+			"reason_text": correctionText, "reason_random": random,
+		})
+	}
+
+	outcomeText := recordOutcomeText("succeeded")
+	nonce := recordBytes("nonce outcome")
+	digest := exactRecordDigest(nonce, []byte(outcomeText))
+	if d.LegacyOutcome {
+		var outcome map[string]any
+		if err := json.Unmarshal([]byte(outcomeText), &outcome); err != nil {
+			panic(err)
+		}
+		digest = keyedRecordDigest(nonce, outcome)
+	}
+	payloads = append(payloads, map[string]any{
+		"actor": "system:dispatcher", "actor_type": "system", "on_behalf_of": "deploy-bot",
+		"method": "RUN", "path": "/runs/" + recordRun + "/outcome/succeeded",
+		"content_digest": digest, "spec_body": recordSpec,
+		"outcome_body": outcomeText, "outcome_nonce": hex.EncodeToString(nonce),
+	})
+	return s.switchTenderChainOf(payloads)
+}
+
+// recordOutcomeText is the run's outcome record as a producer fixes it before committing: reduced
+// to canonical bytes once, so the bytes committed under the exact form are the bytes disclosed.
+func recordOutcomeText(status string) string {
+	specSum := sha256.Sum256([]byte(recordSpec))
+	text, err := jcs.Serialize(map[string]any{
+		"run_id": recordRun, "status": status, "exit_code": int64(0),
+		"spec_digest": "sha256:" + hex.EncodeToString(specSum[:]),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return string(text)
+}
+
+// exactRecordDigest computes the exact-form content digest a producer commits a disclosed text
+// under: sha256e:, the hex SHA-256 of the nonce, and the hex HMAC-SHA256 of the text's bytes keyed
+// by the nonce.
+func exactRecordDigest(nonce, text []byte) string {
+	nonceSum := sha256.Sum256(nonce)
+	mac := hmac.New(sha256.New, nonce)
+	mac.Write(text)
+	return "sha256e:" + hex.EncodeToString(nonceSum[:]) + ":" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// switchTenderChainOf builds a switchtender-audit-v1 bundle whose claims carry the payloads in
+// order, each linked over its bound fields to the one before it.
+func (s *state) switchTenderChainOf(payloads []map[string]any) map[string]any {
+	times := make([]string, len(payloads))
+	for i := range times {
+		times[i] = at
+	}
+	return s.switchTenderChainAt(payloads, times)
+}
+
+// switchTenderChainAt is switchTenderChainOf with each claim's time given.
+func (s *state) switchTenderChainAt(payloads []map[string]any, times []string) map[string]any {
+	m := s.base()
+	m["subject"] = map[string]any{"type": "run", "id": recordRun}
+	claims := make([]any, 0, len(payloads))
+	prev := ""
+	for i, p := range payloads {
+		seq := int64(i + 1)
+		link := switchTenderPayloadLink(seq, times[i], prev, p)
+		claims = append(claims, map[string]any{
+			"type": "switchtender.audit/1", "at": times[i], "payload": p,
+			"chain": map[string]any{"seq": seq, "prev": prev, "link": link},
+		})
+		prev = link
+	}
+	m["claims"] = claims
+	m["chain"] = map[string]any{
+		"profile": profileSwitchTender, "keyed": false,
+		"head": map[string]any{"seq": int64(len(payloads)), "link": prev},
+	}
+	return m
+}
+
+// switchTenderPayloadLink recomputes a switchtender-audit-v1 link from a payload the way a verifier
+// does: actor, method, and path always, and actor_type, on_behalf_of, content_digest, and
+// install_id when the payload carries them. A disclosed member is never part of it.
+func switchTenderPayloadLink(seq int64, atStr, prev string, payload map[string]any) string {
+	fields := map[string]any{
+		"seq": seq, "at": atStr, "prev": prev,
+		"actor": payload["actor"], "method": payload["method"], "path": payload["path"],
+	}
+	for _, key := range []string{"actor_type", "on_behalf_of", "content_digest", "install_id"} {
+		if v, _ := payload[key].(string); v != "" {
+			fields[key] = v
+		}
+	}
+	b, err := jcs.Serialize(fields)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// recordPayload returns the payload of claim i of a record receipt, so a vector can alter one
+// disclosed member before re-signing.
+func recordPayload(m map[string]any, i int) map[string]any {
+	return m["claims"].([]any)[i].(map[string]any)["payload"].(map[string]any)
+}
+
+// recordBytes returns 32 deterministic bytes for a label, standing in for the random nonce or
+// value a producer draws, so the vectors stay byte-stable across runs.
+func recordBytes(label string) []byte {
+	sum := sha256.Sum256([]byte("loomseal vectors " + label))
+	return sum[:]
+}
+
+// keyedRecordDigest computes the keyed content digest SwitchTender commits a record under:
+// sha256s:, the hex SHA-256 of the nonce, and the hex HMAC-SHA256 of the record's canonical bytes
+// keyed by the nonce.
+func keyedRecordDigest(nonce []byte, record map[string]any) string {
+	canonical, err := jcs.Serialize(record)
+	if err != nil {
+		panic(err)
+	}
+	nonceSum := sha256.Sum256(nonce)
+	mac := hmac.New(sha256.New, nonce)
+	mac.Write(canonical)
+	return "sha256s:" + hex.EncodeToString(nonceSum[:]) + ":" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// unkeyedRecordDigest computes the unkeyed content digest an entry recorded before nonces carries:
+// sha256: and the hex SHA-256 of the record's canonical bytes.
+func unkeyedRecordDigest(record map[string]any) string {
+	canonical, err := jcs.Serialize(record)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(canonical)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// reasonCommitment computes the hiding commitment to a reason: sha256: and the hex SHA-256 of the
+// canonical object {"event", "random", "reason"}.
+func reasonCommitment(event, random, text string) string {
+	canonical, err := jcs.Serialize(map[string]any{"event": event, "random": random, "reason": text})
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(canonical)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// memberDeclaration is the part of schema/claim-members.json the tamper vectors are generated from.
+type memberDeclaration struct {
+	// Records identifies the kinds of record a switchtender.audit/1 claim can be.
+	Records struct {
+		// Kinds are the record kinds by name, each a committed method and a path pattern.
+		Kinds map[string]struct {
+			// Method is the committed method.
+			Method string `json:"method"`
+			// Path is the committed path's pattern.
+			Path string `json:"path"`
+		} `json:"kinds"`
+	} `json:"records"`
+	// SwitchTender names the members a switchtender-audit-v1 link commits.
+	SwitchTender struct {
+		// Bound are the members the link commits.
+		Bound []string `json:"bound"`
+	} `json:"switchtender-audit-v1"`
+	// Types declares each claim type's members.
+	Types map[string]map[string]struct {
+		// State is checked, unchecked, or redacted.
+		State string `json:"state"`
+		// Unchecked says when a member declared checked is unchecked instead.
+		Unchecked string `json:"unchecked"`
+		// With names the member this one travels with.
+		With string `json:"with"`
+		// Records names the record kinds whose claims read the member.
+		Records []string `json:"records"`
+	} `json:"types"`
+}
+
+// recordKindOf names the record kind a switchtender.audit/1 payload is by the declaration alone:
+// its committed method, and its committed path segment by segment, a {name} segment matching any
+// non-empty one. It returns empty for a claim that is no record.
+func (d memberDeclaration) recordKindOf(payload map[string]any) string {
+	method, _ := payload["method"].(string)
+	path, _ := payload["path"].(string)
+	for name, kind := range d.Records.Kinds {
+		if method != kind.Method {
+			continue
+		}
+		if kind.Path == "" {
+			return name
+		}
+		want, got := strings.Split(kind.Path, "/"), strings.Split(path, "/")
+		if len(want) != len(got) {
+			continue
+		}
+		match := true
+		for i, w := range want {
+			placeholder := strings.HasPrefix(w, "{") && strings.HasSuffix(w, "}")
+			if (placeholder && got[i] == "") || (!placeholder && w != got[i]) {
+				match = false
+			}
+		}
+		if match {
+			return name
+		}
+	}
+	return ""
+}
+
+// reads reports whether a verifier reads member, by its exact name, on a claim of claimType with
+// payload under switchtender-audit-v1: a record member on a claim of its own record's kind, and a
+// span member on a span claim, whose members its path binds.
+func (d memberDeclaration) reads(claimType, member string, payload map[string]any) bool {
+	decl, ok := d.Types[claimType][member]
+	switch {
+	case !ok:
+		return false
+	case claimType == "loomseal.span/1":
+		return true
+	case len(decl.Records) > 0:
+		return slices.Contains(decl.Records, d.recordKindOf(payload))
+	}
+	return false
+}
+
+// tamperBase is an honest bundle a tamper vector alters one member of.
+type tamperBase struct {
+	// build returns a fresh copy of the bundle map.
+	build func() map[string]any
+	// older reports that the base commits its outcome under an older digest form, so the members
+	// declared unchecked under that condition are unchecked in it.
+	older bool
+}
+
+// tampers generates, from schema/claim-members.json, one vector for every member a
+// switchtender-audit-v1 link does not commit: an honest bundle carrying the member, altered and
+// re-signed with the producer's own key, the threat the declaration exists for. A member declared
+// checked must fail, a member declared unchecked or redacted must verify with the bundle's every
+// such member reported so, and a member declared checked but unchecked under a condition also gets
+// a vector where the condition holds. The vectors are generated rather than written by hand, so a
+// member added to the declaration is tested by the next generator run, and the drift check fails
+// any checkout whose vectors were not regenerated.
+func (s *state) tampers() {
+	raw, err := os.ReadFile("schema/claim-members.json")
+	if err != nil {
+		panic(err)
+	}
+	var decl memberDeclaration
+	if err := json.Unmarshal(raw, &decl); err != nil {
+		panic(err)
+	}
+	bases := map[string][]tamperBase{
+		"switchtender.audit/1": {
+			{build: func() map[string]any {
+				return s.recordReceipt(recordDisclosure{Reason: "text", Correction: true})
+			}},
+			{build: func() map[string]any { return s.recordReceipt(recordDisclosure{Reason: "redacted"}) }},
+			{build: func() map[string]any {
+				return s.recordReceipt(recordDisclosure{NoDecision: true, LegacyOutcome: true})
+			}, older: true},
+		},
+		"loomseal.span/1":         {{build: s.switchTenderSpans}},
+		"loomseal.agentrun/1":     {{build: s.typedBuilder("loomseal.agentrun/1")}},
+		"whodar.knowledge-risk/1": {{build: s.typedBuilder("whodar.knowledge-risk/1")}},
+	}
+	types := make([]string, 0, len(decl.Types))
+	for t := range decl.Types {
+		types = append(types, t)
+	}
+	sort.Strings(types)
+	for _, t := range types {
+		members := make([]string, 0, len(decl.Types[t]))
+		for m := range decl.Types[t] {
+			members = append(members, m)
+		}
+		sort.Strings(members)
+		for _, member := range members {
+			older := []bool{false}
+			if d := decl.Types[t][member]; d.Unchecked != "" ||
+				(d.With != "" && decl.Types[t][d.With].Unchecked != "") {
+				older = append(older, true)
+			}
+			for _, cond := range older {
+				s.tamper(decl, t, member, bases[t], cond)
+			}
+			s.tamperCase(decl, t, member, bases[t], caseVariantName(member), "case")
+			if variant, ok := foldVariantName(member); ok {
+				s.tamperCase(decl, t, member, bases[t], variant, "fold")
+			}
+		}
+	}
+}
+
+// caseVariantName returns member with its first letter in upper case: a different name to an exact
+// reader, and the same name to one that folds case, as encoding/json does onto a struct field.
+func caseVariantName(member string) string {
+	return strings.ToUpper(member[:1]) + member[1:]
+}
+
+// foldVariantName returns member with its first s or k replaced by the one non-ASCII letter that
+// folds onto it, the long s or the Kelvin sign, and reports false for a member with neither. It
+// pins that every verifier folds the way the format says, beyond ASCII capitals.
+func foldVariantName(member string) (string, bool) {
+	for i, c := range member {
+		switch c {
+		case 's':
+			return member[:i] + "\u017f" + member[i+1:], true
+		case 'k':
+			return member[:i] + "\u212a" + member[i+1:], true
+		}
+	}
+	return "", false
+}
+
+// tamperCase emits the vector for one member's case variant: the first base carrying the member,
+// with a member whose name differs from it only in case planted beside it, holding an altered
+// value, and re-signed. A claim whose check reads the member must fail, since a reader folding case
+// would take the variant for it. On any other claim the variant is one more member, reported
+// unchecked.
+func (s *state) tamperCase(decl memberDeclaration, claimType, member string, bases []tamperBase,
+	variant, suffix string) {
+	for _, base := range bases {
+		m := base.build()
+		for i, c := range m["claims"].([]any) {
+			claim := c.(map[string]any)
+			payload := claim["payload"].(map[string]any)
+			value, ok := payload[member]
+			if claim["type"] != claimType || !ok {
+				continue
+			}
+			payload[variant] = alter(copyValue(value))
+			name := "tamper-" + strings.NewReplacer(".", "-", "/", "-").Replace(claimType) + "-" +
+				member + "-" + suffix
+			why := fmt.Sprintf("Claim %d carries %q beside %s, a name that differs from it only "+
+				"in case, planted by the producer and re-signed, and ", i, variant, member)
+			if decl.reads(claimType, member, payload) {
+				failing := "record"
+				if claimType == "loomseal.span/1" {
+					failing = "span"
+				}
+				s.add(name, false, "", failing, why+"fails, since a reader folding case would take "+
+					"one for the other.", s.sign(m))
+				return
+			}
+			unchecked, redacted := tamperExpectations(decl, m, base.older)
+			s.add(name, true, "signed, chained (full)", "", why+"verifies with it reported "+
+				"unchecked, since nothing reads the member on this claim.", s.sign(m))
+			s.expect(name, unchecked, redacted)
+			return
+		}
+	}
+	panic("tamperCase: no base carries " + claimType + " " + member)
+}
+
+// tamper emits the vector for one member under one condition: the first base carrying the member
+// under that condition, the member altered, re-signed.
+func (s *state) tamper(decl memberDeclaration, claimType, member string, bases []tamperBase,
+	older bool) {
+	for _, base := range bases {
+		if base.older != older {
+			continue
+		}
+		m := base.build()
+		claims := m["claims"].([]any)
+		for i, c := range claims {
+			claim := c.(map[string]any)
+			payload := claim["payload"].(map[string]any)
+			if claim["type"] != claimType {
+				continue
+			}
+			value, ok := payload[member]
+			if !ok {
+				continue
+			}
+			payload[member] = alter(value)
+			name := "tamper-" + strings.NewReplacer(".", "-", "/", "-").Replace(claimType) + "-" + member
+			if older {
+				name += "-older"
+			}
+			unchecked, redacted := tamperExpectations(decl, m, base.older)
+			state := effectiveState(decl, claimType, member, base.older)
+			why := fmt.Sprintf("Claim %d's %s, altered and re-signed by the producer, ", i, member)
+			switch state {
+			case "checked":
+				failing := "record"
+				if claimType == "loomseal.span/1" {
+					failing = "span"
+				}
+				s.add(name, false, "", failing, why+"fails the commitment it is checked against.",
+					s.sign(m))
+			default:
+				s.add(name, true, "signed, chained (full)", "", why+"verifies with the member "+
+					"reported "+state+", as schema/claim-members.json declares.", s.sign(m))
+				s.expect(name, unchecked, redacted)
+			}
+			return
+		}
+	}
+	panic("tamper: no base carries " + claimType + " " + member)
+}
+
+// effectiveState is a member's declared state in a base: a member declared checked but unchecked
+// under a condition is unchecked where the condition holds, and a member travels in the state of
+// the one it travels with.
+func effectiveState(decl memberDeclaration, claimType, member string, older bool) string {
+	d := decl.Types[claimType][member]
+	if d.With != "" {
+		return effectiveState(decl, claimType, d.With, older)
+	}
+	if older && d.Unchecked != "" {
+		return "unchecked"
+	}
+	return d.State
+}
+
+// tamperExpectations lists, as "claim N member", every member of the bundle's claims a verifier
+// must report unchecked and redacted, from the declaration alone, never from what a verifier does.
+func tamperExpectations(decl memberDeclaration, m map[string]any, older bool) (unchecked,
+	redacted []string) {
+	bound := map[string]bool{}
+	for _, name := range decl.SwitchTender.Bound {
+		bound[name] = true
+	}
+	for i, c := range m["claims"].([]any) {
+		claim := c.(map[string]any)
+		claimType, _ := claim["type"].(string)
+		names := make([]string, 0)
+		for name := range claim["payload"].(map[string]any) {
+			if !bound[name] {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		payload := claim["payload"].(map[string]any)
+		kind := decl.recordKindOf(payload)
+		for _, name := range names {
+			entry := fmt.Sprintf("claim %d %s", i, name)
+			member, declared := decl.Types[claimType][name]
+			state := effectiveState(decl, claimType, name, older)
+			switch {
+			case !declared:
+				state = "unchecked"
+			case len(member.Records) > 0 && !slices.Contains(member.Records, kind):
+				state = "unchecked"
+			}
+			switch state {
+			case "unchecked":
+				unchecked = append(unchecked, entry)
+			case "redacted":
+				redacted = append(redacted, entry)
+			}
+		}
+	}
+	return unchecked, redacted
+}
+
+// alter changes a value in a way that keeps its shape: the last hex digit of a hex string flipped,
+// the last letter of any other string moved one along, an integer increased, a boolean negated,
+// and an object or array changed in its first altered member, so a verifier that checks the value
+// cannot pass it for a format reason rather than a commitment.
+func alter(v any) any {
+	switch t := v.(type) {
+	case string:
+		b := []byte(t)
+		for i := len(b) - 1; i >= 0; i-- {
+			if c, ok := nextChar(b[i]); ok {
+				b[i] = c
+				return string(b)
+			}
+		}
+		return t + "x"
+	case int64:
+		return t + 1
+	case int:
+		return t + 1
+	case bool:
+		return !t
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if _, isString := t[k].(string); isString {
+				t[k] = alter(t[k])
+				return t
+			}
+		}
+		if len(keys) > 0 {
+			t[keys[0]] = alter(t[keys[0]])
+		}
+		return t
+	case []any:
+		if len(t) > 0 {
+			t[0] = alter(t[0])
+		}
+		return t
+	}
+	return v
+}
+
+// copyValue returns a deep copy of a decoded JSON value, so altering the copy leaves the original.
+func copyValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, e := range t {
+			out[k] = copyValue(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = copyValue(e)
+		}
+		return out
+	}
+	return v
+}
+
+// nextChar returns a different character of the same kind for a lowercase letter or a digit, so a
+// hex digit stays a hex digit and a hex value stays well formed.
+func nextChar(c byte) (byte, bool) {
+	switch {
+	case c == '9', c == 'f', c == 'z':
+		return c - 1, true
+	case c >= '0' && c <= '8', c >= 'a' && c <= 'y':
+		return c + 1, true
+	}
+	return 0, false
+}
+
+// switchTenderSpans builds a switchtender-audit-v1 chain carrying two span beats the way
+// SwitchTender writes them: the members beside the link, and the same values in the path the link
+// commits.
+func (s *state) switchTenderSpans() map[string]any {
+	beat := func(n, count int64) map[string]any {
+		return map[string]any{
+			"actor": "span", "method": "SPAN",
+			"path":   fmt.Sprintf("/span/%d?count=%d&cadence_s=60", n, count),
+			"stream": "chain", "cadence_s": int64(60), "beat": n, "count": count,
+		}
+	}
+	m := s.switchTenderChainAt([]map[string]any{
+		{"actor": "release-token", "method": "POST", "path": "/api/runs"},
+		beat(1, 1),
+		{"actor": "release-token", "method": "POST", "path": "/api/runs"},
+		beat(2, 1),
+	}, []string{"2026-07-27T15:00:00Z", "2026-07-27T15:00:10Z", "2026-07-27T15:00:20Z",
+		"2026-07-27T15:00:30Z"})
+	for _, i := range []int{1, 3} {
+		m["claims"].([]any)[i].(map[string]any)["type"] = "loomseal.span/1"
+	}
+	return m
+}
+
+// typedBuilder returns a builder of switchTenderTyped for a claim type.
+func (s *state) typedBuilder(claimType string) func() map[string]any {
+	return func() map[string]any { return s.switchTenderTyped(claimType) }
+}
+
+// switchTenderTyped builds a switchtender-audit-v1 chain with one claim of a registered type whose
+// members such a link does not commit.
+func (s *state) switchTenderTyped(claimType string) map[string]any {
+	payloads := map[string]map[string]any{
+		"loomseal.agentrun/1": {"session": "sess_vectors", "tool": "shell", "args": "make release",
+			"outcome": "succeeded"},
+		"whodar.knowledge-risk/1": {"finding": "single maintainer", "topics_scored": int64(4),
+			"critical": int64(1)},
+	}
+	p := map[string]any{"actor": "release-token", "method": "POST", "path": "/api/runs"}
+	for k, v := range payloads[claimType] {
+		p[k] = v
+	}
+	m := s.switchTenderChainOf([]map[string]any{p})
+	m["claims"].([]any)[0].(map[string]any)["type"] = claimType
+	return m
 }

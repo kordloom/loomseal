@@ -12,6 +12,7 @@ Usage:
 
 import base64
 import hashlib
+import hmac
 import json
 import re
 import os
@@ -32,7 +33,17 @@ V1 = "loomseal-chain-v1"
 SWITCHTENDER = "switchtender-audit-v1"
 MERKLE = "loomseal-merkle-v1"
 
-KNOWN_TYPES = {"switchtender.audit/1", "loomseal.span/1", "loomseal.agentrun/1"}
+# DECLARATION is schema/claim-members.json, the declaration of every payload member of every claim
+# type and what a verifier holds it against. The Go verifier embeds the same file, so the two cannot
+# disagree about which members are bound, checked, redacted, or unchecked.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "schema",
+                       "claim-members.json"), encoding="utf-8") as _fh:
+    DECLARATION = json.load(_fh)
+
+# KNOWN_TYPES are the registered claim types, the ones the declaration declares. The Go verifier's
+# own test holds its registry to the same file, so the two report the same types as unknown. A list
+# kept here by hand had fallen behind it and called whodar.knowledge-risk/1 unknown.
+KNOWN_TYPES = set(DECLARATION["types"])
 
 
 class VError(Exception):
@@ -470,7 +481,11 @@ def verify(raw_bytes, evidence_dir=None):
               "disclosures_present": False, "fields_revealed": 0, "fields_redacted": 0,
               "revealed_fields": [], "attestations_present": False, "attestations_verified": 0,
               "head_attestations_verified": 0, "head_attestors": [],
-              "attestors": [], "install_binding": ""}
+              "attestors": [], "install_binding": "", "records_present": False,
+              "decision_records": 0, "correction_records": 0, "reasons_verified": 0,
+              "reasons_redacted": [], "reasons_withheld": 0, "specs_matched": 0,
+              "specs_unchecked": 0, "outcomes_verified": 0, "outcomes_unchecked": 0,
+              "legacy_records": [], "disclosed": [], "disclosed_unchecked": 0, "_states": {}}
     try:
         b = parse_strict(raw_bytes)
         _schema_check(b)
@@ -481,12 +496,15 @@ def verify(raw_bytes, evidence_dir=None):
         _check_chain(b, report)
         _check_install_key(b, report)
         _check_disclosures(b, report)
+        _check_records(b, report)
         _check_attestations(b, report)
         _check_head_attestations(b, report)
         _check_anchors(b, report)
         _check_span(b, report)
         _check_evidence(b, evidence_dir, report)
+        _classify_disclosed(b, report)
     except VError as e:
+        report.pop("_states", None)
         report["problems"].append(f"{e.check}: {e.msg}")
         if e.check == "unsupported":
             report["unsupported"] = True
@@ -494,6 +512,7 @@ def verify(raw_bytes, evidence_dir=None):
         else:
             report["level"] = "not verified"
         return report
+    report.pop("_states", None)
     report["ok"] = len(report["problems"]) == 0
     report["level"] = _level(report)
     return report
@@ -539,6 +558,13 @@ def _members_check(b):
     _require_members(b.get("chain"), "chain", "chain")
     if isinstance(b.get("chain"), dict):
         _require_members(b["chain"].get("consistency"), "consistency", "chain.consistency")
+        # The head carries chain coordinates that drive the head match and anchor resolution, so its
+        # members are checked exactly like a claim's, matching the Go verifier.
+        _require_members(b["chain"].get("head"), "coords", "chain.head")
+    # Head-level attestations sit at the top of the document and are verified and reported, so their
+    # members are checked exactly as claim attestations are, matching the Go verifier.
+    for j, a in enumerate(b.get("attestations") or []):
+        _require_members(a, "attestation", f"head attestation {j}")
     for i, c in enumerate(b.get("claims") or []):
         _require_members(c, "claim", f"claim {i}")
         if isinstance(c, dict):
@@ -1025,6 +1051,433 @@ def _check_disclosures(b, report):
         report["revealed_fields"].extend(sorted(names))
 
 
+# _RECORD_KINDS are the records a switchtender.audit/1 claim discloses as a JSON object, by the kind
+# name schema/claim-members.json gives them: (body member, nonce member, event member, needs a
+# reason). A correction is nothing but a reason, so a correction body committing none is
+# malformed. The outcome is the third kind, carried as text and checked by _check_outcome.
+_RECORD_KINDS = {
+    "decision": ("decision_body", "decision_nonce", "decision_id", False),
+    "correction": ("correction_body", "correction_nonce", "correction_id", True),
+}
+
+# _KEYED_PREFIX opens the digest form that commits a record's canonical bytes under a nonce.
+_KEYED_PREFIX = "sha256s:"
+
+# _EXACT_PREFIX opens the digest form that commits a disclosed text exactly as carried.
+_EXACT_PREFIX = "sha256e:"
+
+# _REASON_MEMBERS disclose a record's reason: the text and the random value that open its
+# commitment, or the category of the privacy redaction that removed both.
+_REASON_MEMBERS = ("reason_text", "reason_random", "reason_redacted")
+
+# _FOLD maps the characters Go's encoding/json folds onto a lowercase ASCII letter, beside the ASCII
+# capitals: the Kelvin sign onto k and the long s onto s. Every member name the format declares is
+# lowercase ASCII letters, digits, and underscores, and no other character folds onto one of those,
+# so this is exactly the folding a Go reader applies to them. The Go test suite enumerates every
+# character to hold that.
+_FOLD = {"\u212a": "k", "\u017f": "s"}
+
+
+def _folds_onto(name, member):
+    """Report whether name differs from member, a declared name, only in case."""
+    if name == member or len(name) != len(member):
+        return False
+    folded = "".join(_FOLD.get(ch, ch.lower() if "A" <= ch <= "Z" else ch) for ch in name)
+    return folded == member
+
+
+def _quote(name):
+    """Quote a member name for a problem line the way the Go verifier does."""
+    return json.dumps(name, ensure_ascii=False)
+
+
+def _case_variant(payload, members):
+    """Find a payload member whose name differs from one of members only in case, returning the
+    pair, or None. Mirrors the Go caseVariant."""
+    for name in sorted(payload):
+        for member in members:
+            if _folds_onto(name, member):
+                return name, member
+    return None
+
+
+def _path_matches(pattern, path):
+    """Report whether path fits pattern segment by segment, a {name} segment matching any
+    non-empty segment. An empty pattern matches every path."""
+    if not pattern:
+        return True
+    want, got = pattern.split("/"), path.split("/")
+    if len(want) != len(got):
+        return False
+    for w, g in zip(want, got):
+        if w.startswith("{") and w.endswith("}"):
+            if not g:
+                return False
+        elif w != g:
+            return False
+    return True
+
+
+def _record_kind_of(payload):
+    """Name the kind of record a switchtender.audit/1 payload is, by its committed method and path
+    read by their exact names, or return "" for a claim that is no record."""
+    method, path = payload.get("method"), payload.get("path")
+    method = method if isinstance(method, str) else ""
+    path = path if isinstance(path, str) else ""
+    for name, kind in DECLARATION["records"]["kinds"].items():
+        if method == kind["method"] and _path_matches(kind.get("path", ""), path):
+            return name
+    return ""
+
+
+def _record_members(kind):
+    """List the switchtender.audit/1 members a record of kind is read for, in name order."""
+    members = DECLARATION["types"]["switchtender.audit/1"]
+    return sorted(n for n, d in members.items() if kind in d.get("records", []))
+
+
+def _first_keyed(b):
+    """Return the index of the first switchtender.audit/1 claim whose content_digest is in the keyed
+    or the exact form, or -1. No entry after it predates the keyed form."""
+    for i, c in enumerate(b["claims"]):
+        payload = c.get("payload")
+        if c.get("type") != "switchtender.audit/1" or not isinstance(payload, dict):
+            continue
+        digest = payload.get("content_digest")
+        if isinstance(digest, str) and digest.startswith((_KEYED_PREFIX, _EXACT_PREFIX)):
+            return i
+    return -1
+
+
+def _settle_elsewhere(report, i, payload, kind):
+    """Report every record member a claim carries outside its own record as unchecked: it is an
+    ordinary member there, which nothing commits."""
+    members = DECLARATION["types"]["switchtender.audit/1"]
+    for name in payload:
+        records = members.get(name, {}).get("records", [])
+        if records and kind not in records:
+            _settle(report, i, name, "unchecked", DECLARATION["records"]["elsewhere"])
+
+
+def _settle(report, claim, member, state, detail):
+    """Record what a check established about one member of one claim."""
+    report["_states"][(claim, member)] = (state, detail)
+
+
+def _settle_declared(report, claim, claim_type, member):
+    """Record a member as its declaration states it, against the commitment it names."""
+    decl = DECLARATION["types"][claim_type][member]
+    _settle(report, claim, member, decl["state"], decl.get("by", ""))
+
+
+def _classify_disclosed(b, report):
+    """List every member a switchtender-audit-v1 link does not commit, in the state the checks left
+    it: checked, redacted, or unchecked. A member no check confirmed is unchecked, with the reason
+    its declaration gives, or because nothing declares it. A member counts with the one it travels
+    with only when that one is on the same claim. Mirrors the Go classifyDisclosed."""
+    chain = b.get("chain")
+    if not chain or chain.get("profile") != SWITCHTENDER:
+        return
+    profile = DECLARATION[SWITCHTENDER]
+    bound, refused = set(profile["bound"]), profile.get("refused", {})
+    for i, c in enumerate(b["claims"]):
+        payload = c.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        for name in sorted(n for n in payload if n not in bound and n not in refused):
+            decl = DECLARATION["types"].get(c.get("type"), {}).get(name)
+            settled = report["_states"].get((i, name))
+            if settled:
+                state, detail = settled
+            elif decl and decl["state"] == "unchecked":
+                state, detail = "unchecked", decl["reason"]
+            elif decl:
+                state, detail = "unchecked", "its check did not pass"
+            else:
+                state = "unchecked"
+                detail = (f"not declared for {c.get('type')}, and a {SWITCHTENDER} link does not "
+                          "commit it")
+            entry = {"claim": i, "member": name, "state": state, "detail": detail}
+            with_member = (decl or {}).get("with", "")
+            if with_member not in payload:
+                with_member = ""
+            if with_member:
+                entry["with"] = with_member
+            report["disclosed"].append(entry)
+            if state == "unchecked" and not with_member:
+                report["disclosed_unchecked"] += 1
+
+
+def _check_records(b, report):
+    """Verify the records switchtender.audit/1 claims disclose beside the fields their links commit.
+
+    The link commits the entry's content_digest and the digest commits the record's body, so a body
+    that does not reproduce the digest is not the record the chain holds. A decision or correction
+    body commits a reason, which disclosed text must open. A redacted reason cannot be opened, by
+    design, and is reported as redacted rather than failed. A disclosed spec is held against the
+    spec digest every verified decision and outcome committed. A claim is a record by its committed
+    method and path, and only its own record's members are read on it: the same names elsewhere are
+    ordinary members, reported unchecked. Mirrors the Go checkRecords."""
+    keyed_at = _first_keyed(b)
+    specs, committed = [], []
+    for i, c in enumerate(b["claims"]):
+        payload = c.get("payload")
+        if c.get("type") != "switchtender.audit/1" or not isinstance(payload, dict):
+            continue
+        kind = _record_kind_of(payload)
+        _settle_elsewhere(report, i, payload, kind)
+        if not kind:
+            continue
+        variant = _case_variant(payload, _record_members(kind))
+        if variant:
+            raise VError("record", f"claim {i} carries {_quote(variant[0])}, which differs from "
+                                   f"{variant[1]} only in case, so a reader that folds case would "
+                                   "take one for the other")
+        if kind == "outcome":
+            if "spec_body" in payload:
+                text = payload["spec_body"]
+                if not isinstance(text, str):
+                    raise VError("record", f"claim {i} spec_body is not a string, so its bytes "
+                                           "cannot be hashed")
+                specs.append((i, "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()))
+            spec = _check_outcome(i, payload, keyed_at, report)
+        else:
+            spec = _check_record_claim(i, kind, payload, keyed_at, report)
+        if spec is not None:
+            committed.append(spec)
+    _check_specs(specs, committed, report)
+
+
+def _check_record_claim(i, kind, payload, keyed_at, report):
+    """Check the decision or correction a record claim discloses, if any, and return the spec digest
+    a verified decision body commits, or None."""
+    body_member, nonce_member, event_member, needs_reason = _RECORD_KINDS[kind]
+    if not any(m in payload for m in (body_member, nonce_member) + _REASON_MEMBERS):
+        return None
+    report["records_present"] = True
+    body = payload.get(body_member)
+    if not isinstance(body, dict):
+        raise VError("record", f"claim {i} {body_member} is missing or not an object")
+    legacy, why = _record_digest_problem(i, payload, nonce_member, body, keyed_at)
+    if why:
+        raise VError("record", f"claim {i} {body_member} {why}")
+    report["decision_records" if kind == "decision" else "correction_records"] += 1
+    if legacy:
+        report["legacy_records"].append(f"claim {i} {body_member}")
+    for member in (body_member, nonce_member):
+        if member != body_member and member not in payload:
+            continue
+        if legacy:
+            _settle(report, i, member, "checked", DECLARATION["records"]["legacy"])
+        else:
+            _settle_declared(report, i, "switchtender.audit/1", member)
+    _check_reason(i, payload, body_member, event_member, needs_reason, body, report)
+    if kind != "decision":
+        return None
+    spec = body.get("spec_digest")
+    return spec if isinstance(spec, str) else ""
+
+
+def _record_digest_problem(i, payload, nonce_member, body, keyed_at):
+    """Say why a record body does not reproduce the content_digest its entry committed, returning
+    (legacy, why) with why None when it does. The keyed form is sha256s:, the SHA-256 of the nonce
+    and the HMAC-SHA256 of the body's canonical bytes keyed by the nonce. The legacy unkeyed form is
+    sha256:, the SHA-256 of the canonical bytes, which an entry recorded before nonces carries with
+    an empty nonce, and which only an entry before the bundle's first keyed one may carry."""
+    digest = payload.get("content_digest")
+    if not isinstance(digest, str) or not digest:
+        return False, "is disclosed on an entry that commits no content_digest"
+    nonce = payload.get(nonce_member, "")
+    if not isinstance(nonce, str):
+        return False, f"has a {nonce_member} that is not a string"
+    canonical = canon(body)
+    if digest.startswith(_KEYED_PREFIX):
+        parts = digest[len(_KEYED_PREFIX):].split(":")
+        if len(parts) != 2 or not _is_hex64(parts[0]) or not _is_hex64(parts[1]):
+            return False, "sits on a content_digest that is not sha256s: and two 64 hex digests"
+        if not _is_hex64(nonce):
+            return False, f"has a {nonce_member} that is not 64 lowercase hex digits"
+        key = bytes.fromhex(nonce)
+        if hashlib.sha256(key).hexdigest() != parts[0]:
+            return False, f"has a {nonce_member} the content_digest did not commit"
+        if hmac.new(key, canonical, hashlib.sha256).hexdigest() != parts[1]:
+            return False, "does not reproduce the content_digest its entry committed"
+        return False, None
+    if digest.startswith("sha256:") and _is_hex64(digest[len("sha256:"):]):
+        if 0 <= keyed_at < i:
+            return False, (f"sits on an unkeyed content_digest after claim {keyed_at} began the "
+                           "keyed form, and only an entry from before the keyed form may carry one")
+        if nonce:
+            return False, (f"carries a {nonce_member} beside an unkeyed content_digest, which "
+                           "commits none")
+        if hashlib.sha256(canonical).hexdigest() != digest[len("sha256:"):]:
+            return False, "does not reproduce the content_digest its entry committed"
+        return True, None
+    return False, "sits on a content_digest in neither the sha256s: nor the sha256: form"
+
+
+def _check_reason(i, payload, body_member, event_member, needs_reason, body, report):
+    """Check the reason a verified record body commits against what the claim discloses. Text and
+    its random value must open the commitment. A redaction category stands in for both once a
+    privacy redaction removed them, so the reason is reported as redacted and cannot be opened by
+    design. A commitment with nothing disclosed is withheld."""
+    has_text, has_random = "reason_text" in payload, "reason_random" in payload
+    has_redacted = "reason_redacted" in payload
+    commitment = body.get("reason_commitment", "")
+    if not isinstance(commitment, str):
+        raise VError("record", f"claim {i} {body_member} carries a reason_commitment that is not a "
+                               "string")
+    if not commitment:
+        if needs_reason:
+            raise VError("record", f"claim {i} {body_member} commits no reason, and a correction "
+                                   "is a reason")
+        if has_text or has_random or has_redacted:
+            raise VError("record", f"claim {i} discloses a reason its {body_member} commits "
+                                   "none of")
+        return
+    if not commitment.startswith("sha256:") or not _is_hex64(commitment[len("sha256:"):]):
+        raise VError("record", f"claim {i} {body_member} reason_commitment is not sha256: and 64 "
+                               "hex digits")
+    event = body.get(event_member)
+    if not isinstance(event, str) or not event:
+        raise VError("record", f"claim {i} {body_member} commits a reason but names no "
+                               f"{event_member} to bind it to")
+    if has_redacted:
+        category = payload["reason_redacted"]
+        if not isinstance(category, str) or not category or has_text or has_random:
+            raise VError("record", f"claim {i} reason_redacted must be a category alone, with no "
+                                   "text or random value beside it")
+        report["reasons_redacted"].append(category)
+        by = DECLARATION["types"]["switchtender.audit/1"]["reason_redacted"]["by"]
+        _settle(report, i, "reason_redacted", "redacted", f"{category}, {by}")
+    elif has_text:
+        text, random = payload["reason_text"], payload.get("reason_random")
+        if not isinstance(text, str) or not isinstance(random, str) or not _is_hex64(random):
+            raise VError("record", f"claim {i} reason_text needs a reason_random of 64 lowercase "
+                                   "hex digits")
+        opened = "sha256:" + hashlib.sha256(
+            canon({"event": event, "random": random, "reason": text})).hexdigest()
+        if opened != commitment:
+            raise VError("record", f"claim {i} reason_text does not open the reason_commitment its "
+                                   f"{body_member} carries")
+        report["reasons_verified"] += 1
+        _settle_declared(report, i, "switchtender.audit/1", "reason_text")
+        _settle_declared(report, i, "switchtender.audit/1", "reason_random")
+    elif has_random:
+        raise VError("record", f"claim {i} discloses a reason_random with no reason_text to open")
+    else:
+        report["reasons_withheld"] += 1
+
+
+def _check_outcome(i, payload, keyed_at, report):
+    """Check the outcome record an outcome claim discloses, if any, and return the spec digest it
+    names, or None.
+
+    An outcome under the exact form is checked over the text's bytes as carried, since the producer
+    redacted the record before it fixed those bytes. An outcome under an older form was committed
+    over the producer's own redaction, which a verifier cannot rebuild, so it is counted as carried
+    and unchecked. The unkeyed form is held to the rule a record body is. Mirrors the Go
+    checkOutcome."""
+    has_nonce = "outcome_nonce" in payload
+    if "outcome_body" not in payload:
+        if has_nonce:
+            raise VError("record", f"claim {i} carries an outcome_nonce with no outcome_body")
+        return None
+    report["records_present"] = True
+    digest = payload.get("content_digest")
+    if not isinstance(digest, str) or not digest:
+        raise VError("record", f"claim {i} outcome_body is disclosed on an entry that commits no "
+                               "content_digest")
+    if not digest.startswith(_EXACT_PREFIX):
+        if digest.startswith("sha256:") and 0 <= keyed_at < i:
+            raise VError("record", f"claim {i} outcome_body sits on an unkeyed content_digest "
+                                   f"after claim {keyed_at} began the keyed form, and only an "
+                                   "entry from before the keyed form may carry one")
+        report["outcomes_unchecked"] += 1
+        why = DECLARATION["types"]["switchtender.audit/1"]["outcome_body"]["unchecked"]
+        _settle(report, i, "outcome_body", "unchecked", why)
+        if has_nonce:
+            _settle(report, i, "outcome_nonce", "unchecked", why)
+        return None
+    text = payload["outcome_body"]
+    if not isinstance(text, str):
+        raise VError("record", f"claim {i} outcome_body is not a string, so its bytes cannot be "
+                               "checked")
+    nonce = payload.get("outcome_nonce")
+    parts = digest[len(_EXACT_PREFIX):].split(":")
+    why = None
+    if len(parts) != 2 or not _is_hex64(parts[0]) or not _is_hex64(parts[1]):
+        why = "sits on a content_digest that is not sha256e: and two 64 hex digests"
+    elif not isinstance(nonce, str) or not _is_hex64(nonce):
+        why = "has an outcome_nonce that is not 64 lowercase hex digits"
+    elif hashlib.sha256(bytes.fromhex(nonce)).hexdigest() != parts[0]:
+        why = "has an outcome_nonce the content_digest did not commit"
+    elif hmac.new(bytes.fromhex(nonce), text.encode("utf-8"),
+                  hashlib.sha256).hexdigest() != parts[1]:
+        why = "does not reproduce the content_digest its entry committed"
+    if why:
+        raise VError("record", f"claim {i} outcome_body {why}")
+    report["outcomes_verified"] += 1
+    _settle_declared(report, i, "switchtender.audit/1", "outcome_body")
+    _settle_declared(report, i, "switchtender.audit/1", "outcome_nonce")
+    return _outcome_spec(text)
+
+
+# _MAX_OUTCOME_DEPTH is how deeply a verified outcome record may nest and still be read for the spec
+# digest it names, the bound the Go verifier holds, so the two read the same records.
+_MAX_OUTCOME_DEPTH = 32
+
+
+def _within_depth(v, limit):
+    """Report whether v nests no deeper than limit, each array and object counting as one level."""
+    if isinstance(v, (dict, list)):
+        if limit == 0:
+            return False
+        members = v.values() if isinstance(v, dict) else v
+        return all(_within_depth(e, limit - 1) for e in members)
+    return True
+
+
+def _outcome_spec(text):
+    """Read the spec digest a verified outcome record names: the spec_digest member of the JSON
+    object the text holds, read under the bundle's own rules, unique keys, valid strings, and
+    integers within 2^53, and within the depth bound, so every implementation reads the same value.
+    A record that is not such an object, or names none, commits no spec digest."""
+    try:
+        tree = parse_strict(text.encode("utf-8"))
+        if not _within_depth(tree, _MAX_OUTCOME_DEPTH):
+            return None
+        canon(tree)
+    except (VError, RecursionError, ValueError):
+        return None
+    spec = tree.get("spec_digest") if isinstance(tree, dict) else None
+    return spec if isinstance(spec, str) else None
+
+
+def _check_specs(specs, committed, report):
+    """Hold every disclosed spec against the spec digest each verified decision and outcome record
+    committed. A bundle discloses a spec only as one run's receipt, so it holds one spec. A spec
+    with nothing verified beside it to commit its digest is counted as unchecked rather than read
+    as matched."""
+    if not specs:
+        return
+    if any(s[1] != specs[0][1] for s in specs[1:]):
+        raise VError("record", "the bundle discloses two different specs, and one run has one spec")
+    if not committed:
+        report["specs_unchecked"] = len(specs)
+        why = DECLARATION["types"]["switchtender.audit/1"]["spec_body"]["unchecked"]
+        for claim, _ in specs:
+            _settle(report, claim, "spec_body", "unchecked", why)
+        return
+    for c in committed:
+        if c != specs[0][1]:
+            raise VError("record", f"a verified record committed spec {c or '(none)'} but the "
+                                   f"disclosed spec hashes to {specs[0][1]}")
+    report["specs_matched"] = len(specs)
+    for claim, _ in specs:
+        _settle_declared(report, claim, "switchtender.audit/1", "spec_body")
+
+
 def _check_attestations(b, report):
     """Verify counter-signatures a party other than the producer added to a claim. Each attestation
     signs the RFC 8785 canonical object of the claim's link and the signer's role, binding one claim
@@ -1158,6 +1611,14 @@ def _check_anchors(b, report):
     head = b["chain"]["head"]
     if report["head_matched"]:
         verified[head["seq"]] = head["link"]
+    # A root a verified consistency proof starts from is a coordinate this verifier recomputed, so
+    # an anchor over it matches: the anchor fixed the root at a time the producer did not control,
+    # and the proof shows the log there is now grew from exactly it. The Go verifier always did
+    # this, and this one refused such an anchor as matching nothing until a producer's receipts
+    # showed the two disagreeing on the same bytes.
+    cons = b["chain"].get("consistency")
+    if cons and report.get("consistency_ok"):
+        verified[cons["from_size"]] = cons["from_root"]
     for i, a in enumerate(anchors):
         matched = False
         if verified.get(a["seq"]) == a["link"]:
@@ -1242,6 +1703,20 @@ def _check_span(b, report):
             raise VError("span", f"span claim {i} beat {beat!r}, want at least 1")
         if not isinstance(count, int) or count < 0:
             raise VError("span", f"span claim {i} count {count!r}, want at least 0")
+        # A switchtender-audit-v1 link commits the path and not the span members beside it, so
+        # under that profile the members are bound through the path they were written into.
+        if b["chain"].get("profile") == SWITCHTENDER:
+            variant = _case_variant(p, sorted(DECLARATION["types"]["loomseal.span/1"]))
+            if variant:
+                raise VError("span", f"span claim {i} carries {_quote(variant[0])}, which "
+                                     f"differs from {variant[1]} only in case, so a reader that "
+                                     "folds case would take one for the other")
+            want = f"/span/{beat}?count={count}&cadence_s={cadence}"
+            if p.get("path") != want:
+                raise VError("span", f"span claim {i} members do not match the span path its link "
+                                     f"commits: path {p.get('path')!r}, members read {want!r}")
+            for member in ("stream", "beat", "count", "cadence_s"):
+                _settle_declared(report, i, "loomseal.span/1", member)
         spans.append((p, c["chain"]["seq"], _at_epoch(c["at"], i)))
     if not report["span_present"]:
         return
@@ -1289,23 +1764,64 @@ def _check_span(b, report):
     report["span_ok"] = True
 
 
+def _within_dir(base, rel):
+    """Report whether rel stays inside base once resolved lexically. A location is carried in the
+    bundle, so it is attacker-controlled and must not reach outside the directory the verifier was
+    pointed at. This matches the Go verifier's withinDir: an absolute path is refused, and the join
+    is cleaned without resolving symlinks."""
+    if os.path.isabs(rel):
+        return False
+    base_abs = os.path.abspath(base)
+    full = os.path.abspath(os.path.join(base, rel))
+    return full == base_abs or full.startswith(base_abs + os.sep)
+
+
 def _check_evidence(b, evidence_dir, report):
+    """Hash every supplied artifact and compare the bundle's digests against them. An artifact that
+    was never supplied is a holder disclosing less than the whole set, which is allowed and counts as
+    missing. An artifact sitting at its declared location whose bytes no longer hash to the sealed
+    digest is a different thing entirely: it fails the bundle on its own ALTERED line. Counting both
+    as missing let an altered artifact pass with a clean verdict, which is the defect the Go verifier
+    fixed and this one now matches."""
     supplied = set()
     if evidence_dir:
         for root, _, files in os.walk(evidence_dir):
             for fn in files:
-                with open(os.path.join(root, fn), "rb") as fh:
+                path = os.path.join(root, fn)
+                # Only regular files are hashed, so a symlink is never followed into the set,
+                # matching the Go verifier, which hashes only regular directory entries.
+                if os.path.islink(path) or not os.path.isfile(path):
+                    continue
+                with open(path, "rb") as fh:
                     supplied.add("sha256:" + hashlib.sha256(fh.read()).hexdigest())
-    verified = missing = referenced = 0
+    verified = missing = referenced = mismatched = 0
+    seen_mismatch = set()
     for c in b["claims"]:
         for e in c.get("evidence", []):
             if not evidence_dir:
                 referenced += 1
-            elif e["digest"] in supplied:
+                continue
+            if e["digest"] in supplied:
                 verified += 1
-            else:
-                missing += 1
-    report["evidence"] = {"verified": verified, "missing": missing, "referenced": referenced}
+                continue
+            # location travels inside the bundle and is attacker-controlled, so it is followed only
+            # when it stays within the evidence directory. A location that escapes, or names no
+            # file, leaves the artifact counted as missing, which is not a failure.
+            loc = e.get("location") or ""
+            if loc and _within_dir(evidence_dir, loc) \
+                    and os.path.exists(os.path.join(evidence_dir, loc)):
+                # Several claims may rest on one artifact, so an altered artifact is reported once
+                # rather than once per reference, matching the Go verifier's file count.
+                if loc not in seen_mismatch:
+                    seen_mismatch.add(loc)
+                    mismatched += 1
+                    report["problems"].append(
+                        f"evidence {e.get('role', '')} at {loc} does not match its sealed digest "
+                        f"{e['digest']}")
+                continue
+            missing += 1
+    report["evidence"] = {"verified": verified, "missing": missing, "referenced": referenced,
+                          "mismatched": mismatched}
 
 
 def _level(report):
@@ -1323,12 +1839,21 @@ def _level(report):
         else:
             wording = report["chain_mode"]
         level += f", chained ({wording})"
-    anchored = report["anchor_proofs_verified"] > 0 or report["anchors_matched"] > 0
-    if report["anchor_proofs_verified"] > 0:
+    # Anchored wording is reserved to a chain whose links were recomputed and bound to their claim
+    # content, the full mode. A keyed chain is verified structurally only, so the producer chose
+    # which link sits beside each claim and the verifier never tied the anchored link to the
+    # content; granting it the anchored level would let a real token be laundered onto an invented
+    # keyed entry or an unkeyed anchored chain be re-presented as keyed to alter a payload. The
+    # merkle profile reports full mode, so it keeps anchoring. This mirrors the Go verifier.
+    fully_chained = (report["chain_present"] and report["chain_ok"]
+                     and report.get("chain_mode") == "full")
+    anchored = fully_chained and (report["anchor_proofs_verified"] > 0
+                                  or report["anchors_matched"] > 0)
+    if fully_chained and report["anchor_proofs_verified"] > 0:
         # A proof checked here needed no network and no trust in the producer, which is a stronger
         # statement than a reference a relying party still has to go and confirm.
         level += ", anchored (proof verified)"
-    elif report["anchors_matched"] > 0:
+    elif fully_chained and report["anchors_matched"] > 0:
         level += ", anchored by reference"
     # Spanned sits above anchored: a population commitment is only worth the anchoring under it.
     if anchored and report["span_present"] and report["span_ok"]:
@@ -1375,6 +1900,11 @@ def failing_check_error(check, r):
                                                          any("head attestation" in p for p in r["problems"])))
         if not present or not any("attestation" in p for p in r["problems"]):
             return f"attestation case did not fail on an attestation: {r['problems']}"
+    elif check == "record":
+        if not r["signature_ok"] or not r["chain_ok"]:
+            return "record case failed earlier than the record check"
+        if not any(p.startswith("record:") for p in r["problems"]):
+            return f"record case did not fail on a disclosed record: {r['problems']}"
     elif check == "install":
         if not r["signature_ok"] or not r["chain_ok"]:
             return "install case failed earlier than the install check"
@@ -1402,6 +1932,17 @@ def run_vectors(dirpath):
         detail = ""
         if ok and v["must_verify"] and v.get("level") and r["level"] != v["level"]:
             status, detail = "!! ", f"  level got[{r['level']}] want[{v['level']}]"
+        if status == "OK " and ok and v["must_verify"]:
+            # The states of the disclosed members are part of the verdict a vector pins.
+            for state, want in (("unchecked", v.get("unchecked") or []),
+                                ("redacted", v.get("redacted") or [])):
+                got = [f"claim {d['claim']} {d['member']}" for d in r["disclosed"]
+                       if d["state"] == state]
+                if got != want:
+                    status, detail = "!! ", f"  {state} got{got} want{want}"
+            if r["legacy_records"] != (v.get("legacy") or []):
+                status = "!! "
+                detail = f"  legacy got{r['legacy_records']} want{v.get('legacy') or []}"
         if status == "OK " and not v["must_verify"] and v.get("failing_check"):
             why = failing_check_error(v["failing_check"], r)
             if why:
@@ -1414,12 +1955,45 @@ def run_vectors(dirpath):
 
 
 def _is_presentation(raw_bytes):
-    """Report whether raw is a holder presentation rather than a bundle."""
+    """Report whether raw is a holder presentation rather than a bundle, by the presence of the
+    presentation version member under its exact name. Mirrors the Go LooksLikePresentation."""
     try:
-        d = json.loads(raw_bytes)
-    except Exception:
+        d = parse_strict(raw_bytes)
+    except (VError, RecursionError, ValueError):
         return False
-    return isinstance(d, dict) and d.get("loomseal_presentation")
+    version = d.get("loomseal_presentation") if isinstance(d, dict) else None
+    return isinstance(version, str) and version != ""
+
+
+# _PRESENTATION_MEMBERS and _HOLDER_MEMBERS are the members a presentation and its holder carry,
+# matched by exact name, as the Go verifier matches them. A member outside them, a case variant of a
+# known one included, is refused, so no reader can be shown one value while a verifier read another.
+_PRESENTATION_MEMBERS = {"audience", "bundle", "created_at", "holder", "loomseal_presentation",
+                         "nonce", "sig"}
+_HOLDER_MEMBERS = {"alg", "key_id", "public_key"}
+
+
+def _presentation_problem(p):
+    """Say why a parsed presentation's members are not the exact set, or the strings, the format
+    defines, or return None. Mirrors the Go parsePresentation."""
+    if not isinstance(p, dict):
+        return "a presentation is a JSON object"
+    extra = sorted(set(p) - _PRESENTATION_MEMBERS)
+    if extra:
+        return f"presentation carries an unknown member {json.dumps(extra[0], ensure_ascii=False)}"
+    holder = p.get("holder", {})
+    if not isinstance(holder, dict):
+        return "presentation holder is not an object"
+    extra = sorted(set(holder) - _HOLDER_MEMBERS)
+    if extra:
+        return ("presentation holder carries an unknown member "
+                f"{json.dumps(extra[0], ensure_ascii=False)}")
+    for obj, names in ((p, ("loomseal_presentation", "created_at", "audience", "nonce", "sig")),
+                       (holder, ("key_id", "public_key", "alg"))):
+        for name in names:
+            if name in obj and not isinstance(obj[name], str):
+                return f"presentation member {name} is not a string"
+    return None
 
 
 def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None):
@@ -1432,7 +2006,11 @@ def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None)
     except VError as e:
         report["problems"].append(f"parse: {e.msg}")
         return report
-    if not isinstance(p, dict) or p.get("loomseal_presentation") != "0.1":
+    why = _presentation_problem(p)
+    if why:
+        report["problems"].append(f"parse: {why}")
+        return report
+    if p.get("loomseal_presentation") != "0.1":
         report["problems"].append("parse: not a loomseal presentation 0.1")
         return report
     report["audience"], report["nonce"] = p.get("audience"), p.get("nonce")

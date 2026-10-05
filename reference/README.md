@@ -18,3 +18,9 @@ python3 reference/loomverify.py --vectors testdata/vectors
 ```
 
 The verifier is offline and reads only the files named on the command line.
+
+## Cross-verification
+
+`cross_verify_merkle.py` and `cross_verify_records.py` run this verifier over bundles the Go
+implementation wrote, honest ones and forged ones, so the two implementations are shown to agree on
+cases beyond the vectors. Each script's docstring names the Go test that emits its fixtures.

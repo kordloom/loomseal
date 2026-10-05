@@ -10,6 +10,22 @@
       "why": "A presentation whose holder signature was altered does not verify."
     },
     {
+      "name": "present-casefold-audience",
+      "file": "present-casefold-audience.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation carrying Audience beside audience is refused at parse: member names are matched exactly, so the variant is not read as the audience a reader sees."
+    },
+    {
+      "name": "present-casefold-holder-key-id",
+      "file": "present-casefold-holder-key-id.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A holder carrying the signed key id under a name that folds onto key_id is refused at parse, rather than checked in place of the key_id the document shows."
+    },
+    {
       "name": "present-no-pins",
       "file": "present-valid.loomseal-presentation.json",
       "must_verify": true,

@@ -47,6 +47,20 @@ for (const v of manifest.vectors) {
   if (r.ok && v.must_verify && v.level && r.level !== v.level) {
     problems.push(`level got[${r.level}] want[${v.level}]`);
   }
+  // What a verified bundle leaves unchecked is part of its verdict, here as on the command line.
+  if (r.ok && v.must_verify) {
+    for (const state of ["unchecked", "redacted"]) {
+      const got = (r.disclosed || [])
+        .filter((d) => d.state === state)
+        .map((d) => `claim ${d.claim} ${d.member}`)
+        .join(",");
+      const want = (v[state] || []).join(",");
+      if (got !== want) problems.push(`${state} got[${got}] want[${want}]`);
+    }
+    const legacy = (r.legacy_records || []).join(",");
+    const wantLegacy = (v.legacy || []).join(",");
+    if (legacy !== wantLegacy) problems.push(`legacy got[${legacy}] want[${wantLegacy}]`);
+  }
   if (problems.length) {
     bad++;
     console.log(`!! ${v.name.padEnd(30)} ${problems.join("  ")}`);

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
+	"github.com/kordloom/loomseal/jcs"
 )
 
 // spanType is the spec-owned population attestation claim type.
@@ -39,7 +41,7 @@ type spanClaim struct {
 // are gaps, reported with their bounds and never hidden, because coverage is a measurement and
 // not a badge. Whether a chain that simply stops beating did so honestly is not answerable from
 // a file; that detection belongs to a published feed where a missing beat is visible.
-func (r *Report) checkSpan(b *bundle.Bundle) {
+func (r *Report) checkSpan(b *bundle.Bundle, st memberStates) {
 	before := len(r.Problems)
 	// LoomSpan is defined over the linear profiles. Its beats carry a non-empty chain.prev and its
 	// coverage requires contiguous beats, and the tree profile forbids both by design: a tree has no
@@ -47,6 +49,9 @@ func (r *Report) checkSpan(b *bundle.Bundle) {
 	// bundle is therefore refused rather than checked, because attempting a check the profile cannot
 	// satisfy would report a coverage answer that means nothing.
 	treeProfile := b.Chain != nil && b.Chain.Profile == bundle.ProfileMerkle
+	// A switchtender-audit-v1 link commits a claim's path and not the span members beside it, so
+	// under that profile the members are bound through the path the producer wrote them into.
+	pathBound := b.Chain != nil && b.Chain.Profile == bundle.ProfileSwitchTender
 	var spans []spanClaim
 	for i, c := range b.Claims {
 		if c.Type != spanType {
@@ -59,6 +64,9 @@ func (r *Report) checkSpan(b *bundle.Bundle) {
 		}
 		r.SpanPresent = true
 		s, ok := r.parseSpanClaim(i, c)
+		if ok && pathBound {
+			ok = r.checkSpanPath(i, c, st)
+		}
 		if ok {
 			spans = append(spans, s)
 		}
@@ -76,28 +84,48 @@ func (r *Report) checkSpan(b *bundle.Bundle) {
 }
 
 // parseSpanClaim decodes and validates one span claim, recording problems on the report.
+//
+// Every counted value is read from the exact canonical member of the parsed payload, never from a
+// case-insensitive struct decode. A span payload is not covered by a switchtender-audit-v1 link, so
+// folding beat or count onto a struct field from a case variant no reader sees would let the Go
+// span check pass over a population the record does not state, while the Python verifier, reading
+// the exact member, disagreed. Reading the exact member keeps the two verifiers on the same
+// numbers.
 func (r *Report) parseSpanClaim(i int, c bundle.Claim) (spanClaim, bool) {
 	if c.Chain == nil {
 		r.problem("span claim %d has no chain coordinates", i)
 		return spanClaim{}, false
 	}
-	var p spanPayload
-	if err := json.Unmarshal(c.Payload, &p); err != nil {
+	tree, err := jcs.Parse(c.Payload)
+	if err != nil {
 		r.problem("span claim %d payload: %v", i, err)
 		return spanClaim{}, false
 	}
+	payload, ok := tree.(map[string]any)
+	if !ok {
+		r.problem("span claim %d payload is not an object", i)
+		return spanClaim{}, false
+	}
+	var p spanPayload
+	if s, ok := payload["stream"].(string); ok {
+		p.Stream = s
+	}
+	cadence, cadenceOK := intMember(payload, "cadence_s")
+	beat, beatOK := intMember(payload, "beat")
+	count, countOK := intMember(payload, "count")
+	p.CadenceS, p.Beat, p.Count = cadence, beat, count
 	switch {
 	case p.Stream != "chain":
 		r.problem("span claim %d stream %q: this format defines only %q", i, p.Stream, "chain")
 		return spanClaim{}, false
-	case p.CadenceS < 1:
-		r.problem("span claim %d cadence_s %d, want at least 1", i, p.CadenceS)
+	case !cadenceOK || p.CadenceS < 1:
+		r.problem("span claim %d cadence_s %v, want an integer of at least 1", i, payload["cadence_s"])
 		return spanClaim{}, false
-	case p.Beat < 1:
-		r.problem("span claim %d beat %d, want at least 1", i, p.Beat)
+	case !beatOK || p.Beat < 1:
+		r.problem("span claim %d beat %v, want an integer of at least 1", i, payload["beat"])
 		return spanClaim{}, false
-	case p.Count < 0:
-		r.problem("span claim %d count %d, want at least 0", i, p.Count)
+	case !countOK || p.Count < 0:
+		r.problem("span claim %d count %v, want an integer of at least 0", i, payload["count"])
 		return spanClaim{}, false
 	}
 	at, err := time.Parse(time.RFC3339, c.At)
@@ -106,6 +134,64 @@ func (r *Report) parseSpanClaim(i int, c bundle.Claim) (spanClaim, bool) {
 		return spanClaim{}, false
 	}
 	return spanClaim{payload: p, seq: c.Chain.Seq, at: at}, true
+}
+
+// checkSpanPath binds a span claim's members to the path a switchtender-audit-v1 link commits:
+// /span/<beat>?count=<count>&cadence_s=<cadence_s>. Without it the members ride beside the link,
+// and a producer re-signing its own bundle could widen the cadence to hide a gap or renumber the
+// beats, with every link still recomputing.
+//
+// The members are read from the parsed payload by their exact names. A name that differs from one
+// of them only in case is refused: a reader folding case onto the member would see a beat or a
+// cadence the path never committed.
+func (r *Report) checkSpanPath(i int, c bundle.Claim, st memberStates) bool {
+	tree, err := jcs.Parse(c.Payload)
+	payload, ok := tree.(map[string]any)
+	if err != nil || !ok {
+		r.problem("span claim %d payload is not an object", i)
+		return false
+	}
+	members := make([]string, 0, len(declared.Types[spanType]))
+	for name := range declared.Types[spanType] {
+		members = append(members, name)
+	}
+	sort.Strings(members)
+	if variant, member, found := caseVariant(payload, members); found {
+		r.problem("span claim %d carries %q, which differs from %s only in case, so a reader that "+
+			"folds case would take one for the other", i, variant, member)
+		return false
+	}
+	path, _ := payload["path"].(string)
+	stream, _ := payload["stream"].(string)
+	beat, beatOK := intMember(payload, "beat")
+	count, countOK := intMember(payload, "count")
+	cadence, cadenceOK := intMember(payload, "cadence_s")
+	want := fmt.Sprintf("/span/%d?count=%d&cadence_s=%d", beat, count, cadence)
+	if stream != "chain" || !beatOK || !countOK || !cadenceOK || path != want {
+		r.problem("span claim %d members do not match the span path its link commits: path %q, "+
+			"members read %q", i, path, want)
+		return false
+	}
+	for _, m := range members {
+		st.settleDeclared(i, spanType, m)
+	}
+	return true
+}
+
+// intMember reads a payload member as an integer, reporting whether it was present and a whole
+// number. A member written with a fraction or an exponent is not an integer and reads as absent, so
+// a span count cannot slip through as a float the way a struct decode into an int64 would reject
+// but a case-folded sibling would not.
+func intMember(payload map[string]any, key string) (int64, bool) {
+	num, ok := payload[key].(json.Number)
+	if !ok {
+		return 0, false
+	}
+	v, err := num.Int64()
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // checkSpanFirst verifies the bundle's first span claim. Beat 1 commits to every entry before

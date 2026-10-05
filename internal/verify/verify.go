@@ -202,6 +202,51 @@ type Report struct {
 	// Attestors lists each verified counter-signer as its role and key fingerprint, so a reader can
 	// decide whether the vouching party is worth trusting.
 	Attestors []string `json:"attestors,omitempty"`
+	// RecordsPresent reports whether any switchtender.audit/1 claim discloses a decision, correction,
+	// or outcome record beside the fields its link commits.
+	RecordsPresent bool `json:"records_present,omitempty"`
+	// DecisionRecords is how many disclosed decision bodies reproduced the content digest their
+	// entry committed.
+	DecisionRecords int `json:"decision_records,omitempty"`
+	// CorrectionRecords is how many disclosed correction bodies reproduced the content digest their
+	// entry committed.
+	CorrectionRecords int `json:"correction_records,omitempty"`
+	// LegacyRecords lists, as "claim N member", each verified decision or correction body its entry
+	// committed under the legacy unkeyed digest form, from before nonces. Anyone who can guess such a
+	// body can confirm it against the digest, so the form is accepted only on an entry that comes
+	// before the bundle's first keyed one, and every body accepted under it is named here.
+	LegacyRecords []string `json:"legacy_records,omitempty"`
+	// ReasonsVerified is how many disclosed reasons opened the commitment their record carries. The
+	// text is not echoed here, for the reason a revealed field's value is not: the report says what
+	// was checked, and the bundle holds what was said.
+	ReasonsVerified int `json:"reasons_verified,omitempty"`
+	// ReasonsRedacted lists the category of each reason a privacy redaction removed. Its text and
+	// random value are gone and its commitment stays, so it cannot be opened, by design, and is never
+	// a failure.
+	ReasonsRedacted []string `json:"reasons_redacted,omitempty"`
+	// ReasonsWithheld is how many committed reasons the bundle carries no opening for.
+	ReasonsWithheld int `json:"reasons_withheld,omitempty"`
+	// SpecsMatched is how many disclosed specs hashed to the spec digest every verified decision and
+	// outcome record committed.
+	SpecsMatched int `json:"specs_matched,omitempty"`
+	// SpecsUnchecked is how many disclosed specs had no verified record beside them to commit their
+	// digest, so they are carried, not verified.
+	SpecsUnchecked int `json:"specs_unchecked,omitempty"`
+	// OutcomesVerified is how many disclosed outcome records, committed under the exact digest form,
+	// reproduced the content digest their entry committed.
+	OutcomesVerified int `json:"outcomes_verified,omitempty"`
+	// OutcomesUnchecked is how many disclosed outcome records travel unchecked because their entry
+	// committed them under an older digest form, taken over the producer's own redaction of the
+	// record, which this verifier does not reproduce.
+	OutcomesUnchecked int `json:"outcomes_unchecked,omitempty"`
+	// Disclosed lists every payload member a switchtender-audit-v1 link does not commit, each
+	// checked against a commitment, redacted, or unchecked, with what it was held against or why
+	// not.
+	Disclosed []DisclosedMember `json:"disclosed,omitempty"`
+	// DisclosedUnchecked is how many disclosed records are unchecked, a member and the one it travels
+	// with counted once. A bundle with any verifies with that number beside the word, never as plain
+	// VERIFIED.
+	DisclosedUnchecked int `json:"disclosed_unchecked,omitempty"`
 	// SpanPresent reports whether the bundle carries loomseal.span/1 population attestations.
 	SpanPresent bool `json:"span_present"`
 	// SpanOK reports whether every span check passed. Meaningful only when SpanPresent.
@@ -257,6 +302,9 @@ func Run(raw []byte, opts Options) *Report {
 	r.checkClaimTypes(b)
 	r.checkChain(raw, b)
 	r.checkDisclosures(raw, b)
+	states := memberStates{}
+	trees := claimTrees(raw)
+	r.checkRecords(trees, states)
 	// Built here rather than stored on the report, because it is an input to the run and a
 	// report is a finding. Nil when the caller named nobody, which is the unpinned case.
 	var expected map[string]bool
@@ -270,8 +318,9 @@ func Run(raw []byte, opts Options) *Report {
 	r.checkAttestations(b, expected)
 	r.checkHeadAttestations(b, expected)
 	r.checkAnchors(b)
-	r.checkSpan(b)
+	r.checkSpan(b, states)
 	r.checkEvidence(b, opts.EvidenceDir)
+	r.classifyDisclosed(b, trees, states)
 
 	r.OK = len(r.Problems) == 0
 	r.Level = r.level()
@@ -714,13 +763,22 @@ func (r *Report) level() string {
 	if r.ChainPresent && r.ChainOK {
 		level += ", chained (" + r.chainWording() + ")"
 	}
-	anchored := r.AnchorProofsVerified > 0 || r.AnchorsMatched > 0
+	// Anchored wording is reserved to a chain whose links were recomputed and bound to their claim
+	// content, which is the full mode. A keyed chain is verified structurally only: the verifier
+	// never recomputes a link, so the producer chose which link sits beside each claim, and an anchor
+	// over such a link fixes a value the verifier never tied to the claim. Granting it the anchored
+	// level, least of all "proof verified", would let a real timestamp token be laundered onto an
+	// invented keyed entry, and would let an unkeyed anchored chain be re-presented as keyed to alter
+	// a payload while keeping its links and anchor. The anchor still matches and is reported; it just
+	// earns no anchored word here. The merkle profile reports full mode, so it keeps anchoring.
+	fullyChained := r.ChainPresent && r.ChainOK && r.ChainMode == chain.ModeFull
+	anchored := fullyChained && (r.AnchorProofsVerified > 0 || r.AnchorsMatched > 0)
 	switch {
-	case r.AnchorProofsVerified > 0:
+	case fullyChained && r.AnchorProofsVerified > 0:
 		// A proof checked here needed no network and no trust in the producer, which is a stronger
 		// statement than a reference a relying party still has to go and confirm.
 		level += ", anchored (proof verified)"
-	case r.AnchorsMatched > 0:
+	case fullyChained && r.AnchorsMatched > 0:
 		level += ", anchored by reference"
 	}
 	// Spanned sits above anchored: a population commitment is only worth the anchoring under it.

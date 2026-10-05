@@ -1,0 +1,50 @@
+{
+  "description": "Every payload member of every claim type this format registers, and what a verifier holds it against. A profile whose link or leaf commits the whole claim, loomseal-chain-v1 or loomseal-merkle-v1, commits every member. switchtender-audit-v1 commits only its bound members. Under it, every other member a claim carries is disclosed beside the link: checked against the commitment named here, redacted, or unchecked for the reason given. A member named nowhere here is unchecked. Names are compared exactly, so a name that differs from a declared one only in case is another member, and a claim whose check reads the declared member fails when it carries one. Both verifiers in this repository read this file, and the conformance vectors are generated from it.",
+  "records": {
+    "description": "A switchtender.audit/1 claim is a record by the method and path its link commits, and only a record's own members are read on it. A record member on any other claim is an ordinary member, which nothing commits. Paths are compared segment by segment, and a {name} segment matches any non-empty segment.",
+    "kinds": {
+      "decision": {"method": "DECISION"},
+      "correction": {"method": "REASON", "path": "/runs/{run}/decisions/{decision}/corrections/{correction}"},
+      "outcome": {"method": "RUN", "path": "/runs/{run}/outcome/{status}"}
+    },
+    "elsewhere": "the claim is not a record that carries it, so nothing commits it",
+    "legacy": "the entry's content_digest in the legacy unkeyed form, which anyone who can guess the body can confirm"
+  },
+  "switchtender-audit-v1": {
+    "bound": ["actor", "method", "path", "actor_type", "on_behalf_of", "content_digest", "install_id"],
+    "refused": {
+      "_sd": "selective disclosure needs a profile whose link or leaf commits the whole claim"
+    }
+  },
+  "types": {
+    "switchtender.audit/1": {
+      "decision_body": {"state": "checked", "by": "the entry's content_digest", "records": ["decision"]},
+      "decision_nonce": {"state": "checked", "by": "the entry's content_digest", "with": "decision_body", "records": ["decision"]},
+      "correction_body": {"state": "checked", "by": "the entry's content_digest", "records": ["correction"]},
+      "correction_nonce": {"state": "checked", "by": "the entry's content_digest", "with": "correction_body", "records": ["correction"]},
+      "reason_text": {"state": "checked", "by": "the reason_commitment its record body carries", "records": ["decision", "correction"]},
+      "reason_random": {"state": "checked", "by": "the reason_commitment its record body carries", "with": "reason_text", "records": ["decision", "correction"]},
+      "reason_redacted": {"state": "redacted", "by": "a privacy redaction removed the reason's text and random value and kept its commitment", "records": ["decision", "correction"]},
+      "spec_body": {"state": "checked", "by": "the spec_digest a verified decision or outcome names", "unchecked": "no verified decision or outcome names a spec digest", "records": ["outcome"]},
+      "outcome_body": {"state": "checked", "by": "the entry's content_digest in the exact form", "unchecked": "the entry committed it under an older digest form, over the producer's own redaction", "records": ["outcome"]},
+      "outcome_nonce": {"state": "checked", "by": "the entry's content_digest in the exact form", "with": "outcome_body", "records": ["outcome"]}
+    },
+    "loomseal.span/1": {
+      "stream": {"state": "checked", "by": "the format, which defines the chain stream alone"},
+      "beat": {"state": "checked", "by": "the span path the link commits"},
+      "count": {"state": "checked", "by": "the span path the link commits"},
+      "cadence_s": {"state": "checked", "by": "the span path the link commits"}
+    },
+    "loomseal.agentrun/1": {
+      "session": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "tool": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "args": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "outcome": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"}
+    },
+    "whodar.knowledge-risk/1": {
+      "finding": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "topics_scored": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "critical": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"}
+    }
+  }
+}

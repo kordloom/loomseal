@@ -53,10 +53,20 @@ signature algorithm, a widened number profile, takes a different version string,
 verifier refuses it as unsupported rather than judging it.
 
 **Strict parsing is the design.** A bundle member, claim member, or signature member this
-specification does not define is rejected at parse by a conforming verifier, exactly as the
-schema's `additionalProperties: false` states, and a conforming producer under version `0.1`
-never emits one. Rejecting the unknown is what makes a verified verdict mean something: nothing
-unsigned and nothing unspecified can ride inside a bundle a verifier has accepted.
+specification does not define is rejected at parse by a conforming verifier, exactly as the schema's
+`additionalProperties: false` states, and a conforming producer under version `0.1` never emits one.
+Rejecting the unknown is what makes a verified verdict mean something: nothing unsigned and nothing
+unspecified can ride inside a bundle a verifier has accepted. A member name is matched exactly, byte
+for byte, never case-insensitively: a member differing only in letter case from a defined one, such
+as `Install_ID` beside `install_id`, is a distinct and undefined member and is rejected, not folded
+onto the defined member. Every value a verdict reads, from a signature `key_id` to a
+`switchtender-audit-v1` entry's `actor`, is taken from its exact canonical member, so a case variant
+can neither be read in place of the member a reader sees nor make two conforming verifiers disagree
+about the same bytes. This is required of the payload too, which is otherwise an open object: a
+payload member a link commits is read by its exact name, and a case variant beside it is an ordinary
+extra member that changes nothing a link reads. A payload member a check reads beside the link is
+held to a stricter rule: on a record claim, and on a span claim under `switchtender-audit-v1`, a
+case variant of it fails the claim, as "Disclosed records in switchtender.audit/1" states.
 
 **Unsupported is not forged.** A verifier that meets an unknown `loomseal` version, an unknown
 `chain.profile`, or a signature `alg` it does not implement reports the bundle as unsupported
@@ -320,8 +330,11 @@ from the claim payloads alone.
 
 The object carries four further fields when, and only when, the entry has them, each a non-empty
 string in the claim payload: `actor_type` (how the actor authenticated), `on_behalf_of` (the account
-whose authority the actor used), `content_digest` (`sha256:` and the hex digest of the canonical,
-redacted change payload), and `install_id` (the producing installation's identifier). An empty field
+whose authority the actor used), `content_digest` (the digest of the change the entry recorded, in
+the keyed `sha256s:` form, the exact `sha256e:` form, or, for an entry recorded before nonces, the
+unkeyed `sha256:` form, all defined under "Disclosed records in switchtender.audit/1"), and
+`install_id` (the producing installation's identifier). The link hashes `content_digest` as the
+string it is. An empty field
 is omitted from the object rather than written as an empty string, so an entry recorded before a
 field existed and one that simply does not use it hash identically. These four are the profile's
 complete bound field set: a verifier hashes exactly the defined fields an entry carries and no
@@ -393,6 +406,17 @@ The keyed form is by design not recomputable by third parties: the chain key is 
 prevents forgery by a party who can write the underlying store. Relying parties verify keyed
 chains structurally, checking that each claim's `prev` equals the prior claim's `link`, and
 against anchors. The operator, holding the key, verifies fully.
+
+A keyed chain earns no anchored conformance level, not even by reference. A verifier never
+recomputes a keyed link, so the producer chose which link sits beside each claim, and an anchor over
+that link fixes a value the verifier never tied to the claim content. Granting the anchored level
+there would let a real timestamp token be lifted onto an invented keyed entry, and would let an
+unkeyed, recomputable chain be re-presented as keyed to alter a payload while keeping its links and
+its anchor. A keyed chain's anchors are still matched by coordinate and reported, so the reader sees
+them, but the conformance level stops at `chained (structural)`. The anchored levels are reserved to
+a chain whose links a verifier recomputed and bound to their content: the unkeyed linear profiles
+and the tree profile. This tightening ships with the `keyed-anchored-structural` vector and changes
+no bundle's overall verdict, only the conformance word a keyed chain's anchor may claim.
 
 ### loomseal-merkle-v1
 
@@ -782,6 +806,14 @@ and matching coordinates alone would let a producer claim the strongest anchor f
 A bundle whose proof holds is reported at a higher level than one anchored only by reference, because
 the reader needed no network and no trust in the producer to check it.
 
+An anchor earns an anchored level only when the chain it binds was verified in full, meaning its
+links were recomputed from claim content. On a keyed chain, verified structurally, the verifier
+never recomputed the link the anchor names, so the producer chose which link to place beside the
+claim and the anchor fixes a value nothing tied to the content. Such an anchor is matched and
+reported but earns no anchored word, for the same reason an `rfc3161` anchor with no proof earns
+none: matching a coordinate the verifier did not bind to content would let the strongest form be
+claimed by arrangement rather than by proof.
+
 A verifier does not decide whether an authority is worth trusting, and does not carry a root list.
 It reports the signer, and the relying party decides. Baking a root set into a verifier would make a
 bundle's strength depend on which build read it, which is the opposite of what an offline proof is
@@ -829,6 +861,14 @@ difference, and a mismatch fails the bundle. The redundancy is the point. At eve
 producer signs a number it cannot later shrink without contradicting either the links, which
 the chain checks catch, or its own counts, which this profile catches.
 
+A `switchtender-audit-v1` link commits a claim's `path` and not the span members beside it, so
+under that profile a span claim's members are bound through its path: the path must read
+`/span/<beat>?count=<count>&cadence_s=<cadence_s>`, each number in plain decimal, and `stream` must
+be `chain`. A claim whose members disagree with its path fails the span check, and so does one
+carrying a name that differs from a span member only in case, under the rule the disclosed records
+section states. Without the binding a producer re-signing its own bundle could widen the cadence to
+hide a gap, or renumber its beats, and every link would still recompute.
+
 Two failure shapes are deliberately distinct. A missing beat number is a deleted window, and it
 fails the bundle. Beat times further apart than the declared cadence are a gap: the collector
 went quiet, nothing was provably deleted, and the verifier reports the gap with its bounds and
@@ -863,12 +903,15 @@ deliberately not specified here rather than half specified.
 | 2     | Chained  | Claims fixed in a declared profile: linear continuity, or a tree   |
 |       |          | whose inclusion proofs fold to the signed root                     |
 | 3     | Anchored | At least one anchor with a verified offline proof binds the chain  |
-|       |          | outside the producer                                               |
+|       |          | outside the producer, over a chain verified in full                |
 | 4     | Spanned  | Anchored, plus span claims present and every span check verifies   |
 
 Level 2 verification is full for unkeyed profiles (every link recomputed) and structural for
 keyed profiles (continuity of `prev` to `link`, with full verification reserved to the key
-holder). In the tree profile it is full: every leaf is recomputed and every inclusion proof folded.
+holder). The anchored level is reached only over a chain verified in full: a structural (keyed)
+chain does not reach it, because the verifier never recomputed its links to bind the anchored value
+to the claim content, so its anchors are reported but earn no anchored word. In the tree profile it
+is full: every leaf is recomputed and every inclusion proof folded.
 The verifier's report names which form it performed. A consistency proof does not introduce a level;
 it is an additional property the report states, because it answers a different question from the
 levels, which is whether the log grew by appending rather than whether this bundle is intact. Marketing language maps one to
@@ -902,7 +945,14 @@ The verifier performs these steps in order and fails closed:
    bundle; a gap is reported, never hidden.
 6. For each evidence artifact supplied to the verifier: recompute its digest and compare.
    Evidence not supplied is reported as referenced, not checked, never as verified.
-7. Report the conformance level achieved and an overall verdict. Any failed check fails the
+7. For each `switchtender.audit/1` claim whose committed method and path make it a record: check
+   the members its record is read for as "Disclosed records in switchtender.audit/1" states. A
+   redacted reason is reported and never fails, an outcome under an older digest form is reported
+   as carried and unchecked, and a body under the legacy unkeyed form is listed as legacy. Under
+   `switchtender-audit-v1`, report every disclosed member in its state, and qualify a verified
+   verdict with the number of unchecked records, as "Disclosed members and the three states"
+   states.
+8. Report the conformance level achieved and an overall verdict. Any failed check fails the
    bundle.
 
 Who can verify what:
@@ -930,12 +980,13 @@ emitting product and documented there; this registry fixes the names and require
 | `whodar.knowledge-risk/1` | Whodar    | v0.1     | finding, topics_scored, critical      |
 
 `switchtender.run/1` is reserved and nothing emits it. A run's record travels today as
-`switchtender.audit/1` claims: the request that created it, any approval or rejection, and an outcome
-entry whose method is `RUN` and whose `content_digest` commits to what the run did, which a holder of
-the outcome body can check. The name is held so that a later, richer run claim cannot be defined by
-somebody else, and this row says so rather than describing a payload no bundle carries. A verifier
-that meets the type today reports it as unknown, which is the correct outcome for a type with no
-producer.
+`switchtender.audit/1` claims: the request that created it, any approval or rejection, and an
+outcome entry whose method is `RUN` and whose `content_digest` commits to what the run did. A
+receipt discloses records beside those entries, and the section below states which of them a
+verifier checks and which it carries unchecked. The name is held so that a later, richer run claim
+cannot be defined by somebody else, and this row says so rather than describing a payload no bundle
+carries. A verifier that meets the type today reports it as unknown, which is the correct outcome
+for a type with no producer.
 
 New types enter by change to this registry. Product namespaces belong to their products. The
 `loomseal` namespace is owned by this specification: its types are defined here, and any
@@ -948,6 +999,185 @@ with the policy name, the policy definition digest, and the decision. In v0.1 th
 attests the verdict fields and digests; recomputing verdicts from policy plus inputs is future
 work and out of scope here.
 
+### Disclosed records in switchtender.audit/1
+
+A `switchtender.audit/1` link commits the entry's bound fields, and among them `content_digest`, the
+digest of the change the entry recorded. A run's receipt also discloses what some of those digests
+were taken over, so a reader sees who approved what and why. These members ride in the payload
+beside the bound fields. The link does not commit them, and a producer signature over them says only
+that the producer sent them, so a verifier holds each one against the commitment that does reach it:
+the entry's `content_digest`, or a commitment inside a body that `content_digest` has already
+confirmed. A member that does not reproduce its commitment fails the bundle, whoever signed it. The
+rules hold under every chain profile and under none. They apply to this claim type alone, and within
+it only to the claims that are records.
+
+| Member             | Type   | Carries                                                          |
+|--------------------|--------|------------------------------------------------------------------|
+| `decision_body`    | object | The approval decision the entry committed                        |
+| `decision_nonce`   | string | The nonce the decision entry's `content_digest` is keyed under   |
+| `correction_body`  | object | A correction appended to a decision's reason                     |
+| `correction_nonce` | string | The nonce the correction entry's `content_digest` is keyed under |
+| `reason_text`      | string | The reason a decision or correction body commits                 |
+| `reason_random`    | string | The 32 random bytes that hide the reason, as hex                 |
+| `reason_redacted`  | string | The category of the privacy redaction that removed the reason    |
+| `spec_body`        | string | The run's spec, as the exact text its digest was taken over      |
+| `outcome_body`     | string | The run's outcome record, as the text its digest was taken over  |
+| `outcome_nonce`    | string | The nonce the outcome entry's `content_digest` is keyed under    |
+
+**Records.** A claim is a record by the method and path its link commits, never by the members it
+carries, so a producer cannot make an entry a record, or stop one being a record, without changing
+what the chain committed:
+
+| Record       | Method     | Path                                                        |
+|--------------|------------|-------------------------------------------------------------|
+| decision     | `DECISION` | any                                                         |
+| correction   | `REASON`   | `/runs/{run}/decisions/{decision}/corrections/{correction}` |
+| outcome      | `RUN`      | `/runs/{run}/outcome/{status}`                              |
+
+A path matches segment by segment, and a `{name}` segment matches any non-empty segment. A decision
+claim is read for `decision_body`, `decision_nonce`, and the three reason members, a correction
+claim for `correction_body`, `correction_nonce`, and the three reason members, and an outcome claim
+for `outcome_body`, `outcome_nonce`, and `spec_body`. `schema/claim-members.json` states the same
+kinds and members. On any other claim, of this type or another, the same names are ordinary members:
+nothing reads them, nothing fails over them, and under `switchtender-audit-v1` they are reported
+unchecked. A bundle that carried one as a plain field before records existed verifies as it did.
+
+**Names.** Member names are compared exactly. A record claim carrying a member whose name differs
+from one its record is read for only in case fails, whether or not the member itself is present. A
+reader that folds case, as Go's `encoding/json` does when it decodes into a struct, would take one
+for the other and be shown a value no verifier checked. Two names differ only in case when they are
+not equal and become equal once every ASCII capital letter is replaced by its lowercase letter,
+U+212A KELVIN SIGN by `k`, and U+017F LATIN SMALL LETTER LONG S by `s`. Every name this section
+declares is lowercase ASCII letters, digits, and underscores, and for such names the rule is
+exactly Unicode simple case folding.
+
+**Record digest.** A decision or correction claim discloses its record as the body member beside
+the nonce member. Once it carries either, or any reason member, the body must be a JSON object and
+the claim must carry a non-empty `content_digest`. Let B be the RFC 8785 canonical bytes of the
+body object and N the nonce member, the empty string when it is absent. The digest takes one of two
+forms:
+
+- `sha256s:` and two 64 lowercase hex digests separated by a colon, the keyed form. N must be 64
+  lowercase hex digits, decoding to 32 bytes K. The first digest must equal the hex SHA-256 of K,
+  and the second must equal the hex HMAC-SHA256 of B keyed by K.
+- `sha256:` and one 64 lowercase hex digest, the legacy unkeyed form an entry recorded before
+  nonces carries. N must be empty and the digest must equal the hex SHA-256 of B. The claim must
+  also come before the bundle's first `switchtender.audit/1` claim whose `content_digest` is in
+  the keyed or the exact form: a producer that keys its digests keys every entry from then on, so
+  an unkeyed digest after that point is not an older entry's, and it fails. Anyone who can guess
+  a body confirms it against an unkeyed digest, so a verifier lists every body it accepts under
+  this form as legacy.
+
+A digest in any other form, or a body that does not reproduce it, fails the claim. A producer
+discloses each body as the exact object its digest was taken over, so a producer that reduces a
+body before digesting it, by redaction or any other step, discloses the reduced object. A nonce
+keys only its own entry, so a holder of one disclosed record confirms that record and learns
+nothing about the body of any other entry.
+
+**Reason.** A verified body commits a reason when its `reason_commitment` member is a non-empty
+string. A correction exists to state a reason, so a correction body must commit one. The
+commitment must be `sha256:` and 64 lowercase hex digits. It is bound to an event id, the body's
+`decision_id` for a decision and its `correction_id` for a correction, which must be a non-empty
+string. The reason then travels in exactly one of three states:
+
+- **Opened.** The claim carries `reason_text` and `reason_random`, 64 lowercase hex digits. The
+  commitment must equal `sha256:` and the hex SHA-256 of the RFC 8785 canonical object
+  `{"event": <event id>, "random": <reason_random>, "reason": <reason_text>}`.
+- **Redacted.** The claim carries `reason_redacted`, a non-empty category, and neither
+  `reason_text` nor `reason_random`. A privacy redaction removed the text and the random value
+  and kept the commitment, so the reason cannot be opened, by design. A verifier reports the
+  category and never fails a claim for it.
+- **Withheld.** The claim carries none of the three. A verifier reports the reason as committed
+  and not disclosed.
+
+Any other combination fails the claim: a random value with no text, text beside a redaction, or a
+reason member on a decision or correction claim whose body commits no reason. A verifier
+reports how many reasons it opened and never echoes their text, for the reason it never echoes a
+revealed field's value.
+
+**Outcome.** An outcome record travels as `outcome_body`, a string, beside `outcome_nonce`, on an
+outcome claim. Its entry's `content_digest` takes one of two kinds of form:
+
+- `sha256e:` and two 64 lowercase hex digests separated by a colon, the exact form. Let T be the
+  UTF-8 bytes of `outcome_body` exactly as carried, never parsed and serialized again. N must be 64
+  lowercase hex digits, decoding to 32 bytes K. The first digest must equal the hex SHA-256 of K,
+  and the second must equal the hex HMAC-SHA256 of T keyed by K. A producer redacts and
+  canonicalizes the record before it fixes T, then commits and discloses that same T, so checking
+  it never depends on the producer's redaction rules.
+- `sha256s:` or `sha256:`, the older forms. The entry committed the record under the producer's own
+  redaction, whose rules belong to the producer and change between its releases. A verifier cannot
+  rebuild that input, so it reports such an outcome as carried and unchecked, and never reads it as
+  verified. The unkeyed form is held to the rule of a record digest: after the bundle's first keyed
+  entry it fails.
+
+An `outcome_body` on an entry that commits no `content_digest`, an `outcome_nonce` with no
+`outcome_body` beside it, or an exact-form outcome that is not a string fails the claim. A producer
+may commit and disclose a summary in place of a record too large to carry whole, such as one naming
+the full record's size and digest. The summary is the text T and is checked like any other.
+
+**Spec.** A producer discloses a spec only in one run's receipt, so a bundle holds one spec: every
+`spec_body` its outcome claims carry must be the same text, and each must be a string. The spec's
+digest is `sha256:` and the hex SHA-256 of the text's UTF-8 bytes exactly as carried, never parsed
+and serialized again. Every verified decision body must carry that digest as its `spec_digest`. So
+must every verified exact-form outcome that names one: a verifier reads the outcome text as JSON
+under this format's own parsing rules, with unique keys, valid strings, and integers of magnitude at
+most 2^53, nested no deeper than 32 levels, where an array or an object is one level and a scalar
+none. When that text is an object with a string `spec_digest` member, the outcome names that digest.
+Otherwise it names none, which is no failure, since the outcome itself was checked. A spec with
+nothing verified beside it to name its digest has no commitment a verifier can reach, so it is
+reported as carried, not verified.
+
+**Compatibility.** These checks refuse only what a producer conforming to this section never
+emits: a record that does not reproduce its digest, a reason that does not open its commitment, a
+spec that a verified decision or outcome does not name, an unkeyed digest after the keyed form
+began, or a record claim carrying a name that differs from one of its members only in case. A
+producer that can no longer rebuild a record matching its digest withholds the record, or discloses
+it knowing the bundle will fail, which is how a record altered at its source becomes visible. Each
+refusal is pinned by a must-not-verify vector. The same names on a claim that is no record are
+pinned by must-verify vectors, under `switchtender-audit-v1` and under a profile that commits the
+whole claim, so a bundle that used them before records existed keeps its verdict.
+
+### Disclosed members and the three states
+
+Under `switchtender-audit-v1`, every payload member outside the profile's bound set is disclosed
+beside the link rather than committed by it. `schema/claim-members.json` declares, for every claim
+type the registry lists, each such member and what a verifier holds it against: checked against a
+named commitment, redacted, or unchecked with the reason. Both verifiers in this repository read
+that one file, and the conformance vectors are generated from it, so a member cannot be declared
+in one place and treated differently in another.
+
+A verifier reports every disclosed member of a bundle in exactly one of three states:
+
+- **checked**: the member reproduced the commitment its declaration names.
+- **redacted**: the member states that a privacy redaction removed what it stood for, and the
+  commitment stays. It cannot be opened, by design, and it never fails a bundle.
+- **unchecked**: nothing the verifier reaches commits the member. A member declared checked is
+  unchecked where its declaration's condition holds, such as an outcome committed under an older
+  digest form, or a record member on a claim that is not its record. A member the declaration does
+  not name is unchecked, and so is a name that differs from a declared one only in case, on a claim
+  where nothing reads the declared one.
+
+A record body checked against the legacy unkeyed form is checked, and a verifier also lists it as
+legacy, since its digest confirms a guess for anyone who holds the bundle.
+
+A member and the member it travels with, such as a body and its nonce, count as one record when
+both are on the same claim. Alone, either counts as a record of its own. A bundle that verifies
+with no unchecked record reads `VERIFIED`. One that verifies with any reads
+`VERIFIED`, the number of unchecked records, and each of them by claim, member, and reason, so a
+verdict never stands for more than was checked. Under a profile that commits the whole claim,
+every member is committed by the link or the leaf and none is disclosed. With no chain declared,
+nothing is committed beyond the signature, which the conformance level already says.
+
+Every disclosed member is pinned by a generated vector in which the producer alters it and re-signs
+the bundle with its own key, the one change no signature check can see. A member declared checked
+must fail, and one declared unchecked or redacted must verify with every such member reported in
+its state. Generated vectors also plant, beside each member, a name that differs from it only in
+case, by an ASCII capital and, where the name has an `s` or a `k`, by the non-ASCII letter that
+folds onto it. Where a check reads the member the bundle must fail, and elsewhere the planted name
+must be reported unchecked. A member a producer starts carrying without a declaration is reported
+unchecked, and this repository's own test fails while any verifying conformance vector carries one
+that the vector does not expect.
+
 ## What a bundle proves, and what it does not
 
 A verified level 3 bundle proves: the producer holding the signing key assembled these claims;
@@ -956,6 +1186,33 @@ since the anchored moments, which for a linear profile is the chain itself and f
 membership in the anchored root, with append-only growth proved only when a consistency proof is
 present and anchored; the evidence digests match any artifacts presented; the anchored history
 predates the anchor times.
+
+**The party holding the signing key is an adversary too.** An operator who holds the producer key
+can sign anything, so a signature alone says only that the key holder sent the document. What the
+operator cannot do is the point of everything else in a bundle. Once a link has been anchored
+outside the operator's reach, or counter-signed by a witness, the operator cannot rewrite the
+claims behind it without breaking the links or contradicting the anchor. Within that history, a
+disclosed record, a reason, a spec, an exact-form outcome, and a span member under
+`switchtender-audit-v1` are each bound to a commitment the anchored link fixes, so the operator
+cannot re-sign an altered one and keep a verified verdict, nor plant beside it a name that differs
+only in case for a reader that folds case to take instead. A member nothing commits is reported
+unchecked rather than vouched for.
+
+State the limit plainly. An append-only chain proves that history was not rewritten after it was
+anchored. It does not prove that an entry was true when it was written: an operator who records a
+false approval at the time records it as faithfully as a true one. Anchors fix when history
+existed, so a rewrite after the anchor shows, and a witness that counter-signs heads as they are
+published fixes them in a record the operator does not control. Neither makes an entry true.
+Before the first anchor, and after the newest one, the operator's key is the only thing the
+record rests on, which is why the report states the unanchored window.
+
+A verified bundle that discloses `switchtender.audit/1` records also proves that each disclosed
+decision, correction, and exact-form outcome is the record its entry committed, that each opened
+reason is the text the record committed when it was made, and that a disclosed spec is the one
+every verified decision and outcome named. It does not prove a reason is true, and it proves
+nothing about an outcome committed under an older digest form, which travels unchecked. A body
+under the legacy unkeyed form proves the same as any other, and its digest also lets anyone who
+holds the bundle confirm a guess of the body, which is why a verifier lists it as legacy.
 
 A verified level 4 bundle adds: at every beat the producer committed to the exact entry
 population so far, so an entry removed after its beat contradicts either the links or the
@@ -1015,6 +1272,13 @@ sha256 of the presented bundle's canonical form. It binds four things at once: t
 the verifier it is shown to, the challenge that verifier issued, and the time. A presentation therefore
 cannot be replayed to a different verifier, answered with a stale challenge, or altered without
 breaking the holder signature.
+
+A presentation's members, and its holder block's, are matched by exact name, as a bundle's are. A
+member outside the set this section names, a case variant of a named one included, is refused at
+parse, and each named member other than `holder` and `bundle` must be a string. A verifier that
+folded case would otherwise check an audience, a nonce, or a holder key the document does not show,
+and two conforming verifiers would disagree about the same bytes. The embedded bundle is verified,
+and its digest taken, over its canonical form.
 
 The holder key is a key the subject controls. Binding that key to a real-world identity is a
 trust-establishment concern the format leaves to the relying party, exactly as it does for a producer

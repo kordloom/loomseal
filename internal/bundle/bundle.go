@@ -259,6 +259,16 @@ func Parse(raw []byte) (*Bundle, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: trailing data after bundle", ErrParse)
 	}
+	// Reject a case variant of any known member, exactly as the schema's additionalProperties: false
+	// states and as the Python reference verifier does. encoding/json matches a JSON member to a
+	// struct field case-insensitively, so DisallowUnknownFields accepts and folds Install_ID onto
+	// install_id and signature Key_ID onto key_id, taking the last occurrence. A reader and the
+	// reference verifier see the exact member, so a folded sibling let a value feed a verdict that no
+	// reader saw and made the two verifiers disagree. Every member a verdict reads is checked exactly
+	// here, over the parsed canonical tree.
+	if err := checkExactMembers(raw); err != nil {
+		return nil, err
+	}
 	if err := b.validate(); err != nil {
 		return nil, err
 	}

@@ -1,12 +1,12 @@
 package verify
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
+	"slices"
+	"sort"
 	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
@@ -87,28 +87,110 @@ func (p *PresentationReport) problem(format string, args ...any) {
 	p.Problems = append(p.Problems, fmt.Sprintf(format, args...))
 }
 
+// Members a presentation and its holder carry, matched by exact name. A member outside them, a case
+// variant of a known one included, is refused rather than folded onto the known one: every value
+// the verdict reads is then the one a reader of the document sees, and the reference verifier,
+// which reads members by exact name, reaches the same verdict on the same bytes.
+var (
+	// presentationMembers are the members of a presentation.
+	presentationMembers = []string{"audience", "bundle", "created_at", "holder",
+		"loomseal_presentation", "nonce", "sig"}
+	// holderMembers are the members of a presentation's holder.
+	holderMembers = []string{"alg", "key_id", "public_key"}
+)
+
 // LooksLikePresentation reports whether raw is a presentation rather than a bundle, by the presence
-// of the presentation version member. It lets one command accept either document.
+// of the presentation version member under its exact name. It lets one command accept either
+// document.
 func LooksLikePresentation(raw []byte) bool {
-	var probe struct {
-		Version string `json:"loomseal_presentation"`
+	tree, err := jcs.Parse(raw)
+	if err != nil {
+		return false
 	}
-	return json.Unmarshal(raw, &probe) == nil && probe.Version != ""
+	obj, _ := tree.(map[string]any)
+	version, _ := obj["loomseal_presentation"].(string)
+	return version != ""
+}
+
+// parsePresentation reads a presentation from its parsed canonical tree, every member by its exact
+// name. The presented bundle is carried forward as its canonical bytes, which are what the holder
+// signature covers and what the bundle's own signature is checked over.
+func parsePresentation(raw []byte) (Presentation, error) {
+	tree, err := jcs.Parse(raw)
+	if err != nil {
+		return Presentation{}, err
+	}
+	obj, ok := tree.(map[string]any)
+	if !ok {
+		return Presentation{}, fmt.Errorf("a presentation is a JSON object")
+	}
+	if name, found := unknownMember(obj, presentationMembers); found {
+		return Presentation{}, fmt.Errorf("presentation carries an unknown member %q", name)
+	}
+	holder := map[string]any{}
+	if h, present := obj["holder"]; present {
+		if holder, ok = h.(map[string]any); !ok {
+			return Presentation{}, fmt.Errorf("presentation holder is not an object")
+		}
+		if name, found := unknownMember(holder, holderMembers); found {
+			return Presentation{}, fmt.Errorf("presentation holder carries an unknown member %q", name)
+		}
+	}
+	var p Presentation
+	for _, f := range []struct {
+		// from is the object holding the member.
+		from map[string]any
+		// name is the member's exact name.
+		name string
+		// into is the field the member's text is read into.
+		into *string
+	}{
+		{obj, "loomseal_presentation", &p.Version}, {obj, "created_at", &p.CreatedAt},
+		{obj, "audience", &p.Audience}, {obj, "nonce", &p.Nonce}, {obj, "sig", &p.Sig},
+		{holder, "key_id", &p.Holder.KeyID}, {holder, "public_key", &p.Holder.PublicKey},
+		{holder, "alg", &p.Holder.Alg},
+	} {
+		v, present := f.from[f.name]
+		if !present {
+			continue
+		}
+		text, ok := v.(string)
+		if !ok {
+			return Presentation{}, fmt.Errorf("presentation member %s is not a string", f.name)
+		}
+		*f.into = text
+	}
+	if b, present := obj["bundle"]; present {
+		if p.Bundle, err = jcs.Serialize(b); err != nil {
+			return Presentation{}, fmt.Errorf("presentation bundle: %w", err)
+		}
+	}
+	return p, nil
+}
+
+// unknownMember returns the lowest-named member of obj outside allowed, so a refusal names the same
+// member on every run.
+func unknownMember(obj map[string]any, allowed []string) (string, bool) {
+	var extra []string
+	for name := range obj {
+		if !slices.Contains(allowed, name) {
+			extra = append(extra, name)
+		}
+	}
+	if len(extra) == 0 {
+		return "", false
+	}
+	sort.Strings(extra)
+	return extra[0], true
 }
 
 // RunPresentation verifies raw as a presentation and always returns a report; a document that cannot
 // be parsed is a failed verification, not a crash.
 func RunPresentation(raw []byte, opts PresentationOptions) *PresentationReport {
 	r := &PresentationReport{}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var p Presentation
-	if err := dec.Decode(&p); err != nil {
+	p, err := parsePresentation(raw)
+	if err != nil {
 		r.problem("parse: %v", err)
-		return r
-	}
-	if _, err := dec.Token(); !errorsIsEOF(err) {
-		r.problem("parse: trailing data after presentation")
 		return r
 	}
 	if p.Version != PresentationVersion {
@@ -180,6 +262,3 @@ func (r *PresentationReport) checkHolderSignature(p Presentation, bundleCanon []
 	r.PresentationOK = true
 	return nil
 }
-
-// errorsIsEOF reports whether err is io.EOF, kept local so this file needs no extra import churn.
-func errorsIsEOF(err error) bool { return err == io.EOF }

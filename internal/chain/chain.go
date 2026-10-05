@@ -7,7 +7,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -130,7 +129,7 @@ func checkLinks(raw []byte, b *bundle.Bundle) (string, error) {
 			return "", fmt.Errorf("%w: %s is an unkeyed profile", ErrProfile,
 				bundle.ProfileSwitchTender)
 		}
-		return ModeFull, checkSwitchTender(b)
+		return ModeFull, checkSwitchTender(raw, b)
 	case bundle.ProfileV1:
 		if b.Chain.Keyed {
 			return ModeStructural, nil
@@ -141,28 +140,23 @@ func checkLinks(raw []byte, b *bundle.Bundle) (string, error) {
 	}
 }
 
-// switchTenderPayload is the payload minimum of a switchtender.audit claim.
-type switchTenderPayload struct {
-	// Actor is who performed the recorded mutation.
-	Actor string `json:"actor"`
-	// Method is the HTTP method of the mutation.
-	Method string `json:"method"`
-	// Path is the request path of the mutation.
-	Path string `json:"path"`
-	// ActorType is how the actor authenticated, empty on an entry recorded before the field existed.
-	ActorType string `json:"actor_type"`
-	// OnBehalfOf is the account whose authority the actor used, empty when it acted as itself.
-	OnBehalfOf string `json:"on_behalf_of"`
-	// ContentDigest covers the canonical change payload, empty when the request carried no body.
-	ContentDigest string `json:"content_digest"`
-	// InstallID is the producing installation, empty on an entry recorded before the field existed.
-	InstallID string `json:"install_id"`
-}
+// switchTenderBoundOptional lists the four optional fields this profile folds into a link when, and
+// only when, the entry carries them as a non-empty string.
+var switchTenderBoundOptional = []string{"actor_type", "on_behalf_of", "content_digest",
+	"install_id"}
 
 // checkSwitchTender recomputes the shipped SwitchTender construction: SHA-256 over the canonical
 // JSON object of the claim's sequence, time, actor, method, path, and previous link, plus the actor
 // type, delegated account, content digest, and install id when the entry carries them.
-func checkSwitchTender(b *bundle.Bundle) error {
+//
+// Every bound value is read from the exact canonical member of the parsed payload, never from a
+// case-insensitive struct decode. Go's encoding/json matches a JSON member to a struct field
+// case-insensitively, folding "Actor" or a non-ASCII case variant onto the actor field and taking
+// the last occurrence, so a claim carrying both actor and Actor hashed a value no reader sees while
+// the Python reference verifier, reading the exact lowercase member, recomputed a different link.
+// The two shipped verifiers then disagreed on the same bytes. Reading the exact member here is what
+// the profile always meant and is what makes the verifiers agree.
+func checkSwitchTender(raw []byte, b *bundle.Bundle) error {
 	// chain.params.install_id is informational in this profile: the per-claim install_id is what
 	// binds. A third-party producer might set the param and assume it binds something, so a param
 	// that disagrees with the producer is refused rather than silently ignored. Because a bound
@@ -173,11 +167,15 @@ func checkSwitchTender(b *bundle.Bundle) error {
 			"producer.install_id %q; the per-claim install_id is what binds", ErrProfile,
 			bundle.ProfileSwitchTender, pid, b.Producer.InstallID)
 	}
+	claims, err := rawClaims(raw, len(b.Claims))
+	if err != nil {
+		return err
+	}
 	for i := range b.Claims {
 		claim := &b.Claims[i]
-		var p switchTenderPayload
-		if err := json.Unmarshal(claim.Payload, &p); err != nil {
-			return fmt.Errorf("%w: claim %d payload: %w", ErrClaim, i, err)
+		payload, ok := claims[i]["payload"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("%w: claim %d payload is not an object", ErrClaim, i)
 		}
 		// install_id binds the entry to the producer. When an entry carries it, it must be the
 		// signer's own, and it is folded into the link like the other optional fields. A link that
@@ -186,64 +184,57 @@ func checkSwitchTender(b *bundle.Bundle) error {
 		// third-party timestamp taken over the original. An entry that omits it is a pre-binding
 		// entry, hashed exactly as before, so a chain can adopt the field without invalidating the
 		// links it already published.
-		if p.InstallID != "" && p.InstallID != b.Producer.InstallID {
+		if inst, ok := payload["install_id"].(string); ok && inst != "" && inst != b.Producer.InstallID {
 			return fmt.Errorf("%w: claim %d install_id %q does not match producer.install_id %q",
-				ErrProfile, i, p.InstallID, b.Producer.InstallID)
+				ErrProfile, i, inst, b.Producer.InstallID)
 		}
-		// The time is validated but hashed verbatim, exactly as it appears in the bundle.
-		//
-		// Parsing and reformatting it was meant to be an identity, and for this implementation it
-		// was, because Go's time carries nanoseconds. It is not an identity everywhere: Python's
-		// datetime carries microseconds, so the reference verifier silently dropped the last three
-		// digits of a nanosecond timestamp and recomputed a different link. The same bundle verified
-		// here and failed there, reported as "link does not recompute", which reads as tampering
-		// when nothing has been tampered with. A format whose two verifiers disagree on valid input
-		// is worse than one that is merely strict.
-		//
-		// Hashing the stored bytes removes the disagreement and the whole class of it. It also drops
-		// the requirement that a verifier own a nanosecond-capable time type, which JavaScript and
-		// Python do not, and it is what this profile always meant: the spec says the serialization
-		// round-trips the stored form exactly.
+		// The time is validated but hashed verbatim, exactly as it appears in the bundle. The claim
+		// member at carries a single value, which the bundle parser's exact-member check guarantees,
+		// so the struct field is the stored byte string.
 		if _, err := time.Parse(time.RFC3339, claim.At); err != nil {
 			return fmt.Errorf("%w: claim %d at: %w", ErrClaim, i, err)
 		}
 		// Held as a map because the link commits to the canonical JSON object of the entry's
 		// defined fields, empty ones omitted, not to a fixed list in a fixed order. An entry from
 		// before an optional field existed therefore hashes identically to one that does not use
-		// it. The field set itself is closed per profile: a new bound field takes a successor
-		// profile name, which this construction makes cheap, since entries lacking the field hash
-		// the same under both. The previous construction hashed six values positionally, which
-		// made even the successor path a breaking change for every implementation.
+		// it. actor, method, and path are read as the exact member, defaulting to the empty string
+		// when absent, exactly as the Python verifier does.
 		fields := map[string]any{
 			"seq":    claim.Chain.Seq,
 			"at":     claim.At,
-			"actor":  p.Actor,
-			"method": p.Method,
-			"path":   p.Path,
+			"actor":  payloadMemberOrEmpty(payload, "actor"),
+			"method": payloadMemberOrEmpty(payload, "method"),
+			"path":   payloadMemberOrEmpty(payload, "path"),
 			"prev":   claim.Chain.Prev,
 		}
-		// A field added later is hashed only when the entry carries it, exactly as the producer omits
-		// it, so an entry recorded before it existed recomputes unchanged.
-		for key, value := range map[string]string{
-			"actor_type":     p.ActorType,
-			"on_behalf_of":   p.OnBehalfOf,
-			"content_digest": p.ContentDigest,
-			"install_id":     p.InstallID,
-		} {
-			if value != "" {
-				fields[key] = value
+		// A field added later is hashed only when the entry carries it as a non-empty string, exactly
+		// as the producer omits it, so an entry recorded before it existed recomputes unchanged.
+		for _, key := range switchTenderBoundOptional {
+			if v, ok := payload[key].(string); ok && v != "" {
+				fields[key] = v
 			}
 		}
-		payload, err := jcs.Serialize(fields)
+		payloadCanon, err := jcs.Serialize(fields)
 		if err != nil {
 			return fmt.Errorf("%w: claim %d: %w", ErrClaim, i, err)
 		}
-		sum := sha256.Sum256(payload)
+		sum := sha256.Sum256(payloadCanon)
 		if hex.EncodeToString(sum[:]) != claim.Chain.Link {
 			return fmt.Errorf("%w: claim %d link does not recompute", ErrBroken, i)
 		}
 	}
 	return nil
+}
+
+// payloadMemberOrEmpty returns the exact member of a parsed payload, or the empty string when it is
+// absent. The value is returned with its JSON type intact, so a member written as a non-string is
+// hashed as that non-string and recomputes to a different link, exactly as the Python verifier
+// does, rather than being coerced to a string here.
+func payloadMemberOrEmpty(payload map[string]any, key string) any {
+	if v, ok := payload[key]; ok {
+		return v
+	}
+	return ""
 }
 
 // checkV1 recomputes the generic construction for unkeyed chains: SHA-256 over the

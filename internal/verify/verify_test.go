@@ -251,7 +251,12 @@ func TestRunAnchorToDeclaredHead(t *testing.T) {
 	}
 }
 
-// Test that a keyed chain verifies structurally.
+// Test that a keyed chain verifies structurally and earns no anchored wording even when an anchor
+// matches its head. A keyed link is never recomputed, so the producer chose which link sits beside
+// each claim and the verifier never tied the anchored link to the claim content. The anchor is
+// still matched and reported, but the structural mode keeps it out of the conformance level, so a
+// real token cannot be laundered onto an invented keyed entry and an unkeyed anchored chain cannot
+// be re-presented as keyed to reach the anchored level over an altered payload.
 func TestRunKeyedStructural(t *testing.T) {
 	t.Parallel()
 	signed := signedBundle(t, func(m map[string]any) {
@@ -262,8 +267,14 @@ func TestRunKeyedStructural(t *testing.T) {
 	if !got.OK || got.ChainMode != chain.ModeStructural {
 		t.Errorf("keyed outcome: ok %t mode %q problems %v", got.OK, got.ChainMode, got.Problems)
 	}
-	if got.Level != "signed, chained (structural), anchored by reference" {
-		t.Errorf("level %q", got.Level)
+	// The anchor still matches by coordinate, which is what makes the control meaningful: the level
+	// omits anchored despite a matched anchor, rather than because there was none to match.
+	if got.AnchorsMatched == 0 {
+		t.Errorf("anchor did not match, so the control does not prove anchored was withheld")
+	}
+	if got.Level != "signed, chained (structural)" {
+		t.Errorf("level %q, want %q: a keyed (structural) chain must not earn anchored wording",
+			got.Level, "signed, chained (structural)")
 	}
 }
 

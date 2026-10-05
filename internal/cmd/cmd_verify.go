@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/kordloom/loomseal/internal/jsonutil"
 	"github.com/kordloom/loomseal/internal/verify"
@@ -302,6 +305,40 @@ func renderReport(w io.Writer, r *verify.Report) {
 		}
 		fmt.Fprintln(w, line)
 	}
+	// A disclosed SwitchTender record, held against the digest its entry committed, and the reason it
+	// carries, held against the commitment in it. Gated on the whole verdict for the reason the
+	// disclosed line is: a positive count printed under a failure argues against the verdict.
+	if r.OK && r.DecisionRecords+r.CorrectionRecords+r.OutcomesVerified > 0 {
+		fmt.Fprintf(w, "records    %d decision(s), %d correction(s), %d outcome(s) reproduce the "+
+			"digests their entries committed\n", r.DecisionRecords, r.CorrectionRecords,
+			r.OutcomesVerified)
+		if line := reasonsLine(r); line != "" {
+			fmt.Fprintf(w, "reasons    %s\n", line)
+		}
+		// A body under the unkeyed form verifies, and a reader should still know that its digest
+		// confirms a guess for anyone holding the bundle.
+		for _, l := range r.LegacyRecords {
+			fmt.Fprintf(w, "legacy     %s is committed under the unkeyed digest form from before "+
+				"nonces, which anyone who can guess it can confirm\n", l)
+		}
+	}
+	// Every member a switchtender-audit-v1 link does not commit, in one of three states. What was
+	// checked is summarized by member, and a redacted one is named, since a reader should know a
+	// reason was given and removed. The unchecked ones follow the verdict, which counts them.
+	if r.OK && len(r.Disclosed) > 0 {
+		checked, unchecked, redacted := disclosedCounts(r.Disclosed)
+		fmt.Fprintf(w, "disclosed  %d checked, %d unchecked, %d redacted\n", checked, unchecked,
+			redacted)
+		if line := checkedLine(r.Disclosed); line != "" {
+			fmt.Fprintf(w, "checked    %s\n", line)
+		}
+		for _, m := range r.Disclosed {
+			if m.State == "redacted" && m.With == "" {
+				fmt.Fprintf(w, "redacted   claim %d %s: %s\n", m.Claim, printable(m.Member),
+					printable(m.Detail))
+			}
+		}
+	}
 	// Counter-signatures by parties other than the producer, reported with who vouched so the reader
 	// decides whether to trust them. This is what turns a self-asserted claim into a two-party one.
 	if r.AttestationsPresent {
@@ -339,11 +376,95 @@ func renderReport(w io.Writer, r *verify.Report) {
 	for _, p := range r.Problems {
 		fmt.Fprintf(w, "problem    %s\n", p)
 	}
-	if r.OK {
-		fmt.Fprintf(w, "VERIFIED   %s\n", r.Level)
-	} else {
+	switch {
+	case !r.OK:
 		fmt.Fprintln(w, "NOT VERIFIED")
+	case r.DisclosedUnchecked > 0:
+		// The plain word is kept for a bundle with nothing disclosed beside its commitments left
+		// unchecked. Anything else says how much was not checked, and names it.
+		fmt.Fprintf(w, "VERIFIED, %d disclosed record(s) unchecked   %s\n", r.DisclosedUnchecked,
+			r.Level)
+		for _, m := range r.Disclosed {
+			if m.State == "unchecked" && m.With == "" {
+				fmt.Fprintf(w, "unchecked  claim %d %s: %s\n", m.Claim, printable(m.Member),
+					printable(m.Detail))
+			}
+		}
+	default:
+		fmt.Fprintf(w, "VERIFIED   %s\n", r.Level)
 	}
+}
+
+// disclosedCounts counts disclosed records by state, a member and the one it travels with counted
+// once.
+func disclosedCounts(members []verify.DisclosedMember) (checked, unchecked, redacted int) {
+	for _, m := range members {
+		if m.With != "" {
+			continue
+		}
+		switch m.State {
+		case "checked":
+			checked++
+		case "unchecked":
+			unchecked++
+		case "redacted":
+			redacted++
+		}
+	}
+	return checked, unchecked, redacted
+}
+
+// checkedLine names the checked records by member, with how many of each, in name order.
+func checkedLine(members []verify.DisclosedMember) string {
+	counts := map[string]int{}
+	for _, m := range members {
+		if m.State == "checked" && m.With == "" {
+			counts[m.Member]++
+		}
+	}
+	names := make([]string, 0, len(counts))
+	for name := range counts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("%s %d", printable(name), counts[name]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// printable returns s as it can be written to a terminal: unchanged when every character prints,
+// and quoted otherwise. A member name or a claim type is written by whoever produced the bundle,
+// and one carrying control characters must not act on the terminal reading it.
+func printable(s string) string {
+	for _, c := range s {
+		if !unicode.IsPrint(c) {
+			return strconv.Quote(s)
+		}
+	}
+	return s
+}
+
+// reasonsLine words what the disclosed reasons came to: how many opened their commitment, which
+// were redacted and so cannot be opened by design, and how many were committed but not disclosed.
+// It is empty when no record commits a reason.
+func reasonsLine(r *verify.Report) string {
+	var parts []string
+	switch {
+	case r.ReasonsVerified == 1:
+		parts = append(parts, "1 opened its commitment")
+	case r.ReasonsVerified > 1:
+		parts = append(parts, fmt.Sprintf("%d opened their commitments", r.ReasonsVerified))
+	}
+	if n := len(r.ReasonsRedacted); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d redacted (%s), unopenable by design", n,
+			strings.Join(r.ReasonsRedacted, ", ")))
+	}
+	if r.ReasonsWithheld > 0 {
+		parts = append(parts, fmt.Sprintf("%d committed and not disclosed", r.ReasonsWithheld))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // stringList collects a repeatable string flag in the order it was given.

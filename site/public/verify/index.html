@@ -156,6 +156,7 @@
     prove is set out in the <a href="/spec">spec</a>.</p>
   </div>
 
+<script src="/verify/render.js"></script>
 <script src="/verify/wasm_exec.js"></script>
 <script>
 (function () {
@@ -168,63 +169,11 @@
   var out = document.getElementById("out");
   var ready = false;
 
-  // The verdict lines mirror the command line's wording so the two never drift apart in a
-  // reader's memory.
+  // The verdict and every qualifying line come from the shared renderer in render.js, which mirrors
+  // the command line's renderReport line for line, so the page does not drop a notice the command
+  // line prints.
   function render(report, name) {
-    var ok = report.ok === true;
-    var html = '<div class="verdict ' + (ok ? "ok" : "no") + '">' +
-      (ok ? "VERIFIED" : "NOT VERIFIED") + "   " + esc(report.level || "") + "</div>";
-    var rows = [];
-    if (report.bundle_id) rows.push(["bundle", report.bundle_id + " from " + (report.producer || "")]);
-    if (report.subject) rows.push(["subject", report.subject]);
-    if (report.key_id) rows.push(["signature", (report.signature_ok ? "ok, key " : "failed, key ") + report.key_id]);
-    if (report.chain_present) {
-      rows.push(["chain", (report.chain_profile || "") + ", " + (report.chain_mode || "") +
-        ", " + (report.claims_checked || 0) + " claims, head matched " + !!report.head_matched]);
-    }
-    if (report.tree_size) {
-      rows.push(["tree", report.tree_size + " leaves, " + (report.inclusion_proofs || 0) +
-        " inclusion proof(s) folded to the signed root"]);
-      if (report.consistency_ok) {
-        rows.push(["growth", "append-only proved from size " + report.consistency_from +
-          ", so nothing the earlier root covered was changed or dropped"]);
-      } else {
-        rows.push(["note", "no consistency proof, so this bundle does not prove the log only ever appended"]);
-      }
-    }
-    if (report.anchors_matched || report.anchor_proofs_carried) {
-      rows.push(["anchors", report.anchors_matched + " matched by coordinates, " +
-        (report.anchor_proofs_carried || 0) + " proof(s) carried, " +
-        (report.anchor_proofs_verified || 0) + " verified"]);
-    }
-    (report.anchor_attestations || []).forEach(function (a) { rows.push(["attested", a]); });
-    if (report.anchored_through_seq) {
-      var line = "through seq " + report.anchored_through_seq;
-      if (report.unanchored_claims) {
-        line += ", " + report.unanchored_claims + " claim(s) after it";
-        if (report.unanchored_window) line += " spanning " + report.unanchored_window;
-      }
-      rows.push(["anchored", line]);
-    }
-    rows.push(["evidence", (report.evidence_verified || 0) + " verified, " +
-      (report.evidence_missing || 0) + " missing, " + (report.evidence_referenced || 0) + " referenced only"]);
-    (report.problems || []).forEach(function (p) { rows.push(["problem", p]); });
-
-    var body = rows.map(function (r) {
-      return esc(pad(r[0])) + esc(String(r[1]));
-    }).join("\n");
-    html += "<pre><code>" + body + "</code></pre>";
-    html += '<details><summary>Full report</summary><pre><code>' +
-      esc(JSON.stringify(report, null, 2)) + "</code></pre></details>";
-    out.innerHTML = html;
-    sub.textContent = name ? "Checked " + name : sub.textContent;
-  }
-
-  function pad(s) { return (s + "           ").slice(0, 11); }
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
+    LoomSeal.renderInto(out, report, name, sub);
   }
 
   function check(f) {

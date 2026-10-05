@@ -214,6 +214,44 @@ func TestExecuteVerifyVerdictLines(t *testing.T) {
 			"attested   1 counter-signature(s) verified",
 			"vouched    counterparty sha256:",
 		},
+	}, { // Test 4: A redacted reason is reported by its category, unopenable by design.
+		File: "switchtender-record-reason-redacted.loomseal.json",
+		Want: []string{
+			"records    1 decision(s), 0 correction(s), 1 outcome(s) reproduce the digests",
+			"reasons    1 redacted (personal_data), unopenable by design",
+			"disclosed  3 checked, 0 unchecked, 1 redacted",
+			"checked    decision_body 1, outcome_body 1, spec_body 1",
+			"redacted   claim 1 reason_redacted: personal_data, a privacy redaction removed",
+			"VERIFIED   signed, chained (full)",
+		},
+	}, { // Test 5: A correction is reported beside the decision it corrects.
+		File: "switchtender-record-correction.loomseal.json",
+		Want: []string{
+			"records    1 decision(s), 1 correction(s), 1 outcome(s) reproduce the digests",
+			"reasons    2 opened their commitments",
+		},
+	}, { // Test 6: A committed reason the receipt does not carry is named as such.
+		File: "switchtender-record-reason-withheld.loomseal.json",
+		Want: []string{"reasons    1 committed and not disclosed"},
+	}, { // Test 7: Unchecked members qualify the verdict, which names each one after it.
+		File: "switchtender-outcome-legacy.loomseal.json",
+		Want: []string{
+			"disclosed  0 checked, 2 unchecked, 0 redacted",
+			"VERIFIED, 2 disclosed record(s) unchecked   signed, chained (full)\n" +
+				"unchecked  claim 1 outcome_body: the entry committed it under an older digest form",
+			"unchecked  claim 1 spec_body: no verified decision or outcome names a spec digest",
+		},
+	}, { // Test 8: A body under the legacy unkeyed form is named as legacy.
+		File: "switchtender-record-unkeyed.loomseal.json",
+		Want: []string{"legacy     claim 1 decision_body is committed under the unkeyed digest " +
+			"form from before nonces, which anyone who can guess it can confirm"},
+	}, { // Test 9: Record names on a claim that is no record are ordinary members, unchecked.
+		File: "switchtender-record-names-off-record.loomseal.json",
+		Want: []string{
+			"VERIFIED, 4 disclosed record(s) unchecked",
+			"unchecked  claim 0 decision_body: the claim is not a record that carries it",
+			"unchecked  claim 0 Outcome_body: not declared for switchtender.audit/1",
+		},
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
@@ -236,10 +274,56 @@ func TestExecuteVerifyVerdictLines(t *testing.T) {
 	for _, absent := range []string{
 		"\nchain", "\nanchors", "\nanchored", "\ntree", "\ngrowth",
 		"\nspan", "\ngap", "\ndisclosed", "\nattested", "declared head",
+		"\nrecords", "\nreasons", "\ndisclosed", "\nunchecked", "\nredacted", "VERIFIED,",
 	} {
 		if strings.Contains(stdout, absent) {
 			t.Errorf("minimal verdict carries %q in:\n%s", absent, stdout)
 		}
+	}
+
+	// A bundle that leaves a disclosed member unchecked never reads as plain VERIFIED.
+	_, stdout, _ = run("verify", vectors+"switchtender-outcome-legacy.loomseal.json")
+	if strings.Contains(stdout, "\nVERIFIED   ") {
+		t.Errorf("a bundle with unchecked disclosed members reads as plain VERIFIED:\n%s", stdout)
+	}
+
+	// A record count printed under a failure would argue against the verdict beside it, so a receipt
+	// whose reason no longer opens its commitment names the problem and prints no record line.
+	code, stdout, _ := run("verify", vectors+"switchtender-record-reason-altered.loomseal.json")
+	if code != CodeFailed {
+		t.Errorf("an altered reason exited %d, want %d", code, CodeFailed)
+	}
+	if !strings.Contains(stdout, "problem    record: claim 1 reason_text does not open") {
+		t.Errorf("an altered reason does not name the record problem:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "\nrecords") || strings.Contains(stdout, "\nreasons") {
+		t.Errorf("a failed receipt still prints a record line:\n%s", stdout)
+	}
+}
+
+// TestPrintableQuotesWhatWouldActOnATerminal pins that a member name or claim type, which the
+// producer writes, reaches the terminal quoted whenever it carries a character that does not print.
+func TestPrintableQuotesWhatWouldActOnATerminal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		In         string
+		WantResult string
+	}{{ // Test 0: A plain name prints as it is.
+		In: "decision_body", WantResult: "decision_body",
+	}, { // Test 1: A non-ASCII letter prints as it is.
+		In: "deci\u017fion_body", WantResult: "deci\u017fion_body",
+	}, { // Test 2: An escape sequence is quoted, so it cannot recolor or move the terminal.
+		In: "note\x1b[2J", WantResult: `"note\x1b[2J"`,
+	}, { // Test 3: A newline is quoted, so it cannot forge a line of the report.
+		In: "x\nVERIFIED", WantResult: `"x\nVERIFIED"`,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			if got := printable(test.In); got != test.WantResult {
+				t.Errorf("printable(%q) = %q, want %q", test.In, got, test.WantResult)
+			}
+		})
 	}
 }
 

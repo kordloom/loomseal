@@ -91,6 +91,10 @@ jobs:
           GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o /tmp/wasm/loomseal.wasm ./wasm
           cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" /tmp/wasm/
           node wasm/selftest.mjs /tmp/wasm
+      # The page renders the same qualifying notices the command line prints. This fails if the
+      # renderer drops one, which a browser user would read as a bare verdict with no context.
+      - name: Browser page renders every notice
+        run: node site/render_selftest.mjs
 
   vuln:
     runs-on: ubuntu-latest

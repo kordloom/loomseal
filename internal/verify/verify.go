@@ -348,28 +348,42 @@ func (r *Report) checkSignature(raw []byte, b *bundle.Bundle, pin string) {
 	// The producer block holds exactly one key, so every entry in signatures must name it. The
 	// array sits outside the signed bytes, which is what lets the producer sign at all, and that
 	// same fact means a foreign entry is a rider nothing vouches for: accepted, it would travel
-	// inside a green verdict. Attestation is the defined path for counter-signatures.
-	var sig *bundle.Signature
+	// inside a green verdict. Attestation is the defined path for counter-signatures. Every entry
+	// is checked for its key before any is verified, so a producer entry verifying first cannot
+	// return past a rider behind it.
 	for i := range b.Signatures {
 		if b.Signatures[i].KeyID != b.Producer.KeyID {
 			r.problem("signature %d names a key the producer block does not hold", i)
 			return
 		}
-		if sig == nil {
-			sig = &b.Signatures[i]
-		}
 	}
-	if sig == nil {
+	if len(b.Signatures) == 0 {
 		r.problem("no signature by the producer key")
 		return
 	}
-	sigBytes, err := base64.StdEncoding.DecodeString(sig.Sig)
-	if err != nil {
-		r.problem("signature: %v", err)
-		return
+	// The format requires at least one producer entry to verify, not the first one. Each entry is
+	// tried in turn, and the first failure is kept so a bundle carrying one signature reports the
+	// same problem it always did. Verifying only entry zero made the Go verifier and the Python
+	// reference reach opposite verdicts on a bundle whose genuine signature sat second.
+	var first string
+	for _, sig := range b.Signatures {
+		sigBytes, err := base64.StdEncoding.DecodeString(sig.Sig)
+		if err != nil {
+			if first == "" {
+				first = fmt.Sprintf("signature: %v", err)
+			}
+			continue
+		}
+		if ed25519.Verify(pub, canonical, sigBytes) {
+			first = ""
+			break
+		}
+		if first == "" {
+			first = "signature does not verify over the canonical bundle"
+		}
 	}
-	if !ed25519.Verify(pub, canonical, sigBytes) {
-		r.problem("signature does not verify over the canonical bundle")
+	if first != "" {
+		r.problem("%s", first)
 		return
 	}
 	r.SignatureOK = true

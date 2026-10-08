@@ -418,11 +418,32 @@
       "why": "alg is outside the signed bytes, so a verifier rejects a foreign value rather than dispatching on it."
     },
     {
+      "name": "signature-first-entry-verifies",
+      "file": "signature-first-entry-verifies.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A bundle whose first producer entry verifies and whose second does not is verified, since the entry behind the genuine one names the producer key and rides no foreign key."
+    },
+    {
       "name": "signature-foreign-keyid",
       "file": "signature-foreign-keyid.loomseal.json",
       "must_verify": false,
       "failing_check": "signature",
       "why": "A signatures entry naming a key the producer block does not hold fails the bundle. The array sits outside the signed bytes, so a foreign entry is a rider nothing vouches for, and it must not travel inside a green verdict."
+    },
+    {
+      "name": "signature-no-entry-verifies",
+      "file": "signature-no-entry-verifies.loomseal.json",
+      "must_verify": false,
+      "failing_check": "signature",
+      "why": "A bundle carrying two producer entries, neither of which verifies, fails at the signature step: more entries earn nothing unless one of them is genuine."
+    },
+    {
+      "name": "signature-second-entry-verifies",
+      "file": "signature-second-entry-verifies.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A bundle whose first producer entry does not verify and whose second does is verified: the rule is that at least one producer entry verifies, in any position."
     },
     {
       "name": "signature-unknown-member",

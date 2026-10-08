@@ -664,6 +664,34 @@ func (s *state) negatives() {
 				"sig": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 64)),
 			})
 		}))
+	// The format requires at least one producer entry to verify, not the first. These three pin
+	// the order independence a verifier owes that rule. The Go verifier once checked entry zero
+	// alone, so a genuine signature sitting second was refused while the Python reference accepted
+	// it, and the two shipped verifiers reached opposite verdicts on the same bytes.
+	garbageProducerEntry := func(m map[string]any) map[string]any {
+		return map[string]any{
+			"key_id": m["producer"].(map[string]any)["key_id"], "alg": "ed25519",
+			"sig": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 64)),
+		}
+	}
+	s.add("signature-second-entry-verifies", true, "signed, chained (full)", "",
+		"A bundle whose first producer entry does not verify and whose second does is verified: "+
+			"the rule is that at least one producer entry verifies, in any position.",
+		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			m["signatures"] = append([]any{garbageProducerEntry(m)}, m["signatures"].([]any)...)
+		}))
+	s.add("signature-first-entry-verifies", true, "signed, chained (full)", "",
+		"A bundle whose first producer entry verifies and whose second does not is verified, "+
+			"since the entry behind the genuine one names the producer key and rides no foreign key.",
+		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			m["signatures"] = append(m["signatures"].([]any), garbageProducerEntry(m))
+		}))
+	s.add("signature-no-entry-verifies", false, "", "signature",
+		"A bundle carrying two producer entries, neither of which verifies, fails at the "+
+			"signature step: more entries earn nothing unless one of them is genuine.",
+		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			m["signatures"] = []any{garbageProducerEntry(m), garbageProducerEntry(m)}
+		}))
 	// A token that does not parse is a failed anchor, not a missing one: the bundle carried a
 	// proof and the proof is garbage, which must never read the same as carrying no proof at all.
 	m = s.switchTenderProof()

@@ -21,11 +21,9 @@ import sys
 import threading
 from datetime import datetime, timedelta, timezone
 
-from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding
-from cryptography.hazmat.primitives.serialization import pkcs7
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MAX_SAFE = 2 ** 53
@@ -237,108 +235,801 @@ def _ser_str(s):
 
 
 # ---------- RFC 3161 timestamp proofs ----------
+#
+# A token is read as DER, by position, exactly as the Go rfc3161 package reads it: the reader
+# below mirrors its der.go, and the certificate, key, and signature rules mirror its cert.go and
+# rfc3161.go. No general ASN.1, X.509, or PKCS #7 parser decides anything here, because each of
+# those accepts or refuses encodings by its own rules, and a verdict must not depend on which one a
+# verifier happened to use. RSA signatures are checked here by RFC 8017 arithmetic for the same
+# reason: OpenSSL refuses a modulus past 16384 bits, and the bound belongs to the format.
 
-OID_SIGNED_DATA = "1.2.840.113549.1.7.2"
-OID_TST_INFO = "1.2.840.113549.1.9.16.1.4"
-OID_MESSAGE_DIGEST = "1.2.840.113549.1.9.4"
-OID_SHA256 = "2.16.840.1.101.3.4.2.1"
+
+def _oid_content(dotted):
+    """Encode a dotted OBJECT IDENTIFIER as its DER content octets."""
+    parts = [int(p) for p in dotted.split(".")]
+    out = bytearray()
+    for v in [parts[0] * 40 + parts[1]] + parts[2:]:
+        chunk = [v & 0x7F]
+        v >>= 7
+        while v:
+            chunk.append(0x80 | (v & 0x7F))
+            v >>= 7
+        out += bytes(reversed(chunk))
+    return bytes(out)
+
+
+OID_SIGNED_DATA = _oid_content("1.2.840.113549.1.7.2")
+OID_TST_INFO = _oid_content("1.2.840.113549.1.9.16.1.4")
+OID_MESSAGE_DIGEST = _oid_content("1.2.840.113549.1.9.4")
+OID_SHA256 = _oid_content("2.16.840.1.101.3.4.2.1")
+OID_RSA_ENCRYPTION = _oid_content("1.2.840.113549.1.1.1")
+OID_EC_PUBLIC_KEY = _oid_content("1.2.840.10045.2.1")
+OID_ED25519 = _oid_content("1.3.101.112")
+OID_EXT_KEY_USAGE = _oid_content("2.5.29.37")
+OID_SUBJECT_KEY_ID = _oid_content("2.5.29.14")
+OID_KP_TIME_STAMPING = _oid_content("1.3.6.1.5.5.7.3.8")
 
 # A signer names the digest it used over the signed attributes. Assuming SHA-256 works until an
 # authority signs with anything else, and then it silently compares two unrelated hashes.
 DIGEST_OIDS = {
-    "2.16.840.1.101.3.4.2.1": "sha256",
-    "2.16.840.1.101.3.4.2.2": "sha384",
-    "2.16.840.1.101.3.4.2.3": "sha512",
+    _oid_content("2.16.840.1.101.3.4.2.1"): "sha256",
+    _oid_content("2.16.840.1.101.3.4.2.2"): "sha384",
+    _oid_content("2.16.840.1.101.3.4.2.3"): "sha512",
+}
+
+# SIGNATURE_SCHEMES maps a signature algorithm identifier to its check: the key type, the hash
+# over the signed attributes (None for Ed25519, which signs them directly), and whether RSA padding
+# is PSS. RSASSA-PSS is read as SHA-256 throughout and its parameters are not read, as in Go.
+SIGNATURE_SCHEMES = {
+    _oid_content("1.2.840.113549.1.1.11"): ("rsa", "sha256", False),
+    _oid_content("1.2.840.113549.1.1.12"): ("rsa", "sha384", False),
+    _oid_content("1.2.840.113549.1.1.13"): ("rsa", "sha512", False),
+    _oid_content("1.2.840.113549.1.1.10"): ("rsa", "sha256", True),
+    _oid_content("1.2.840.10045.4.3.2"): ("ecdsa", "sha256", False),
+    _oid_content("1.2.840.10045.4.3.3"): ("ecdsa", "sha384", False),
+    _oid_content("1.2.840.10045.4.3.4"): ("ecdsa", "sha512", False),
+    _oid_content("1.3.101.112"): ("ed25519", None, False),
+}
+
+# EC_CURVES maps a named curve OBJECT IDENTIFIER to the curve and its field size in octets.
+EC_CURVES = {
+    _oid_content("1.3.132.0.33"): (ec.SECP224R1, 28),
+    _oid_content("1.2.840.10045.3.1.7"): (ec.SECP256R1, 32),
+    _oid_content("1.3.132.0.34"): (ec.SECP384R1, 48),
+    _oid_content("1.3.132.0.35"): (ec.SECP521R1, 66),
+}
+
+# Identifier octets of the elements a token is read through. Each is the whole one-octet
+# identifier, so comparing it checks the class, the constructed bit, and the number at once.
+T_BOOLEAN, T_INTEGER, T_BIT_STRING, T_OCTET_STRING = 0x01, 0x02, 0x03, 0x04
+T_NULL, T_OID = 0x05, 0x06
+T_UTC_TIME, T_GENERALIZED_TIME, T_SEQUENCE, T_SET = 0x17, 0x18, 0x30, 0x31
+T_EXPLICIT0, T_EXPLICIT1, T_EXPLICIT3 = 0xA0, 0xA1, 0xA3
+T_IMPLICIT0, T_IMPLICIT1, T_IMPLICIT2 = 0x80, 0x81, 0x82
+
+
+class _TokenError(Exception):
+    """A token that does not hold up, carrying what failed."""
+
+
+def _header(data, pos, end, what):
+    """Read the identifier and length octets of the element at data[pos:end] and return its
+    identifier octet and the offsets where its content starts and the element ends. The element
+    must have a one-octet identifier, a definite length in its shortest form, and lie wholly before
+    end. Mirrors the Go reader's next."""
+    if end - pos < 2:
+        raise _TokenError(f"{what}: missing or truncated")
+    tag = data[pos]
+    if tag & 0x1F == 0x1F:
+        raise _TokenError(f"{what}: identifier uses the high tag number form")
+    n, hdr = data[pos + 1], 2
+    if n & 0x80:
+        count = n & 0x7F
+        if count == 0:
+            raise _TokenError(f"{what}: indefinite length")
+        if count > 4:
+            raise _TokenError(f"{what}: length of {count} octets")
+        if end - pos < 2 + count:
+            raise _TokenError(f"{what}: truncated length")
+        if data[pos + 2] == 0:
+            raise _TokenError(f"{what}: length with a leading zero octet")
+        n = int.from_bytes(data[pos + 2:pos + 2 + count], "big")
+        if n < 0x80:
+            raise _TokenError(f"{what}: long form length below 128")
+        hdr += count
+    if n > end - pos - hdr:
+        raise _TokenError(f"{what}: length runs past its container")
+    return tag, pos + hdr, pos + hdr + n
+
+
+class _DER:
+    """One DER element read from a buffer: its identifier octet, and where its whole encoding and
+    its content lie. The content and the whole encoding are copied out only when asked for, so
+    reading an element costs nothing in proportion to its size."""
+
+    __slots__ = ("tag", "_data", "_start", "_content_start", "_end")
+
+    def __init__(self, tag, data, start, content_start, end):
+        self.tag = tag
+        self._data = data
+        self._start = start
+        self._content_start = content_start
+        self._end = end
+
+    @property
+    def content(self):
+        """The element's content octets."""
+        return self._data[self._content_start:self._end]
+
+    @property
+    def full(self):
+        """The element's whole encoding, identifier and length octets included."""
+        return self._data[self._start:self._end]
+
+
+class _Reader:
+    """Read consecutive DER elements from the content of a constructed element, in order. Every
+    element it returns has a one-octet identifier, a definite length in its shortest form, and lies
+    wholly inside what is being read. It keeps an offset into the octets rather than copying what
+    is left after each element, so reading n elements takes time in proportion to n. Mirrors the Go
+    reader."""
+
+    def __init__(self, data):
+        self.data = bytes(data)
+        self.pos = 0
+
+    def empty(self):
+        """Report whether everything has been read."""
+        return self.pos == len(self.data)
+
+    def left(self):
+        """Count the octets not read yet."""
+        return len(self.data) - self.pos
+
+    def next(self, what):
+        """Read the next element, whatever its identifier."""
+        tag, content_start, end = _header(self.data, self.pos, len(self.data), what)
+        e = _DER(tag, self.data, self.pos, content_start, end)
+        self.pos = end
+        return e
+
+    def read(self, tag, what):
+        """Read the next element and require its identifier octet to be tag."""
+        e = self.next(what)
+        if e.tag != tag:
+            raise _TokenError(f"{what}: identifier 0x{e.tag:02x}, want 0x{tag:02x}")
+        return e
+
+    def optional(self, tag, what):
+        """Read the next element when there is one and its identifier octet is tag."""
+        if self.empty() or self.data[self.pos] != tag:
+            return None
+        return self.read(tag, what)
+
+
+def _only(content, tag, what):
+    """Read the one element content holds: an explicit tag, an OCTET STRING, or a BIT STRING that
+    wraps an encoding holds exactly one element of the identifier it requires and nothing after."""
+    r = _Reader(content)
+    e = r.read(tag, what)
+    if not r.empty():
+        raise _TokenError(f"{what}: followed by {r.left()} more octets")
+    return e
+
+
+def _well_formed(data, what):
+    """Check that data is a run of whole DER elements and that every constructed element within
+    it, however deep, holds only whole DER elements in turn. Applied to the whole token and to the
+    TSTInfo, so a token is DER throughout. It walks offsets into data with an explicit stack, so it
+    copies nothing and nesting depth costs no call stack. Mirrors the Go wellFormed."""
+    stack = [(0, len(data))]
+    while stack:
+        pos, end = stack.pop()
+        while pos < end:
+            tag, content_start, pos = _header(data, pos, end, what)
+            if tag & 0x20:
+                stack.append((content_start, pos))
+
+
+def _der_integer(e, what):
+    """Check an INTEGER's content: at least one octet, in the shortest two's complement form."""
+    c = e.content
+    if not c:
+        raise _TokenError(f"{what}: empty INTEGER")
+    if len(c) > 1 and ((c[0] == 0x00 and not c[1] & 0x80) or (c[0] == 0xFF and c[1] & 0x80)):
+        raise _TokenError(f"{what}: INTEGER not in its shortest form")
+
+
+def _der_version(e, what):
+    """Check a structure's version INTEGER, which must also fit a signed 64-bit integer."""
+    _der_integer(e, what)
+    if len(e.content) > 8:
+        raise _TokenError(f"{what}: INTEGER exceeds 64 bits")
+
+
+# MAX_SUBIDENTIFIER is the largest subidentifier an OBJECT IDENTIFIER a verifier reads may hold,
+# 2^31-1, the bound Go's encoding/asn1 holds one to. Without a bound, one subidentifier can be as
+# long as the token, and writing it out in decimal either takes time that grows with the square of
+# its length or, here, fails outright: Python refuses to convert an integer of more than 4300
+# digits to a string.
+MAX_SUBIDENTIFIER = 2**31 - 1
+
+
+def _der_oid(e, what):
+    """Check an OBJECT IDENTIFIER's content: at least one octet, no subidentifier that starts with
+    the padding octet 0x80 or exceeds 2^31-1, and a last octet that ends its subidentifier.
+    Mirrors the Go derOID."""
+    c = e.content
+    if not c:
+        raise _TokenError(f"{what}: empty OBJECT IDENTIFIER")
+    v = 0
+    start = True
+    for b in c:
+        if start and b == 0x80:
+            raise _TokenError(f"{what}: OBJECT IDENTIFIER subidentifier not in its shortest form")
+        v = (v << 7) | (b & 0x7F)
+        if v > MAX_SUBIDENTIFIER:
+            raise _TokenError(f"{what}: OBJECT IDENTIFIER subidentifier exceeds 2^31-1")
+        start = not b & 0x80
+        if start:
+            v = 0
+    if not start:
+        raise _TokenError(f"{what}: OBJECT IDENTIFIER ends inside a subidentifier")
+
+
+def _oid_string(content):
+    """Write the content of an OBJECT IDENTIFIER that _der_oid accepted in dotted form. Every
+    subidentifier of such a content fits 31 bits."""
+    arcs, v, first = [], 0, True
+    for b in content:
+        v = (v << 7) | (b & 0x7F)
+        if b & 0x80:
+            continue
+        if first:
+            arcs += (["0", str(v)] if v < 40 else ["1", str(v - 40)] if v < 80
+                     else ["2", str(v - 80)])
+            first = False
+        else:
+            arcs.append(str(v))
+        v = 0
+    return ".".join(arcs)
+
+
+def _read_algorithm(r, what):
+    """Read an AlgorithmIdentifier SEQUENCE and return its OBJECT IDENTIFIER's content. Parameters
+    that follow the identifier are not read."""
+    alg = r.read(T_SEQUENCE, what)
+    oid = _Reader(alg.content).read(T_OID, what)
+    _der_oid(oid, what)
+    return oid.content
+
+
+def _read_token(raw):
+    """Read a token by position: a ContentInfo whose [0] holds a SignedData, whose encapsulated
+    content holds the DER TSTInfo, and whose one SignerInfo signs it. Nothing may follow the
+    ContentInfo, and the token is DER throughout. In each SEQUENCE nothing is interpreted after the
+    last member used. Mirrors the Go readToken and readSignedData."""
+    _well_formed(raw, "token")
+    top = _Reader(raw)
+    ci = top.read(T_SEQUENCE, "ContentInfo")
+    if not top.empty():
+        raise _TokenError(f"{top.left()} octets follow the ContentInfo")
+    r = _Reader(ci.content)
+    content_type = r.read(T_OID, "contentType")
+    _der_oid(content_type, "contentType")
+    if content_type.content != OID_SIGNED_DATA:
+        raise _TokenError(f"outer content is {_oid_string(content_type.content)}, want SignedData")
+    sd = _only(r.read(T_EXPLICIT0, "ContentInfo content").content, T_SEQUENCE, "SignedData")
+
+    r = _Reader(sd.content)
+    _der_version(r.read(T_INTEGER, "SignedData version"), "SignedData version")
+    r.read(T_SET, "digestAlgorithms")
+    er = _Reader(r.read(T_SEQUENCE, "encapContentInfo").content)
+    e_type = er.read(T_OID, "eContentType")
+    _der_oid(e_type, "eContentType")
+    if e_type.content != OID_TST_INFO:
+        raise _TokenError(f"payload is {_oid_string(e_type.content)}, want TSTInfo")
+    e_content = _only(er.read(T_EXPLICIT0, "eContent").content, T_OCTET_STRING,
+                      "eContent").content
+    certs = r.optional(T_EXPLICIT0, "certificates")
+    r.optional(T_EXPLICIT1, "crls")
+    signer = _read_signer_infos(r.read(T_SET, "signerInfos"))
+    tst = _only(e_content, T_SEQUENCE, "TSTInfo")
+    _well_formed(tst.content, "TSTInfo")
+    info = _read_tst_info(tst)
+    return {"e_content": e_content, "info": info, "certs": certs, "signer": signer}
+
+
+def _read_signer_infos(infos):
+    """Read every element of the signerInfos SET as a SignerInfo and return the one there must be.
+    Zero signers is malformed and more than one is ambiguous."""
+    r = _Reader(infos.content)
+    found = []
+    while not r.empty():
+        found.append(_read_signer_info(r.read(T_SEQUENCE, "SignerInfo")))
+    if len(found) != 1:
+        raise _TokenError(f"token carries {len(found)} signers, want exactly one")
+    return found[0]
+
+
+def _read_signer_info(e):
+    """Read one SignerInfo's members by position."""
+    r = _Reader(e.content)
+    _der_version(r.read(T_INTEGER, "SignerInfo version"), "SignerInfo version")
+    sid = r.next("sid")
+    if sid.tag == T_SEQUENCE:
+        ir = _Reader(sid.content)
+        ir.read(T_SEQUENCE, "sid issuer")
+        _der_integer(ir.read(T_INTEGER, "sid serialNumber"), "sid serialNumber")
+    elif sid.tag != T_IMPLICIT0:
+        raise _TokenError("the token's signer identifier is neither an issuer and serial number "
+                          "nor a subject key identifier")
+    si = {"sid": sid}
+    si["digest"] = _read_algorithm(r, "digestAlgorithm")
+    si["signed_attrs"] = r.read(T_EXPLICIT0, "signedAttrs")
+    si["signature_algorithm"] = _read_algorithm(r, "signatureAlgorithm")
+    si["signature"] = r.read(T_OCTET_STRING, "signature").content
+    return si
+
+
+def _read_tst_info(e):
+    """Read a TSTInfo by position, as RFC 3161 lays it out: version, policy, messageImprint,
+    serialNumber, and genTime. A member in the wrong slot fails, and nothing after genTime is
+    read."""
+    r = _Reader(e.content)
+    _der_version(r.read(T_INTEGER, "TSTInfo version"), "TSTInfo version")
+    policy = r.read(T_OID, "TSTInfo policy")
+    _der_oid(policy, "TSTInfo policy")
+    ir = _Reader(r.read(T_SEQUENCE, "messageImprint").content)
+    imprint_alg = _read_algorithm(ir, "messageImprint hashAlgorithm")
+    imprint = ir.read(T_OCTET_STRING, "messageImprint hashedMessage").content
+    _der_integer(r.read(T_INTEGER, "TSTInfo serialNumber"), "TSTInfo serialNumber")
+    return {"imprint_alg": imprint_alg, "imprint": imprint, "gen_time": r.next("genTime")}
+
+
+def _read_certificates(content):
+    """Read every element of the certificates field as a certificate. Mirrors the Go
+    readCertificates."""
+    r = _Reader(content)
+    certs = []
+    while not r.empty():
+        certs.append(_read_certificate(r.read(T_SEQUENCE, "certificate")))
+    return certs
+
+
+def _read_certificate(e):
+    """Read a certificate's tbsCertificate by position through its extensions. The certificate's
+    own signature is not read. Mirrors the Go readCertificate."""
+    tbs = _Reader(e.content).read(T_SEQUENCE, "tbsCertificate")
+    r = _Reader(tbs.content)
+    c = {"version": None, "ski": None, "eku": []}
+    wrapped = r.optional(T_EXPLICIT0, "certificate version")
+    if wrapped is not None:
+        v = _only(wrapped.content, T_INTEGER, "certificate version")
+        _der_version(v, "certificate version")
+        c["version"] = v.content
+    serial = r.read(T_INTEGER, "certificate serialNumber")
+    _der_integer(serial, "certificate serialNumber")
+    c["serial"] = serial.content
+    r.read(T_SEQUENCE, "certificate signature")
+    c["issuer"] = r.read(T_SEQUENCE, "certificate issuer").full
+    c["validity"] = r.read(T_SEQUENCE, "certificate validity")
+    c["subject"] = r.read(T_SEQUENCE, "certificate subject").full
+    c["spki"] = r.read(T_SEQUENCE, "certificate subjectPublicKeyInfo")
+    r.optional(T_IMPLICIT1, "certificate issuerUniqueID")
+    r.optional(T_IMPLICIT2, "certificate subjectUniqueID")
+    wrapped = r.optional(T_EXPLICIT3, "certificate extensions")
+    if wrapped is not None:
+        _read_extensions(c, wrapped)
+    return c
+
+
+def _read_extensions(c, wrapped):
+    """Read the [3] extensions: exactly one SEQUENCE of Extension, each an extnID, an optional
+    critical BOOLEAN that DER only ever writes as TRUE, 0xFF, and an extnValue OCTET STRING, with
+    no extnID twice. Mirrors the Go readExtensions."""
+    r = _Reader(_only(wrapped.content, T_SEQUENCE, "certificate extensions").content)
+    seen = set()
+    while not r.empty():
+        er = _Reader(r.read(T_SEQUENCE, "extension").content)
+        ext_id = er.read(T_OID, "extnID")
+        _der_oid(ext_id, "extnID")
+        critical = er.optional(T_BOOLEAN, "extension critical")
+        if critical is not None and critical.content != b"\xff":
+            raise _TokenError(f"extension {_oid_string(ext_id.content)} critical flag is not the "
+                              "DER TRUE octet")
+        value = er.read(T_OCTET_STRING, "extnValue")
+        if ext_id.content in seen:
+            raise _TokenError(f"certificate carries extension {_oid_string(ext_id.content)} twice")
+        seen.add(ext_id.content)
+        if ext_id.content == OID_SUBJECT_KEY_ID:
+            c["ski"] = _only(value.content, T_OCTET_STRING, "subject key identifier").content
+        elif ext_id.content == OID_EXT_KEY_USAGE:
+            kr = _Reader(_only(value.content, T_SEQUENCE, "extended key usage").content)
+            c["eku"] = []
+            while not kr.empty():
+                p = kr.read(T_OID, "extended key usage purpose")
+                _der_oid(p, "extended key usage purpose")
+                c["eku"].append(p.content)
+
+
+def _signer_certificate(certs, sid):
+    """Return the first carried certificate the signer identifier names, by subject key
+    identifier or by issuer and serial number, which must be a version 3 certificate marked for
+    timestamping. A named certificate the token does not carry is a refusal, never an invitation to
+    pick another. Mirrors the Go signerCertificate."""
+    match = None
+    if sid.tag == T_IMPLICIT0:
+        match = next((c for c in certs if c["ski"] is not None and c["ski"] == sid.content), None)
+    else:
+        r = _Reader(sid.content)
+        issuer = r.read(T_SEQUENCE, "sid issuer").full
+        serial = r.read(T_INTEGER, "sid serialNumber").content
+        match = next((c for c in certs if c["serial"] == serial and c["issuer"] == issuer), None)
+    if match is None:
+        raise _TokenError("the token names a signer certificate it does not carry")
+    if match["version"] != b"\x02":
+        raise _TokenError("the certificate the token names is not version 3")
+    if OID_KP_TIME_STAMPING not in match["eku"]:
+        raise _TokenError("the certificate the token names is not marked for timestamping")
+    return match
+
+
+# Patterns of the two certificate time forms DER and RFC 5280 allow: whole seconds, then Z.
+_RE_UTC_TIME = re.compile(rb"([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})Z")
+_RE_CERT_GENERALIZED = re.compile(rb"([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})"
+                                  rb"([0-9]{2})Z")
+
+
+def _parse_cert_time(e):
+    """Read a certificate validity time to microseconds since the epoch: a UTCTime YYMMDDhhmmssZ,
+    whose two-digit year is 19YY from 50 to 99 and 20YY below 50, or a GeneralizedTime
+    YYYYMMDDhhmmssZ, with the field ranges a bundle time has. Mirrors the Go parseCertTime."""
+    if e.tag == T_UTC_TIME:
+        m = _RE_UTC_TIME.fullmatch(e.content)
+        year = None if m is None else ("19" if m[1][0:1] >= b"5" else "20") + m[1].decode()
+    elif e.tag == T_GENERALIZED_TIME:
+        m = _RE_CERT_GENERALIZED.fullmatch(e.content)
+        year = None if m is None else m[1].decode()
+    else:
+        raise _TokenError("certificate validity time is neither a UTCTime nor a GeneralizedTime")
+    if m is None:
+        raise _TokenError(f"certificate validity time {e.content!r} is not in its DER form")
+    mo, d, h, mi, s = (g.decode() for g in m.groups()[1:])
+    try:
+        return _parse_time(f"{year}-{mo}-{d}T{h}:{mi}:{s}Z")
+    except ValueError as exc:
+        raise _TokenError(f"certificate validity time {e.content!r}: {exc}") from exc
+
+
+def _validity_window(c):
+    """Read the signer certificate's notBefore and notAfter. Anything after notAfter is not
+    read."""
+    r = _Reader(c["validity"].content)
+    not_before = _parse_cert_time(r.next("notBefore"))
+    not_after = _parse_cert_time(r.next("notAfter"))
+    return not_before, not_after
+
+
+# MAX_RSA_BITS is the longest RSA modulus a verifier reads. Go's crypto/rsa sets no upper bound,
+# but OpenSSL refuses to verify with a modulus past 16384 bits, so every verifier holds keys to
+# this bound instead.
+MAX_RSA_BITS = 16384
+
+
+class _RSAKey:
+    """An RSA public key as its two numbers, checked here rather than by a library, so that no
+    library's own bounds on a key decide a verdict."""
+
+    __slots__ = ("n", "e")
+
+    def __init__(self, n, e):
+        self.n = n
+        self.e = e
+
+
+def _parse_public_key(spki):
+    """Read the signer's subjectPublicKeyInfo into a key: an Ed25519 key of 32 octets with no
+    parameters, an ECDSA key on P-224, P-256, P-384, or P-521 as an uncompressed point, or an RSA
+    key with NULL parameters as exactly one SEQUENCE holding only a modulus and an exponent, with a
+    positive odd modulus of 1024 to 16384 bits and an odd exponent from 3 to 2^31-1. Any other key
+    is refused. Mirrors the Go parsePublicKey."""
+    r = _Reader(spki.content)
+    alg = r.read(T_SEQUENCE, "public key algorithm")
+    bits = r.read(T_BIT_STRING, "subjectPublicKey").content
+    if not bits or bits[0] != 0:
+        raise _TokenError("subjectPublicKey has unused bits")
+    key = bits[1:]
+    ar = _Reader(alg.content)
+    alg_id = ar.read(T_OID, "public key algorithm")
+    _der_oid(alg_id, "public key algorithm")
+    if alg_id.content == OID_ED25519:
+        if not ar.empty():
+            raise _TokenError("Ed25519 key carries parameters")
+        if len(key) != 32:
+            raise _TokenError(f"Ed25519 key is {len(key)} octets")
+        return Ed25519PublicKey.from_public_bytes(key)
+    if alg_id.content == OID_EC_PUBLIC_KEY:
+        named = ar.read(T_OID, "elliptic curve")
+        _der_oid(named, "elliptic curve")
+        if named.content not in EC_CURVES:
+            raise _TokenError(f"unsupported elliptic curve {_oid_string(named.content)}")
+        curve, size = EC_CURVES[named.content]
+        if len(key) != 1 + 2 * size or key[0] != 0x04:
+            raise _TokenError("elliptic curve key is not an uncompressed point")
+        try:
+            return ec.EllipticCurvePublicKey.from_encoded_point(curve(), key)
+        except ValueError as exc:
+            raise _TokenError(f"elliptic curve key: {exc}") from exc
+    if alg_id.content == OID_RSA_ENCRYPTION:
+        if ar.read(T_NULL, "RSA key parameters").content:
+            raise _TokenError("RSA key parameters are not NULL")
+        kr = _Reader(_only(key, T_SEQUENCE, "RSA public key").content)
+        n = kr.read(T_INTEGER, "RSA modulus")
+        _der_integer(n, "RSA modulus")
+        e = kr.read(T_INTEGER, "RSA public exponent")
+        _der_integer(e, "RSA public exponent")
+        if not kr.empty():
+            raise _TokenError("RSA public key holds more than a modulus and an exponent")
+        modulus = int.from_bytes(n.content, "big", signed=True)
+        exponent = int.from_bytes(e.content, "big", signed=True)
+        if (modulus <= 0 or modulus % 2 == 0 or modulus.bit_length() < 1024
+                or modulus.bit_length() > MAX_RSA_BITS):
+            raise _TokenError("RSA modulus is not a positive odd number of 1024 to 16384 bits")
+        if exponent % 2 == 0 or exponent < 3 or exponent > 2**31 - 1:
+            raise _TokenError("RSA public exponent is not odd and from 3 to 2^31-1")
+        return _RSAKey(modulus, exponent)
+    raise _TokenError(f"unsupported public key algorithm {_oid_string(alg_id.content)}")
+
+
+def _commits_to(attrs, digest):
+    """Read every signed attribute, each a SEQUENCE of a type and a SET of values, and report
+    whether a messageDigest attribute is present. Every messageDigest attribute must hold exactly
+    one OCTET STRING equal to digest. Mirrors the Go commitsTo."""
+    r = _Reader(attrs.content)
+    bound = False
+    while not r.empty():
+        ar = _Reader(r.read(T_SEQUENCE, "signed attribute").content)
+        typ = ar.read(T_OID, "signed attribute type")
+        _der_oid(typ, "signed attribute type")
+        values = ar.read(T_SET, "signed attribute values")
+        if typ.content != OID_MESSAGE_DIGEST:
+            continue
+        value = _only(values.content, T_OCTET_STRING, "message digest attribute")
+        if value.content != digest:
+            raise _TokenError("the signed attributes commit to a different payload")
+        bound = True
+    return bound
+
+
+def _ecdsa_signature_ok(signature, curve_order):
+    """Check an ECDSA signature's own encoding as Go's ecdsa.VerifyASN1 reads it: exactly one
+    SEQUENCE of two non-negative INTEGERs in their shortest form and nothing else, each from 1 to
+    the curve order less one."""
+    try:
+        sr = _Reader(_only(signature, T_SEQUENCE, "ECDSA signature").content)
+        values = []
+        for _ in range(2):
+            v = sr.read(T_INTEGER, "ECDSA signature value")
+            _der_integer(v, "ECDSA signature value")
+            if v.content[0] & 0x80:
+                return False
+            values.append(int.from_bytes(v.content, "big"))
+        if not sr.empty():
+            return False
+    except _TokenError:
+        return False
+    return all(0 < v < curve_order for v in values)
+
+
+# EC_ORDERS holds each supported curve's group order, keyed by the curve's name.
+EC_ORDERS = {
+    "secp224r1": 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFF16A2E0B8F03E13DD29455C5C2A3D,
+    "secp256r1": 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551,
+    "secp384r1": int("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+                     "C7634D81F4372DDF581A0DB248B0A77AECEC196ACCC52973", 16),
+    "secp521r1": int("1FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+                     "A51868783BF2F966B7FCC0148F709A5D03BB5C9B8899C47AEBB6FB71E91386409", 16),
 }
 
 
-def _der(buf, i=0):
-    """Read one DER element at i, returning (tag, header_len, content, end)."""
-    tag = buf[i]
-    n = buf[i + 1]
-    j = i + 2
-    if n & 0x80:
-        count = n & 0x7F
-        n = int.from_bytes(buf[j:j + count], "big")
-        j += count
-    return tag, j, buf[j:j + n], j + n
+# _DIGEST_INFO maps a hash name to the DER DigestInfo prefix PKCS #1 v1.5 writes before the
+# digest, the one encoding Go's crypto/rsa compares a recovered signature against.
+_DIGEST_INFO = {
+    "sha256": bytes.fromhex("3031300d060960864801650304020105000420"),
+    "sha384": bytes.fromhex("3041300d060960864801650304020205000430"),
+    "sha512": bytes.fromhex("3051300d060960864801650304020305000440"),
+}
 
 
-def _children(content):
-    """Yield every DER element inside a constructed value."""
-    i = 0
-    while i < len(content):
-        tag, hdr, body, end = _der(content, i)
-        yield tag, body, content[i:end]
-        i = end
+def _rsa_verify(key, hname, pss, signed, signature):
+    """Check an RSA signature over signed by RFC 8017, as Go's crypto/rsa checks it, with the
+    arithmetic done here so that no library's own limit on the modulus applies. The signature is
+    exactly as long as the modulus and below it. The recovered encoding is the PKCS #1 v1.5 one,
+    compared octet for octet, or a PSS encoding with MGF1 over the same hash and a salt as long as
+    the hash."""
+    k = (key.n.bit_length() + 7) // 8
+    if len(signature) != k:
+        raise ValueError("RSA signature length differs from the modulus length")
+    s = int.from_bytes(signature, "big")
+    if s >= key.n:
+        raise ValueError("RSA signature is not below the modulus")
+    em = pow(s, key.e, key.n).to_bytes(k, "big")
+    digest = hashlib.new(hname, signed).digest()
+    if pss:
+        _pss_verify(em, key.n.bit_length() - 1, digest, hname)
+        return
+    info = _DIGEST_INFO[hname] + digest
+    if k < len(info) + 11:
+        raise ValueError("RSA modulus is too short for the digest")
+    if em != b"\x00\x01" + b"\xff" * (k - len(info) - 3) + b"\x00" + info:
+        raise ValueError("RSA PKCS #1 v1.5 verification failure")
 
 
-def _oid(body):
-    """Decode a DER OBJECT IDENTIFIER into dotted form."""
-    first = body[0]
-    parts = [str(first // 40), str(first % 40)]
-    value = 0
-    for byte in body[1:]:
-        value = (value << 7) | (byte & 0x7F)
-        if not byte & 0x80:
-            parts.append(str(value))
-            value = 0
-    return ".".join(parts)
+def _mgf1(seed, length, hname):
+    """Expand seed to length octets with MGF1 over the named hash, as RFC 8017 defines it."""
+    out = b""
+    counter = 0
+    while len(out) < length:
+        out += hashlib.new(hname, seed + counter.to_bytes(4, "big")).digest()
+        counter += 1
+    return out[:length]
 
 
-def _find(content, want_tag):
-    """Return the first child with the given tag, or None."""
-    for tag, body, full in _children(content):
-        if tag == want_tag:
-            return body, full
-    return None, None
+def _pss_verify(em, em_bits, digest, hname):
+    """Check a recovered PSS encoding em of em_bits bits against digest, with a salt as long as
+    the hash, step by step as RFC 8017 EMSA-PSS-VERIFY and Go's crypto/rsa do. Octets em carries in
+    front of the encoding's own length must be zero."""
+    h_len = len(digest)
+    em_len = (em_bits + 7) // 8
+    while len(em) > em_len:
+        if em[0] != 0:
+            raise ValueError("RSA PSS verification failure")
+        em = em[1:]
+    if em_len < 2 * h_len + 2 or em[-1] != 0xBC:
+        raise ValueError("RSA PSS verification failure")
+    masked, h = em[:em_len - h_len - 1], em[em_len - h_len - 1:em_len - 1]
+    top = 0xFF >> (8 * em_len - em_bits)
+    if masked[0] & ~top & 0xFF:
+        raise ValueError("RSA PSS verification failure")
+    db = bytearray(a ^ b for a, b in zip(masked, _mgf1(h, len(masked), hname)))
+    db[0] &= top
+    ps_len = em_len - 2 * h_len - 2
+    if any(db[:ps_len]) or db[ps_len] != 0x01:
+        raise ValueError("RSA PSS verification failure")
+    salt = bytes(db[len(db) - h_len:])
+    if hashlib.new(hname, bytes(8) + digest + salt).digest() != h:
+        raise ValueError("RSA PSS verification failure")
 
 
-def _timestamp_signer(si, certs, index):
-    """Return the carried certificate the SignerInfo's signer identifier names.
-
-    A signer identifier is a choice: an IssuerAndSerialNumber SEQUENCE, or a SubjectKeyIdentifier
-    tagged [0]. Both are read, because an authority may use either and a verifier that understands
-    only one reports a conforming token as unresolvable. A named certificate the token does not
-    carry is a refusal, not an invitation to pick another.
-    """
-    kids = list(_children(si))
-    if len(kids) < 2:
-        raise VError("anchor", f"anchor {index} proof has a malformed signer info")
-    tag, body, _full = kids[1]
-
-    match = None
-    if tag == 0x80:
-        for cert in certs:
-            try:
-                ski = cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
-            except x509.ExtensionNotFound:
-                continue
-            if ski.digest == body:
-                match = cert
-                break
-    elif tag == 0x30:
-        issuer_body, issuer_full = _find(body, 0x30)
-        serial_body, _ = _find(body, 0x02)
-        if issuer_full is None or serial_body is None:
-            raise VError("anchor", f"anchor {index} proof has a malformed signer identifier")
-        serial = int.from_bytes(serial_body, "big")
-        for cert in certs:
-            if cert.serial_number == serial and cert.issuer.public_bytes() == issuer_full:
-                match = cert
-                break
+def _check_token_signature(scheme, key, signed, signature):
+    """Check signature over signed with key under scheme, a (key type, hash, pss) triple. The key
+    must be the type the scheme names. Mirrors the Go checkSignature."""
+    kind, hname, pss = scheme
+    if isinstance(key, _RSAKey):
+        if kind != "rsa":
+            raise ValueError("the signature algorithm does not match the RSA signer key")
+        _rsa_verify(key, hname, pss, signed, signature)
+    elif isinstance(key, ec.EllipticCurvePublicKey):
+        if kind != "ecdsa":
+            raise ValueError("the signature algorithm does not match the ECDSA signer key")
+        if not _ecdsa_signature_ok(signature, EC_ORDERS[key.curve.name]):
+            raise ValueError("ECDSA verification failure")
+        key.verify(signature, signed, ec.ECDSA(_HASHES[hname]()))
+    elif isinstance(key, ed25519.Ed25519PublicKey):
+        if kind != "ed25519":
+            raise ValueError("the signature algorithm does not match the Ed25519 signer key")
+        key.verify(signature, signed)
     else:
-        raise VError("anchor", f"anchor {index} proof has an unreadable signer identifier")
+        raise ValueError("unsupported signer key")
 
-    if match is None:
-        raise VError("anchor", f"anchor {index} proof names a signer certificate it does not carry")
+
+# _HASHES maps a digest name to the hash a signature check applies.
+_HASHES = {"sha256": hashes.SHA256, "sha384": hashes.SHA384, "sha512": hashes.SHA512}
+
+
+# RDN_SHORT_NAMES maps the nine attribute types RFC 4514 names, as DER content octets, to the
+# short name a signer's subject writes them with. Every other type is written in dotted form.
+RDN_SHORT_NAMES = {
+    _oid_content("2.5.4.3"): "CN",
+    _oid_content("2.5.4.7"): "L",
+    _oid_content("2.5.4.8"): "ST",
+    _oid_content("2.5.4.10"): "O",
+    _oid_content("2.5.4.11"): "OU",
+    _oid_content("2.5.4.6"): "C",
+    _oid_content("2.5.4.9"): "STREET",
+    _oid_content("0.9.2342.19200300.100.1.25"): "DC",
+    _oid_content("0.9.2342.19200300.100.1.1"): "UID",
+}
+
+# Identifier octets of the string types a subject attribute's value is written out from.
+T_UTF8_STRING, T_PRINTABLE_STRING, T_IA5_STRING = 0x0C, 0x13, 0x16
+
+
+def _subject_name(c):
+    """Name the signer for a report from the subject Name alone, never from a parse of the whole
+    certificate, by the one rule FORMAT.md states: the RFC 4514 string of a subject that is a
+    sequence of relative distinguished names, and otherwise # and the hexadecimal of the subject's
+    whole encoding. It only names the signer and never decides a verdict, so it refuses nothing.
+    Mirrors the Go subjectName."""
+    name = _rfc4514_name(c["subject"])
+    return name if name is not None else "#" + c["subject"].hex()
+
+
+def _rfc4514_name(subject):
+    """Write a Name in the RFC 4514 form: its relative distinguished names from the last to the
+    first, separated by commas, and the attributes of each in the order they are encoded,
+    separated by plus signs. Return None unless the Name is one SEQUENCE of one or more SETs, each
+    holding one or more attribute SEQUENCEs of an OBJECT IDENTIFIER that _der_oid accepts and
+    exactly one value. Mirrors the Go rfc4514Name."""
     try:
-        eku = match.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
-    except x509.ExtensionNotFound:
-        raise VError("anchor", f"anchor {index} proof signer is not marked for timestamping")
-    if x509.oid.ExtendedKeyUsageOID.TIME_STAMPING not in eku:
-        raise VError("anchor", f"anchor {index} proof signer is not marked for timestamping")
-    return match
+        r = _Reader(_only(subject, T_SEQUENCE, "subject").content)
+        rdns = []
+        while not r.empty():
+            sr = _Reader(r.read(T_SET, "relative distinguished name").content)
+            attrs = []
+            while not sr.empty():
+                ar = _Reader(sr.read(T_SEQUENCE, "attribute").content)
+                typ = ar.read(T_OID, "attribute type")
+                _der_oid(typ, "attribute type")
+                value = ar.next("attribute value")
+                if not ar.empty():
+                    return None
+                attrs.append(_attribute_string(typ.content, value))
+            if not attrs:
+                return None
+            rdns.append("+".join(attrs))
+    except _TokenError:
+        return None
+    if not rdns:
+        return None
+    return ",".join(reversed(rdns))
+
+
+def _attribute_string(typ, value):
+    """Write one attribute as its type, an equals sign, and its value. A type RFC 4514 names is
+    written by that name, and its value as escaped text when the value is a string _string_value
+    reads. Any other value, and every value of a type written in dotted form, is # and the
+    hexadecimal of the value's whole encoding. Mirrors the Go attributeString."""
+    short = RDN_SHORT_NAMES.get(typ)
+    if short is None:
+        return f"{_oid_string(typ)}=#{value.full.hex()}"
+    text = _string_value(value)
+    if text is not None:
+        return f"{short}={_escape_rdn_value(text)}"
+    return f"{short}=#{value.full.hex()}"
+
+
+def _string_value(v):
+    """Return the text of a primitive UTF8String holding valid UTF-8, or of a primitive
+    PrintableString or IA5String holding only ASCII, and None for any other value. Mirrors the Go
+    stringValue."""
+    if v.tag == T_UTF8_STRING:
+        try:
+            return v.content.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    if v.tag in (T_PRINTABLE_STRING, T_IA5_STRING):
+        return v.content.decode("ascii") if v.content.isascii() else None
+    return None
+
+
+def _escape_rdn_value(text):
+    """Escape an attribute's text as RFC 4514 requires: a backslash before each of the characters
+    " + , ; < > and backslash, before a # or a space that starts the text, and before a space that
+    ends it. Every character below U+0020 or from U+007F to U+009F is written as a backslash and
+    two lower case hexadecimal digits for each octet of its UTF-8 encoding. Mirrors the Go
+    escapeRDNValue."""
+    out = []
+    last = len(text) - 1
+    for i, ch in enumerate(text):
+        if ch in '"+,;<>\\' or (ch == "#" and i == 0) or (ch == " " and i in (0, last)):
+            out.append("\\" + ch)
+        elif ch < "\x20" or "\x7f" <= ch <= "\x9f":
+            out.append("".join(f"\\{o:02x}" for o in ch.encode("utf-8")))
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def _verify_timestamp(token, link, index):
@@ -347,154 +1038,64 @@ def _verify_timestamp(token, link, index):
     A timestamp token is the one anchor type that proves itself: it is signed by an authority over
     the link and carries its own certificates, so it is checked offline with nothing but the bundle.
     Whether the authority is worth trusting is the relying party's call, made by reading the signer
-    this returns, so no root list is baked in here.
+    this returns, so no root list is baked in here. The steps and their order mirror the Go
+    rfc3161.Verify.
     """
     try:
-        _, _, ci, _ = _der(token)
-        oid_body, _ = _find(ci, 0x06)
-        if _oid(oid_body) != OID_SIGNED_DATA:
-            raise VError("anchor", f"anchor {index} proof is not CMS SignedData")
-        explicit, _ = _find(ci, 0xA0)
-        _, _, sd, _ = _der(explicit)
+        tok = _read_token(token)
+        info = tok["info"]
+        # The binding: this token is about this link and no other value.
+        if info["imprint_alg"] != OID_SHA256:
+            raise _TokenError(f"imprint uses {_oid_string(info['imprint_alg'])}, want SHA-256")
+        if not isinstance(link, str) or not re.fullmatch(r"(?:[0-9a-fA-F]{2})*", link):
+            raise _TokenError("cannot be checked against a link that is not hex")
+        if info["imprint"] != hashlib.sha256(bytes.fromhex(link)).digest():
+            raise _TokenError("attests to a different link")
+        if tok["certs"] is None:
+            raise _TokenError("carries no certificate to check its signature against")
+        signer = tok["signer"]
+        cert = _signer_certificate(_read_certificates(tok["certs"].content), signer["sid"])
+        key = _parse_public_key(cert["spki"])
 
-        encap = eci = None
-        certs_der = None
-        signer_infos = None
-        for tag, body, full in _children(sd):
-            if tag == 0x30 and encap is None:
-                inner_oid, _ = _find(body, 0x06)
-                if inner_oid is not None and _oid(inner_oid) == OID_TST_INFO:
-                    encap = body
-            elif tag == 0xA0 and certs_der is None:
-                certs_der = full
-            elif tag == 0x31:
-                signer_infos = body
-        if encap is None:
-            raise VError("anchor", f"anchor {index} proof carries no TSTInfo")
+        digest_name = DIGEST_OIDS.get(signer["digest"])
+        if digest_name is None:
+            raise _TokenError(f"unsupported digest {_oid_string(signer['digest'])}")
+        # The signed attributes must commit to the payload, or the signature covers nothing that
+        # matters, and the signature is over them re-tagged as a SET rather than the implicit [0].
+        signed_attrs = signer["signed_attrs"]
+        signed = bytes([T_SET]) + signed_attrs.full[1:]
+        if not _commits_to(signed_attrs, hashlib.new(digest_name, tok["e_content"]).digest()):
+            raise _TokenError("signed attributes do not commit to the payload")
+        scheme = SIGNATURE_SCHEMES.get(signer["signature_algorithm"])
+        if scheme is None and signer["signature_algorithm"] == OID_RSA_ENCRYPTION:
+            scheme = ("rsa", digest_name, False)
+        if scheme is None and signer["signature_algorithm"] == OID_EC_PUBLIC_KEY:
+            scheme = ("ecdsa", digest_name, False)
+        if scheme is None:
+            raise _TokenError("unsupported signature algorithm "
+                              f"{_oid_string(signer['signature_algorithm'])}")
+        try:
+            _check_token_signature(scheme, key, signed, signer["signature"])
+        except (InvalidSignature, ValueError) as exc:
+            raise _TokenError(f"signature does not verify: {exc}") from exc
 
-        wrapper, _ = _find(encap, 0xA0)
-        _, _, tst_der, _ = _der(wrapper)
-        _, _, tst, _ = _der(tst_der)
-    except VError:
-        raise
-    except Exception as exc:
-        raise VError("anchor", f"anchor {index} proof is malformed: {exc}") from exc
-
-    # The binding: this token is about this link and no other value.
-    imprint = None
-    for tag, body, _full in _children(tst):
-        if tag == 0x30:
-            algo, _ = _find(body, 0x30)
-            digest, _ = _find(body, 0x04)
-            if algo is not None and digest is not None:
-                alg_oid, _ = _find(algo, 0x06)
-                if alg_oid is not None and _oid(alg_oid) == OID_SHA256:
-                    imprint = digest
-                    break
-    if imprint is None:
-        raise VError("anchor", f"anchor {index} proof has no SHA-256 message imprint")
-    if imprint != hashlib.sha256(bytes.fromhex(link)).digest():
-        raise VError("anchor", f"anchor {index} proof attests to a different link")
-
-    gen_time = None
-    for tag, body, _full in _children(tst):
-        if tag == 0x18:
-            gen_time = body.decode("ascii").rstrip("Z")
-            break
-
-    if certs_der is None or signer_infos is None:
-        raise VError("anchor", f"anchor {index} proof carries no certificate or signer")
-    # A timestamp token has exactly one signer. Zero is malformed and more than one is ambiguous.
-    signer_count = sum(1 for t, _b, _f in _children(signer_infos) if t == 0x30)
-    if signer_count != 1:
-        raise VError("anchor", f"anchor {index} proof carries {signer_count} signers, want one")
-    try:
-        certs = pkcs7.load_der_pkcs7_certificates(token)
-    except Exception as exc:
-        # A token that does not open as PKCS#7 is a failed anchor, never a crash: the bundle
-        # carried a proof and the proof is garbage.
-        raise VError("anchor", f"anchor {index} proof is not a parseable timestamp token: {exc}")
-
-    _, _, si, _ = _der(signer_infos)
-
-    # The signer certificate is the one the signer identifier names, never merely the first one
-    # carried that happens to be marked for timestamping. Resolving by usage alone made the result
-    # depend on the order certificates appear in, which the format says carries no meaning, and it
-    # would grade a token against a certificate its own identifier never pointed at.
-    signer_cert = _timestamp_signer(si, certs, index)
-    signed_attrs = signature = digest_name = None
-    pending_algo = None
-    for tag, body, full in _children(si):
-        if tag == 0x30 and signed_attrs is None:
-            algo_oid, _ = _find(body, 0x06)
-            if algo_oid is not None:
-                pending_algo = DIGEST_OIDS.get(_oid(algo_oid), pending_algo)
-        elif tag == 0xA0 and signed_attrs is None:
-            signed_attrs = full
-            digest_name = pending_algo
-        elif tag == 0x04:
-            signature = body
-    if signed_attrs is None or signature is None:
-        raise VError("anchor", f"anchor {index} proof signer is incomplete")
-    if digest_name is None:
-        raise VError("anchor", f"anchor {index} proof uses an unsupported digest")
-
-    # The signed attributes must commit to the payload, or the signature covers nothing that
-    # matters, and the signature is over them re-tagged as a SET rather than the implicit [0].
-    _, _, attrs_body, _ = _der(signed_attrs)
-    bound = False
-    for tag, body, _full in _children(attrs_body):
-        attr_oid, _ = _find(body, 0x06)
-        if attr_oid is None or _oid(attr_oid) != OID_MESSAGE_DIGEST:
-            continue
-        values, _ = _find(body, 0x31)
-        want, _ = _find(values, 0x04)
-        if want != hashlib.new(digest_name, tst_der).digest():
-            raise VError("anchor", f"anchor {index} proof commits to a different payload")
-        bound = True
-    if not bound:
-        raise VError("anchor", f"anchor {index} proof does not commit to its payload")
-
-    signed = b"\x31" + signed_attrs[1:]
-    try:
-        _verify_cert_signature(signer_cert, signature, signed, digest_name)
-    except Exception as exc:
-        raise VError("anchor", f"anchor {index} proof signature does not verify: {exc}") from exc
-
-    # An authority's certificate has to be valid when it signs, so a signing time outside the signer
-    # certificate's own window is not evidence, whatever the signature says. This needs no root store:
-    # it is a self-consistency check between two values the token already carries.
-    if gen_time and len(gen_time) >= 14:
-        signed_at = datetime.strptime(gen_time[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
-        not_before = signer_cert.not_valid_before_utc
-        not_after = signer_cert.not_valid_after_utc
+        # An authority's certificate has to be valid when it signs, so a signing time outside the
+        # signer certificate's own window is not evidence, whatever the signature says. This needs
+        # no root store: it is a self-consistency check between two values the token already
+        # carries. Both sides are whole microseconds since the epoch, as Go compares them.
+        not_before, not_after = _validity_window(cert)
+        gen_time = info["gen_time"]
+        if gen_time.tag != T_GENERALIZED_TIME:
+            raise _TokenError("genTime is not a GeneralizedTime")
+        try:
+            signed_at = _parse_gen_time(gen_time.content)
+        except ValueError as exc:
+            raise _TokenError(f"genTime: {exc}") from exc
         if signed_at < not_before or signed_at > not_after:
-            raise VError("anchor", f"anchor {index} proof signing time is outside the certificate "
-                                   "validity window")
-
-    when = gen_time or "unknown time"
-    if len(when) >= 14:
-        when = (f"{when[0:4]}-{when[4:6]}-{when[6:8]}T{when[8:10]}:"
-                f"{when[10:12]}:{when[12:14]}Z")
-    return when, signer_cert.subject.rfc4514_string()
-
-
-def _verify_cert_signature(cert, signature, signed, digest_name):
-    """Verify signature over signed using the certificate's public key and the signer's own digest.
-
-    The digest comes from the signer info, never from the certificate. A certificate records how it
-    was itself signed, which has nothing to do with how this token was signed, and using it would
-    check the signature against the wrong hash.
-    """
-    key = cert.public_key()
-    algo = {"sha256": hashes.SHA256(), "sha384": hashes.SHA384(),
-            "sha512": hashes.SHA512()}[digest_name]
-    if isinstance(key, ec.EllipticCurvePublicKey):
-        key.verify(signature, signed, ec.ECDSA(algo))
-    elif isinstance(key, ed25519.Ed25519PublicKey):
-        key.verify(signature, signed)
-    else:
-        key.verify(signature, signed, padding.PKCS1v15(), algo)
+            raise _TokenError("signing time is outside the certificate validity window")
+    except _TokenError as exc:
+        raise VError("anchor", f"anchor {index} proof {exc}") from exc
+    return signed_at, _subject_name(cert)
 
 
 # ---------- verification ----------
@@ -695,11 +1296,11 @@ _RE_LINK = re.compile(r"[0-9a-f]{64}")
 _RE_CLAIM_TYPE = re.compile(r"[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*/[0-9]+")
 _RE_SUBJECT_TYPE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 
-# _RE_RFC3339 is the RFC 3339 date-time production: a four digit year, two digit fields, an upper
-# case T, a fraction of any length after a period, and Z or a numeric offset whose hour is below 24
-# and whose minute is below 60.
-_RE_RFC3339 = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})"
-                         r"(?:\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])")
+# _RE_TIME is the one time form this format allows: a four digit year, a two digit month, day, hour,
+# minute, and second, an upper case T between the date and the time, an optional fraction of one or
+# more digits after a period, and an upper case Z. Every digit is ASCII. Mirrors the Go reTime.
+_RE_TIME = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})"
+                      r"(?:\.([0-9]+))?Z")
 
 # _ANCHOR_TYPES is the anchor vocabulary the format defines. Unlike a subject type, an anchor type
 # outside it is refused at parse, because the type says what proof the anchor carries.
@@ -771,24 +1372,79 @@ def _b64(s):
     return base64.b64decode(s, validate=True)
 
 
-def _is_rfc3339(s):
-    """Report whether s is an RFC 3339 time: the shape in _RE_RFC3339 with the calendar fields in
-    range, which is exactly what the Go verifier's strict parse accepts. Year 0000 is a leap year,
-    as in Go. Every time a bundle or a presentation carries is checked here before it is read."""
-    m = _RE_RFC3339.fullmatch(s) if isinstance(s, str) else None
+def _parse_time(s):
+    """Parse a time in the one form this format allows, the RFC 3339 date-time production narrowed
+    to UTC, to whole microseconds since the Unix epoch, with digits past the microsecond dropped:
+    the shape in _RE_TIME, a year from 0001 to 9999, a month from 01 to 12, a day within its month,
+    an hour below 24, and a minute and a second below 60, so a leap second is refused. Any other
+    string raises ValueError. Every time a bundle or a presentation carries is read here and by
+    nothing else, under every profile. Mirrors the Go ParseTime."""
+    m = _RE_TIME.fullmatch(s) if isinstance(s, str) else None
     if m is None:
-        return False
+        raise ValueError(f"{s!r} is not a UTC time of the form YYYY-MM-DDTHH:MM:SS[.fraction]Z")
+    if m[1] == "0000":
+        raise ValueError(f"{s!r} is in year 0000, and the first year allowed is 0001")
+    at = datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]), int(m[6]),
+                  tzinfo=timezone.utc)
+    fraction = int((m[7] or "")[:6].ljust(6, "0"))
+    return _micros(at) + fraction
+
+
+# _RE_GEN_TIME is the one genTime form RFC 3161 allows: the year, month, day, hour, minute, and
+# second as fourteen ASCII digits, an optional fraction after a period with no trailing zero, and an
+# upper case Z.
+_RE_GEN_TIME = re.compile(rb"([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})"
+                          rb"(\.[0-9]*[1-9])?Z")
+
+
+def _parse_gen_time(raw):
+    """Read a timestamp token's genTime, the raw bytes of its GeneralizedTime, in the one form RFC
+    3161 gives it, to whole microseconds since the Unix epoch with finer digits dropped. The fields
+    are range checked by _parse_time, so a genTime holds the ranges a bundle time does. A missing
+    genTime, a numeric offset, a trailing zero in the fraction, and any other form raise
+    ValueError. Mirrors the Go parseGenTime."""
+    m = _RE_GEN_TIME.fullmatch(raw) if isinstance(raw, bytes) else None
+    if m is None:
+        raise ValueError(f"{raw!r} is not of the form YYYYMMDDhhmmss[.fraction]Z")
+    y, mo, d, h, mi, sec, frac = (g.decode("ascii") if g else "" for g in m.groups())
+    return _parse_time(f"{y}-{mo}-{d}T{h}:{mi}:{sec}{frac}Z")
+
+
+def _micros(at):
+    """Count an aware datetime as whole microseconds since the Unix epoch."""
+    return (at - _EPOCH) // timedelta(microseconds=1)
+
+
+def _is_time(s):
+    """Report whether s is a time in the one form _parse_time reads."""
     try:
-        datetime(int(m[1]) or 2000, int(m[2]), int(m[3]), int(m[4]), int(m[5]), int(m[6]))
+        _parse_time(s)
     except ValueError:
         return False
     return True
 
 
 def _check_time(what, s):
-    """Require an RFC 3339 timestamp, refusing the bundle at parse when s is not one."""
-    if not _is_rfc3339(s):
-        raise VError("parse", f"{what}: {s!r} is not RFC 3339")
+    """Require a time in the one form _parse_time reads, refusing the bundle at parse when s is not
+    one."""
+    try:
+        _parse_time(s)
+    except ValueError as exc:
+        raise VError("parse", f"{what}: {exc}") from exc
+
+
+def _attestation_times(b):
+    """Require the at of every claim attestation and head attestation that carries one to be a time
+    in the one form _parse_time reads, an empty one included, refusing the bundle at parse. The Go
+    verifier judges this on its parsed tree, where an attestation that carries at always carries a
+    time, because its struct decoder reads an empty at as an absent one."""
+    for i, c in enumerate(b.get("claims", [])):
+        for j, a in enumerate(c.get("attestations", [])):
+            if "at" in a:
+                _check_time(f"claim {i} attestation {j} at", a["at"])
+    for j, a in enumerate(b.get("attestations", [])):
+        if "at" in a:
+            _check_time(f"head attestation {j} at", a["at"])
 
 
 def _schema_check(b):
@@ -804,6 +1460,7 @@ def _schema_check(b):
     if version != "0.1":
         raise VError("unsupported", f"loomseal version {version!r}, this verifier implements 0.1")
     _check_object(b, "bundle", "")
+    _attestation_times(b)
     if not b.get("bundle_id"):
         raise VError("parse", "bundle_id is empty")
     _check_time("created_at", b.get("created_at", ""))
@@ -1276,7 +1933,9 @@ def _links_switchtender(b):
                               "equal producer.install_id; the per-claim install_id is what binds")
     for i, c in enumerate(b["claims"]):
         p = c["payload"]
-        _check_rfc3339(c["at"], i)
+        # The time was read at parse, under every profile, and is hashed verbatim below, never
+        # reformatted: a time type that stops at microseconds would drop a nanosecond digit and
+        # recompute a different link from the one the producer signed.
         # install_id binds the entry to the producer. When an entry carries it, it must be the
         # signer's own, and it is folded into the link like the other optional fields. A link that
         # commits to the install cannot be lifted into another install's bundle while keeping a
@@ -1300,46 +1959,18 @@ def _links_switchtender(b):
             raise VError("chain", f"claim {i} link does not recompute (switchtender)")
 
 
-def _unix_nanos(ts):
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
-    return int(dt.timestamp() * 1_000_000_000)
-
-
-def _check_rfc3339(ts, i):
-    """Reject a claim time that is not RFC 3339 UTC. The time is hashed verbatim, so this only has
-    to establish that it is well formed, never to reformat it.
-
-    Normalizing it here is what this function used to do, and it was wrong. datetime carries
-    microseconds, so a nanosecond timestamp lost its last three digits and the link recomputed to a
-    different value. The Go verifier, whose time type carries nanoseconds, verified the same bundle
-    happily. Two conformant verifiers disagreed on valid input, and the failure surfaced as "link
-    does not recompute", which reads as tampering. Hashing the stored bytes ends that, and removes
-    the requirement that a verifier own a nanosecond-capable time type at all."""
-    if not isinstance(ts, str) or not ts.endswith("Z"):
-        raise VError("claim", f"claim {i} at must be RFC 3339 UTC ending in Z")
-    body = ts[:-1]
-    frac = ""
-    if "." in body:
-        body, frac = body.split(".", 1)
-        if not frac or not frac.isdigit():
-            raise VError("claim", f"claim {i} at has a malformed fractional second")
-    try:
-        datetime.strptime(body, "%Y-%m-%dT%H:%M:%S")
-    except ValueError as exc:
-        raise VError("claim", f"claim {i} at is not RFC 3339: {exc}") from exc
-
-
 # ANCHOR_SKEW_S is how far an authority's clock may sit behind the producer's before an attestation
 # reads as predating the entry it covers. Both clocks are real and neither is authoritative, so a
 # small allowance keeps honest installs from being called liars. It matches the Go verifier.
 ANCHOR_SKEW_S = 300
 
 
-def _rfc3339_epoch(ts):
-    """Parse an RFC 3339 UTC time to epoch seconds, or None when it is not well formed."""
+def _time_or_none(ts):
+    """Read a time in the one form _parse_time reads to microseconds since the epoch, or None when
+    ts is not one."""
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-    except (ValueError, TypeError, AttributeError):
+        return _parse_time(ts)
+    except ValueError:
         return None
 
 
@@ -1917,11 +2548,9 @@ def _check_attestations(b, report):
             except Exception:
                 raise VError("attestation", f"claim {i} attestation {j} sig is not base64")
             obj = {"loomseal": "attestation/1", "link": chain["link"], "role": role}
-            at = a.get("at")
-            if at is not None:
-                if not _is_rfc3339(at) or not at.endswith("Z"):
-                    raise VError("attestation", f"claim {i} attestation {j} at is not RFC 3339 UTC")
-                obj["at"] = at
+            # Parse refused an at that is not a time, so a carried at is one.
+            if "at" in a:
+                obj["at"] = a["at"]
             preimage = canon(obj)
             try:
                 Ed25519PublicKey.from_public_bytes(pub).verify(sig, preimage)
@@ -1961,10 +2590,9 @@ def _check_head_attestations(b, report):
             raise VError("attestation", f"head attestation {j} sig is not base64")
         obj = {"loomseal": "head-attestation/1", "link": head["link"], "seq": head["seq"],
                "role": role}
+        # Parse refused an at that is not a time, so a carried at is one.
         at = a.get("at")
         if at is not None:
-            if not _is_rfc3339(at) or not at.endswith("Z"):
-                raise VError("attestation", f"head attestation {j} at is not RFC 3339 UTC")
             obj["at"] = at
         preimage = canon(obj)
         try:
@@ -1993,7 +2621,7 @@ def _check_anchors(b, report):
     for c in b["claims"]:
         if "chain" in c:
             verified[c["chain"]["seq"]] = c["chain"]["link"]
-            at = _rfc3339_epoch(c.get("at"))
+            at = _time_or_none(c.get("at"))
             if at is not None:
                 claim_at[c["chain"]["seq"]] = at
     head = b["chain"]["head"]
@@ -2035,13 +2663,15 @@ def _check_anchors(b, report):
             token = _b64(a["proof"])
         except Exception as exc:
             raise VError("anchor", f"anchor {i} proof is not base64: {exc}") from exc
-        when, signer = _verify_timestamp(token, a["link"], i)
+        signed_at, signer = _verify_timestamp(token, a["link"], i)
+        when = _beat_time(signed_at)
         # An attestation earlier than the entry it covers is a contradiction, not evidence: the token
         # commits to a link that is the hash of a claim carrying its own time, so an authority cannot
         # honestly have signed it first. Without this a producer running its own authority could sign
-        # any hash with any date and still reach the strongest verdict the format issues.
-        signed_at = _rfc3339_epoch(when)
-        if a["seq"] in claim_at and signed_at is not None and signed_at < claim_at[a["seq"]] - ANCHOR_SKEW_S:
+        # any hash with any date and still reach the strongest verdict the format issues. Both times
+        # are whole microseconds, as the format compares them.
+        skew = ANCHOR_SKEW_S * 1_000_000
+        if a["seq"] in claim_at and signed_at < claim_at[a["seq"]] - skew:
             raise VError("anchor", f"anchor {i} attests {when} over entry {a['seq']}, before the "
                                    "entry it covers: a timestamp cannot precede the entry")
         report["anchor_proofs_verified"] += 1
@@ -2065,25 +2695,19 @@ SPAN_MAX_CADENCE_S = 366 * 24 * 60 * 60
 
 
 def _at_micros(ts, i):
-    """Parse a claim time to whole microseconds since the epoch for cadence measurement. Digits
-    beyond the microsecond are dropped, as the format measures beat times, because the value is
-    measured, never hashed."""
-    if not isinstance(ts, str) or not ts.endswith("Z"):
-        raise VError("span", f"span claim {i} at must be RFC 3339 UTC ending in Z")
-    body = ts[:-1]
-    if "." in body:
-        head, frac = body.split(".", 1)
-        body = head + "." + frac[:6]
+    """Read a beat time to whole microseconds since the epoch for cadence measurement, with digits
+    beyond the microsecond dropped, as the format measures beat times. The value is measured, never
+    hashed."""
     try:
-        at = datetime.fromisoformat(body + "+00:00")
+        return _parse_time(ts)
     except ValueError as exc:
-        raise VError("span", f"span claim {i} at is not RFC 3339: {exc}") from exc
-    return (at - _EPOCH) // timedelta(microseconds=1)
+        raise VError("span", f"span claim {i} at: {exc}") from exc
 
 
 def _beat_time(micros):
-    """Word a beat time as RFC 3339 UTC to the whole second, with the fraction dropped rather than
-    rounded, the form a gap names its bounds in."""
+    """Word a time in microseconds since the epoch as RFC 3339 UTC to the whole second, with the
+    fraction dropped rather than rounded, the form a gap names its bounds in and a verified token
+    names its signing time in."""
     at = _EPOCH + timedelta(seconds=micros // 1_000_000)
     return at.isoformat().replace("+00:00", "Z")
 
@@ -2417,6 +3041,12 @@ def run_vectors(dirpath):
                 if r[key] != want:
                     status = "!! "
                     detail += f"  {key} got {r[key]!r} want {want!r}"
+            # The signer is named by one rule, so each verified token's time and signer line is
+            # part of the verdict a vector pins.
+            want = v.get("anchor_attestations") or []
+            if r["anchor_attestations"] != want:
+                status = "!! "
+                detail += f"  anchor_attestations got {r['anchor_attestations']!r} want {want!r}"
         if status == "OK " and not v["must_verify"] and v.get("failing_check"):
             why = failing_check_error(v["failing_check"], r)
             if why:
@@ -2562,8 +3192,9 @@ def _check_presentation_sig(p, bundle_obj, report):
         raise VError("presentation", "holder public_key is not a 32 byte ed25519 key")
     if _key_id(pub) != holder.get("key_id"):
         raise VError("presentation", "holder key_id does not match the embedded public key")
-    if not _is_rfc3339(p.get("created_at")):
-        raise VError("presentation", "presentation created_at is not RFC 3339")
+    if not _is_time(p.get("created_at")):
+        raise VError("presentation", "presentation created_at is not a UTC time of the form "
+                                     "YYYY-MM-DDTHH:MM:SS[.fraction]Z")
     bundle_sha = hashlib.sha256(canon(bundle_obj)).hexdigest()
     preimage = canon({"loomseal": "presentation/1",
                       "audience": p.get("audience", ""), "bundle_sha256": bundle_sha,

@@ -136,7 +136,7 @@ func (r *Report) parseSpanClaim(i int, c bundle.Claim) (spanClaim, bool) {
 		r.problem("span claim %d count %v, want an integer of at least 0", i, payload["count"])
 		return spanClaim{}, false
 	}
-	at, err := time.Parse(time.RFC3339, c.At)
+	at, err := bundle.ParseTime(c.At)
 	if err != nil {
 		r.problem("span claim %d at: %v", i, err)
 		return spanClaim{}, false

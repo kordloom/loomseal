@@ -90,7 +90,10 @@ func checkExactMembers(raw []byte) error {
 	}
 	// Head-level attestations sit at the top of the document and are verified and reported, so their
 	// members are checked exactly as claim attestations are.
-	return exactArray(root, "attestations", attestationMembers, "head attestation")
+	if err := exactArray(root, "attestations", attestationMembers, "head attestation"); err != nil {
+		return err
+	}
+	return attestationTimes(root, "head attestation")
 }
 
 // exactClaims checks every claim object and the sub-objects a claim carries.
@@ -123,10 +126,33 @@ func exactClaims(root map[string]any) error {
 		if err := exactArray(obj, "attestations", attestationMembers, where+" attestation"); err != nil {
 			return err
 		}
+		if err := attestationTimes(obj, where+" attestation"); err != nil {
+			return err
+		}
 		if err := exactArray(obj, "disclosures", disclosureMembers, where+" disclosure"); err != nil {
 			return err
 		}
 		if err := exactArray(obj, "evidence", evidenceMembers, where+" evidence"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// attestationTimes refuses an attestation in parent's attestations whose at member is present and
+// is not a time in the one form ParseTime reads, an empty one included. The struct decoder reads an
+// empty at as an absent one, so presence is judged here on the parsed tree, where an attestation
+// that carries at always carries a time.
+func attestationTimes(parent map[string]any, where string) error {
+	arr, _ := parent["attestations"].([]any)
+	for j, e := range arr {
+		obj, _ := e.(map[string]any)
+		at, present := obj["at"]
+		if !present {
+			continue
+		}
+		s, _ := at.(string)
+		if err := checkTime(fmt.Sprintf("%s %d at", where, j), s); err != nil {
 			return err
 		}
 	}

@@ -10,13 +10,22 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/hmac"
+	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	mathrand "math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -98,6 +107,10 @@ type vector struct {
 	SpanLongestGap string `json:"span_longest_gap,omitempty"`
 	// SpanGaps lists, in order, every gap line a verifier must report. Empty means none may be.
 	SpanGaps []string `json:"span_gaps,omitempty"`
+	// AnchorAttestations lists, in order, the line a verifier must report for each timestamp token
+	// it verified: the token's genTime to the second, "by", and the signer named by the rule
+	// FORMAT.md states. Empty means none may be reported.
+	AnchorAttestations []string `json:"anchor_attestations,omitempty"`
 }
 
 // presentationManifest is the conformance document for holder presentations.
@@ -174,6 +187,11 @@ func main() {
 	s.subjects()
 	s.evidence()
 	s.agreement()
+	s.times()
+	s.genTimes()
+	s.tokenStructure()
+	s.derRules()
+	s.derTags()
 	s.presentations()
 
 	if err := s.write(); err != nil {
@@ -272,6 +290,14 @@ func (s *state) positives() {
 		"An rfc3161 anchor carrying a real timestamp token verifies offline against the link it "+
 			"attests to, with no network and no trust in the producer.",
 		s.sign(s.switchTenderProof()))
+	// The fixture's subject carries an emailAddress and a description, types RFC 4514 has no short
+	// name for, so both are written in dotted form with their values in hexadecimal.
+	s.expectAttested("switchtender-audit-anchored-proof", "2026-08-10T04:57:09Z by ST=Bayern,C=DE,"+
+		"L=Wuerzburg,1.2.840.113549.1.9.1=#1615627573696c657a6173406d61696c626f782e6f7267,"+
+		"CN=www.freetsa.org,2.5.4.13=#0c6d54686973206365727469666963617465206469676974616c6c7920"+
+		"7369676e7320646f63756d656e747320616e642074696d65207374616d70207265717565737473206d61"+
+		"6465207573696e672074686520667265657473612e6f7267206f6e6c696e65207365727669636573,"+
+		"OU=TSA,O=Free TSA")
 
 	// The tree profile. Sparse disclosure is the property no linear profile has: these bundles carry
 	// a subset of a longer log's leaves, which the contiguity rule would otherwise refuse.
@@ -1177,6 +1203,176 @@ func (s *state) spans() {
 		})))
 }
 
+// times emits the vectors that pin the one time form the format allows, the RFC 3339 date-time
+// production narrowed to UTC: YYYY-MM-DDTHH:MM:SS, an optional fraction after a period, and Z,
+// with the year from 0001 to 9999 and every field in range. Each refused time is planted where a
+// verifier reads it, inside honestly linked and signed bytes, so only the time rule refuses the
+// bundle, and every one is refused at parse under every profile.
+//
+//nolint:funlen // One vector per time form and position, listed in one place.
+func (s *state) times() {
+	// claimTime is one claim time on a one-claim loomseal-chain-v1 bundle.
+	type claimTime struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// at is the claim's time.
+		at string
+		// ok is whether the bundle must verify.
+		ok bool
+		// why is the vector's description in the manifest.
+		why string
+	}
+	for _, c := range []claimTime{{
+		name: "time-fraction", at: "2026-07-27T15:00:00.123456789Z", ok: true,
+		why: "A claim time with a nine-digit fraction after a period is in the one form and " +
+			"verifies.",
+	}, {
+		name: "time-fraction-twelve-digits", at: "2026-07-27T15:00:00.123456789012Z", ok: true,
+		why: "A fraction of any length is in the one form and verifies. A verifier reads it to " +
+			"the whole microsecond and drops the finer digits, never rounding them.",
+	}, {
+		name: "time-year-0001", at: "0001-01-01T00:00:00Z", ok: true,
+		why: "The first instant of year 0001 is the earliest time the format allows and verifies.",
+	}, {
+		name: "time-year-9999", at: "9999-12-31T23:59:59.999999999Z", ok: true,
+		why: "The last instant of year 9999 is the latest time the format allows and verifies.",
+	}, {
+		name: "time-offset", at: "2026-07-27T15:00:00+00:00",
+		why: "A claim time carrying a numeric offset, even +00:00, is refused at parse: every " +
+			"time is UTC and ends in Z.",
+	}, {
+		name: "time-offset-nonzero", at: "2026-07-27T17:00:00+02:00",
+		why: "A claim time carrying a nonzero numeric offset is refused at parse, although RFC " +
+			"3339 allows it, because every time ends in Z.",
+	}, {
+		name: "time-space-separator", at: "2026-07-27 15:00:00Z",
+		why: "A claim time with a space between the date and the time is refused at parse, " +
+			"although a general date parser reads it.",
+	}, {
+		name: "time-lowercase-t", at: "2026-07-27t15:00:00Z",
+		why: "A claim time with a lower case t between the date and the time is refused at parse.",
+	}, {
+		name: "time-lowercase-z", at: "2026-07-27T15:00:00z",
+		why: "A claim time ending in a lower case z is refused at parse.",
+	}, {
+		name: "time-year-0000", at: "0000-01-01T00:00:00Z",
+		why: "A claim time in year 0000 is refused at parse: the first year allowed is 0001.",
+	}, {
+		name: "time-leap-second", at: "2016-12-31T23:59:60Z",
+		why: "A claim time written as a leap second, second 60, is refused at parse.",
+	}, {
+		name: "time-day-out-of-range", at: "2026-02-30T15:00:00Z",
+		why: "A claim time on February 30 is refused at parse, because the day is not in its " +
+			"month.",
+	}, {
+		name: "time-hour-24", at: "2026-07-27T24:00:00Z",
+		why: "A claim time at hour 24 is refused at parse, because the hour is below 24.",
+	}, {
+		name: "time-no-zone", at: "2026-07-27T15:00:00",
+		why: "A claim time with no Z is refused at parse, because a time names its zone.",
+	}} {
+		m := s.v1(1, false)
+		m["claims"].([]any)[0].(map[string]any)["at"] = c.at
+		s.relinkV1(m, false)
+		if c.ok {
+			s.add(c.name, true, "signed, chained (full)", "", c.why, s.sign(m))
+			continue
+		}
+		s.add(c.name, false, "", "parse", c.why, s.sign(m))
+	}
+
+	// The same forms on a span beat, where a verifier also measures the time, and on a
+	// switchtender-audit-v1 claim, whose link hashes it verbatim. Each is refused at parse, before
+	// any profile reads it, so no profile can read a time another refuses.
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// at is the first beat's time.
+		at string
+	}{
+		{name: "time-span-offset", at: "2026-07-27T15:01:00+00:00"},
+		{name: "time-span-space-separator", at: "2026-07-27 15:01:00Z"},
+		{name: "time-span-year-0000", at: "0000-07-27T15:01:00Z"},
+	} {
+		s.add(c.name, false, "", "parse",
+			"A span beat at "+c.at+" is refused at parse, as any claim time outside the one form "+
+				"is, so no verifier measures it.",
+			s.sign(s.spanBundle([]spanEntry{
+				{kind: "audit", at: "2026-07-27T15:00:10Z"},
+				{kind: "span", at: c.at, beat: 1, count: 1},
+				{kind: "span", at: "2026-07-27T15:02:00Z", beat: 2},
+			})))
+	}
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// at is the claim's time.
+		at string
+	}{
+		{name: "time-switchtender-offset", at: "2026-07-27T15:00:00+00:00"},
+		{name: "time-switchtender-space-separator", at: "2026-07-27 15:00:00Z"},
+		{name: "time-switchtender-year-0000", at: "0000-07-27T15:00:00Z"},
+	} {
+		m := s.base()
+		claim := m["claims"].([]any)[0].(map[string]any)
+		claim["at"] = c.at
+		link := switchTenderLink(1, c.at, "release-token", "POST", "/api/runs", "")
+		claim["chain"] = map[string]any{"seq": int64(1), "prev": "", "link": link}
+		m["chain"] = map[string]any{
+			"profile": profileSwitchTender, "keyed": false,
+			"head": map[string]any{"seq": int64(1), "link": link},
+		}
+		s.add(c.name, false, "", "parse",
+			"A switchtender-audit-v1 claim at "+c.at+", hashed verbatim into an honest link, is "+
+				"refused at parse, as under every other profile.", s.sign(m))
+	}
+
+	// Every other time member, each refused at parse by the same rule.
+	m := s.base()
+	m["created_at"] = "2026-07-27T15:00:00+00:00"
+	s.relinkV1(m, false)
+	s.add("time-created-at-offset", false, "", "parse",
+		"A created_at carrying a numeric offset, even +00:00, is refused at parse.", s.sign(m))
+	m = s.base()
+	m["created_at"] = "0000-07-27T15:00:00Z"
+	s.relinkV1(m, false)
+	s.add("time-created-at-year-0000", false, "", "parse",
+		"A created_at in year 0000 is refused at parse.", s.sign(m))
+	m = s.v1(1, false)
+	a := gitAnchor(1, m["chain"].(map[string]any)["head"].(map[string]any)["link"].(string))
+	a["at"] = "2026-07-01T00:00:00+00:00"
+	m["anchors"] = []any{a}
+	s.add("time-anchor-offset", false, "", "parse",
+		"An anchor at carrying a numeric offset is refused at parse.", s.sign(m))
+
+	m = s.v1(1, false)
+	claim := m["claims"].([]any)[0].(map[string]any)
+	link := claim["chain"].(map[string]any)["link"].(string)
+	cPriv, cPub := counterpartyKey()
+	claim["attestations"] = []any{attestationAt(cPriv, cPub, link, "approver",
+		"2026-08-30T12:00:00+00:00")}
+	s.add("time-attestation-offset", false, "", "parse",
+		"An attestation whose signed at carries a numeric offset is refused at parse.", s.sign(m))
+	m = s.v1(1, false)
+	claim = m["claims"].([]any)[0].(map[string]any)
+	att := attestation(cPriv, cPub, claim["chain"].(map[string]any)["link"].(string), "approver")
+	att["at"] = ""
+	claim["attestations"] = []any{att}
+	s.add("time-attestation-empty", false, "", "parse",
+		"An attestation carrying an empty at is refused at parse rather than read as one that "+
+			"carries no time, although its signature covers no time and would verify.", s.sign(m))
+	s.add("time-head-attestation-empty", false, "", "parse",
+		"A head attestation carrying an empty at is refused at parse rather than read as one that "+
+			"carries no time.",
+		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			hPriv, hPub := counterpartyKey()
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			att := headAttestation(hPriv, hPub, head["link"].(string), head["seq"], "witness", "")
+			att["at"] = ""
+			m["attestations"] = []any{att}
+		}))
+}
+
 // rewriteAlg edits the first signature entry's alg in an already-signed bundle, the way an
 // attacker in the middle would. The signature stays valid because alg is not covered by it.
 func rewriteAlg(signed []byte, alg string) []byte {
@@ -1553,12 +1749,12 @@ func (s *state) agreement() {
 	tPriv, tPub := counterpartyKey()
 	tc["attestations"] = []any{attestationAt(tPriv, tPub,
 		tc["chain"].(map[string]any)["link"].(string), "approver", "2026-08-30T1:00:00Z")}
-	s.add("attestation-at-one-digit-hour", false, "", "attestation",
-		"An attestation whose signed at has a one-digit hour is refused, because the time is not "+
-			"RFC 3339.", s.sign(m))
-	s.add("head-attestation-at-one-digit-hour", false, "", "attestation",
-		"A head attestation whose signed at has a one-digit hour is refused, because the time is "+
-			"not RFC 3339.",
+	s.add("attestation-at-one-digit-hour", false, "", "parse",
+		"An attestation whose signed at has a one-digit hour is refused at parse, because the "+
+			"time is not in the one form the format allows.", s.sign(m))
+	s.add("head-attestation-at-one-digit-hour", false, "", "parse",
+		"A head attestation whose signed at has a one-digit hour is refused at parse, because the "+
+			"time is not in the one form the format allows.",
 		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
 			hPriv, hPub := counterpartyKey()
 			head := m["chain"].(map[string]any)["head"].(map[string]any)
@@ -2198,6 +2394,2238 @@ func (s *state) switchTenderProof() map[string]any {
 	return m
 }
 
+// genTimes emits the vectors that pin how a verifier reads a timestamp token's genTime and compares
+// it: in the one form RFC 3161 gives it, and to the whole microsecond on both sides of each
+// comparison, the claim time against genTime with the five-minute skew and genTime against the
+// signer certificate's validity window. Each token is minted over the vector's own link by a fixed
+// authority key, so only the time decides the verdict.
+//
+//nolint:funlen // One vector per genTime form and comparison, listed in one place.
+func (s *state) genTimes() {
+	yearEnd := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	notAfter := time.Date(2026, 7, 27, 15, 1, 0, 0, time.UTC)
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// claimAt is the anchored claim's time.
+		claimAt string
+		// genTime is the value in the token's genTime slot.
+		genTime asn1.RawValue
+		// trailing are DER elements the TSTInfo carries after genTime.
+		trailing [][]byte
+		// notAfter is the end of the authority certificate's validity window.
+		notAfter time.Time
+		// ok is whether the bundle must verify.
+		ok bool
+		// attested is genTime to the second, as a verifier reports it, for a bundle that must
+		// verify.
+		attested string
+		// why is the vector's description in the manifest.
+		why string
+	}{{
+		name: "anchor-gen-time-fraction-inside-skew", claimAt: "2026-07-27T15:00:00.7Z",
+		genTime: generalizedTime("20260727145500.8Z"), notAfter: yearEnd, ok: true,
+		attested: "2026-07-27T14:55:00Z",
+		why: "A token signed 299.9 seconds before the claim it covers is inside the five-minute " +
+			"skew and verifies, because a verifier reads the genTime fraction rather than " +
+			"cutting it to the second.",
+	}, {
+		name: "anchor-gen-time-fraction-outside-skew", claimAt: "2026-07-27T15:00:00.7Z",
+		genTime: generalizedTime("20260727145500.6Z"), notAfter: yearEnd,
+		why: "A token signed 300.1 seconds before the claim it covers predates the entry by more " +
+			"than the five-minute skew and fails the anchor check.",
+	}, {
+		name: "anchor-gen-time-sub-microsecond-claim", claimAt: "2026-07-27T15:00:00.0000005Z",
+		genTime: generalizedTime("20260727145500Z"), notAfter: yearEnd, ok: true,
+		attested: "2026-07-27T14:55:00Z",
+		why: "A token signed exactly five minutes before a claim whose time carries half a " +
+			"microsecond verifies, because every verifier reads the claim time to the whole " +
+			"microsecond and drops the finer digits.",
+	}, {
+		name: "anchor-gen-time-sub-microsecond-not-after", claimAt: at,
+		genTime: generalizedTime("20260727150100.0000005Z"), notAfter: notAfter, ok: true,
+		attested: "2026-07-27T15:01:00Z",
+		why: "A token whose genTime lies half a microsecond past its certificate's last valid " +
+			"second verifies, because every verifier reads genTime to the whole microsecond and " +
+			"drops the finer digits.",
+	}, {
+		name: "anchor-gen-time-past-not-after", claimAt: at,
+		genTime: generalizedTime("20260727150100.5Z"), notAfter: notAfter,
+		why: "A token whose genTime lies half a second past its certificate's last valid second " +
+			"was signed outside the certificate's life and fails the anchor check.",
+	}, {
+		name: "anchor-gen-time-offset", claimAt: at,
+		genTime: generalizedTime("20260727160100+0100"), notAfter: yearEnd,
+		why: "A token whose genTime carries a numeric offset fails the anchor check, although an " +
+			"ASN.1 GeneralizedTime may carry one, because RFC 3161 requires a genTime ending in Z.",
+	}, {
+		name: "anchor-gen-time-trailing-zero", claimAt: at,
+		genTime: generalizedTime("20260727150100.50Z"), notAfter: yearEnd,
+		why: "A token whose genTime fraction ends in a zero fails the anchor check, because RFC " +
+			"3161 requires trailing zeros to be omitted.",
+	}, {
+		name: "anchor-gen-time-utc-time-then-generalized", claimAt: at,
+		genTime: asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagUTCTime,
+			Bytes: []byte("260727150100Z")},
+		trailing: [][]byte{mustMarshal(generalizedTime("20260727150100Z"))},
+		notAfter: yearEnd,
+		why: "A token whose genTime slot holds a UTCTime fails the anchor check, although a valid " +
+			"GeneralizedTime follows it in the TSTInfo, because genTime is the fifth TSTInfo " +
+			"member and a verifier never searches further along for one.",
+	}, {
+		name: "anchor-gen-time-utc-time-tag", claimAt: at,
+		genTime: asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagUTCTime,
+			Bytes: []byte("20260727150100Z")},
+		notAfter: yearEnd,
+		why: "A token whose genTime slot holds well-formed genTime text under the UTCTime tag " +
+			"fails the anchor check, because genTime must be a universal GeneralizedTime.",
+	}} {
+		s.tokenVector(c.name, c.claimAt, c.ok, c.why, func(link string) string {
+			info := tstInfoDER(sha256Imprint(link), c.genTime, c.trailing...)
+			return timestampToken(info, c.notAfter)
+		})
+		if c.ok {
+			s.expectAttested(c.name, c.attested+" by CN="+vectorAuthority)
+		}
+	}
+}
+
+// tokenStructure emits the vectors that pin how a verifier reads a timestamp token's TSTInfo: as a
+// SEQUENCE whose members sit at fixed positions. One token's imprint uses SHA-384 while a SHA-256
+// imprint of the right link trails the TSTInfo, so a verifier that searched for any SHA-256 imprint
+// would accept a token whose own imprint it cannot check. Another carries a well-formed TSTInfo
+// under a SET tag.
+func (s *state) tokenStructure() {
+	yearEnd := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	why := "A token whose message imprint uses SHA-384 fails the anchor check, although a " +
+		"SHA-256 imprint of the right link follows genTime in the TSTInfo, because the message " +
+		"imprint is the third TSTInfo member and must be SHA-256."
+	s.tokenVector("anchor-imprint-trailing-sha256", at, false, why, func(link string) string {
+		raw, err := hex.DecodeString(link)
+		if err != nil {
+			panic(err)
+		}
+		sum := sha512.Sum384(raw)
+		own := tsaImprint{Algorithm: tsaAlgorithm{oidSHA384}, Digest: sum[:]}
+		info := tstInfoDER(own, generalizedTime("20260727150100Z"),
+			mustMarshal(sha256Imprint(link)))
+		return timestampToken(info, yearEnd)
+	})
+	why = "A token whose TSTInfo is encoded under a SET tag rather than a SEQUENCE fails the " +
+		"anchor check, although its members are all in place."
+	s.tokenVector("anchor-tst-info-not-sequence", at, false, why, func(link string) string {
+		info := tstInfoDER(sha256Imprint(link), generalizedTime("20260727150100Z"))
+		info[0] = 0x31
+		return timestampToken(info, yearEnd)
+	})
+}
+
+// derRules emits the vectors that pin how a verifier reads a timestamp token as DER: one token per
+// rule, each minted over the vector's own link and signed over whatever its encoding became, so
+// the rule alone decides the verdict. Every one fails the anchor check, except the two RSA tokens
+// that pin the RSA path agreeing when nothing is wrong.
+//
+//nolint:funlen // One vector per DER rule, listed in one place.
+func (s *state) derRules() {
+	ed := edTokenSigner()
+	rsaSigner := rsaTokenSigner()
+	odd := rsaMultiPrime(2049, 2049)
+	rsaKey := rsaVectorKey(2048, 2048, 65537)
+	even := &rsaRaw{pub: &rsaKey.PublicKey, exp: privateExp(rsaKey)}
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// signer signs the token; nil means the Ed25519 authority.
+		signer *tokenSigner
+		// mutate changes the token's tree before it is encoded and signed.
+		mutate func(t *tokenTree)
+		// ok is whether the bundle must verify.
+		ok bool
+		// attested is the line a verifier reports for a token that verifies; empty means
+		// vectorAttested.
+		attested string
+		// why is the vector's description in the manifest.
+		why string
+	}{{
+		name: "anchor-der-length-long-form",
+		mutate: func(t *tokenTree) {
+			t.n["genTime"].header = func(tag byte, c []byte) []byte {
+				return append([]byte{tag, 0x81, byte(len(c))}, c...)
+			}
+		},
+		why: "A token whose genTime length is written in the long form although it is below 128 " +
+			"fails the anchor check, because DER writes every length in its shortest form.",
+	}, {
+		name: "anchor-der-length-leading-zero",
+		mutate: func(t *tokenTree) {
+			t.n["cert"].header = func(tag byte, c []byte) []byte {
+				return append([]byte{tag, 0x83, 0x00, byte(len(c) >> 8), byte(len(c))}, c...)
+			}
+		},
+		why: "A token whose signer certificate length is written in three octets, the first of " +
+			"them zero, fails the anchor check, because DER writes every length in its shortest " +
+			"form.",
+	}, {
+		name: "anchor-der-length-nine-octets",
+		mutate: func(t *tokenTree) {
+			t.n["cert"].header = func(tag byte, c []byte) []byte {
+				return append([]byte{tag, 0x89, 0x01, 0, 0, 0, 0, 0, 0, byte(len(c) >> 8),
+					byte(len(c))}, c...)
+			}
+		},
+		why: "A token whose signer certificate length is written in nine octets, a value that is " +
+			"the true length plus 2^64, fails the anchor check, because a length has at most " +
+			"four octets, and a reader that kept nine in a 64-bit integer would read the true " +
+			"length.",
+	}, {
+		name: "anchor-der-length-indefinite",
+		mutate: func(t *tokenTree) {
+			t.n["imprint"].header = func(tag byte, c []byte) []byte {
+				return append(append([]byte{tag, 0x80}, c...), 0x00, 0x00)
+			}
+		},
+		why: "A token whose message imprint has an indefinite length fails the anchor check, " +
+			"because DER lengths are definite.",
+	}, {
+		name: "anchor-der-length-overrun",
+		mutate: func(t *tokenTree) {
+			t.n["genTime"].header = func(tag byte, c []byte) []byte {
+				return append([]byte{tag, byte(len(c) + 1)}, c...)
+			}
+		},
+		why: "A token whose genTime length runs one octet past the end of its TSTInfo fails the " +
+			"anchor check, because every element lies wholly inside its container.",
+	}, {
+		name: "anchor-der-high-tag-number",
+		mutate: func(t *tokenTree) {
+			tst := t.n["tst"]
+			tst.kids = append(tst.kids, &derNode{header: func(byte, []byte) []byte {
+				return []byte{0x1f, 0x01, 0x00}
+			}})
+		},
+		why: "A token whose TSTInfo carries, after genTime, an element whose identifier uses the " +
+			"high tag number form fails the anchor check, although no verifier interprets that " +
+			"member, because every element in a token has a one-octet identifier.",
+	}, {
+		name: "anchor-der-trailing-after-token",
+		mutate: func(t *tokenTree) {
+			t.trailing = []byte{0x05, 0x00}
+		},
+		why: "A token followed by another element fails the anchor check, because nothing may " +
+			"follow the ContentInfo.",
+	}, {
+		name: "anchor-der-trailing-in-explicit",
+		mutate: func(t *tokenTree) {
+			w := t.n["ciWrap"]
+			w.kids = append(w.kids, &derNode{tag: 0x05})
+		},
+		why: "A token whose ContentInfo [0] holds an element after the SignedData fails the " +
+			"anchor check, because an explicit tag holds exactly one element.",
+	}, {
+		name: "anchor-der-trailing-in-econtent",
+		mutate: func(t *tokenTree) {
+			tst := t.n["tst"]
+			t.n["eContent"].fill = func() []byte {
+				return append(tst.encode(), 0x05, 0x00)
+			}
+		},
+		why: "A token whose eContent OCTET STRING holds an element after the TSTInfo fails the " +
+			"anchor check, because the OCTET STRING holds exactly the DER TSTInfo, which the " +
+			"signed attributes commit to.",
+	}, {
+		name: "anchor-der-malformed-unread-member",
+		mutate: func(t *tokenTree) {
+			tst := t.n["tst"]
+			tst.kids = append(tst.kids, &derNode{tag: 0x30, header: func(_ byte, _ []byte) []byte {
+				return []byte{0x30, 0x05, 0x02, 0x01}
+			}})
+		},
+		why: "A token whose TSTInfo carries, after genTime, an element whose length runs past " +
+			"the TSTInfo fails the anchor check, although no verifier interprets that member, " +
+			"because a token is DER throughout.",
+	}, {
+		name: "anchor-der-integer-empty",
+		mutate: func(t *tokenTree) {
+			t.n["tstSerial"].val = []byte{}
+		},
+		why: "A token whose TSTInfo serial number is an INTEGER with no content octets fails the " +
+			"anchor check, because a DER INTEGER has at least one.",
+	}, {
+		name: "anchor-der-integer-non-minimal",
+		mutate: func(t *tokenTree) {
+			t.n["tstVersion"].val = []byte{0x00, 0x01}
+		},
+		why: "A token whose TSTInfo version is the INTEGER 1 written as 00 01 fails the anchor " +
+			"check, because DER writes an INTEGER in its shortest form.",
+	}, {
+		name: "anchor-der-version-over-64-bits",
+		mutate: func(t *tokenTree) {
+			t.n["tstVersion"].val = []byte{0x01, 0, 0, 0, 0, 0, 0, 0, 0}
+		},
+		why: "A token whose TSTInfo version needs nine octets fails the anchor check, because a " +
+			"version must fit a signed 64-bit integer.",
+	}, {
+		name: "anchor-der-oid-empty",
+		mutate: func(t *tokenTree) {
+			t.n["policy"].val = []byte{}
+		},
+		why: "A token whose TSTInfo policy is an OBJECT IDENTIFIER with no content octets fails " +
+			"the anchor check.",
+	}, {
+		name: "anchor-der-oid-non-minimal",
+		mutate: func(t *tokenTree) {
+			p := t.n["policy"]
+			p.val = append([]byte{p.val[0], 0x80}, p.val[1:]...)
+		},
+		why: "A token whose TSTInfo policy pads a subidentifier with a leading 0x80 octet fails " +
+			"the anchor check, because DER writes each subidentifier in its shortest form.",
+	}, {
+		name: "anchor-der-oid-truncated",
+		mutate: func(t *tokenTree) {
+			p := t.n["policy"]
+			p.val = append(slices.Clone(p.val[:len(p.val)-1]), p.val[len(p.val)-1]|0x80)
+		},
+		why: "A token whose TSTInfo policy ends inside a subidentifier fails the anchor check.",
+	}, {
+		name: "anchor-der-signed-attrs-primitive",
+		mutate: func(t *tokenTree) {
+			t.n["attrs"].tag = 0x80
+		},
+		why: "A token whose signed attributes carry a primitive [0] identifier fails the anchor " +
+			"check, because the signed attributes are a constructed [0], and a verifier compares " +
+			"the whole identifier octet.",
+	}, {
+		name: "anchor-der-sid-constructed",
+		mutate: func(t *tokenTree) {
+			inner := derElement(0x04, tokenSKI)
+			t.n["ski"].val = inner
+			t.n["sid"] = &derNode{tag: 0xa0, val: inner}
+			t.n["si"].kids[1] = t.n["sid"]
+		},
+		why: "A token whose signer identifier is a constructed [0] fails the anchor check, " +
+			"although its content equals the signer certificate's subject key identifier, " +
+			"because a subject key identifier is a primitive [0].",
+	}, {
+		name: "anchor-der-critical-not-ff",
+		mutate: func(t *tokenTree) {
+			t.n["ekuCritical"].val = []byte{0x01}
+		},
+		why: "A token whose signer certificate marks an extension critical with the BOOLEAN octet " +
+			"0x01 fails the anchor check, because DER writes TRUE as 0xFF.",
+	}, {
+		name: "anchor-der-critical-false-encoded",
+		mutate: func(t *tokenTree) {
+			t.n["ekuCritical"].val = []byte{0x00}
+		},
+		why: "A token whose signer certificate writes an extension's critical flag as FALSE fails " +
+			"the anchor check, because DER never encodes a default value.",
+	}, {
+		name: "anchor-cert-time-utc-no-seconds",
+		mutate: func(t *tokenTree) {
+			t.n["notAfter"].val = []byte("2701010000Z")
+		},
+		why: "A token whose signer certificate's notAfter is a UTCTime without seconds fails the " +
+			"anchor check, because DER and RFC 5280 write a UTCTime as YYMMDDhhmmssZ.",
+	}, {
+		name: "anchor-cert-time-utc-offset",
+		mutate: func(t *tokenTree) {
+			t.n["notAfter"].val = []byte("270101010000+0100")
+		},
+		why: "A token whose signer certificate's notAfter is a UTCTime with a numeric offset " +
+			"fails the anchor check, because DER and RFC 5280 end a UTCTime in Z.",
+	}, {
+		name: "anchor-cert-time-generalized-fraction",
+		mutate: func(t *tokenTree) {
+			t.n["notAfter"].tag = 0x18
+			t.n["notAfter"].val = []byte("20270101000000.5Z")
+		},
+		why: "A token whose signer certificate's notAfter is a GeneralizedTime with a fraction " +
+			"fails the anchor check, because RFC 5280 writes it as YYYYMMDDhhmmssZ.",
+	}, {
+		name: "anchor-cert-time-year-0000",
+		mutate: func(t *tokenTree) {
+			t.n["notBefore"].tag = 0x18
+			t.n["notBefore"].val = []byte("00000101000000Z")
+		},
+		why: "A token whose signer certificate's notBefore is in year 0000 fails the anchor " +
+			"check, because a certificate time has the ranges a bundle time has.",
+	}, {
+		name: "anchor-cert-not-version-3",
+		mutate: func(t *tokenTree) {
+			tbs := t.n["tbs"]
+			tbs.kids = tbs.kids[1:]
+		},
+		why: "A token whose signer certificate carries no version member fails the anchor check, " +
+			"because the signer must be a version 3 certificate.",
+	}, {
+		name: "anchor-cert-duplicate-extension",
+		mutate: func(t *tokenTree) {
+			exts := t.n["exts"]
+			exts.kids = append(exts.kids, t.n["ekuExt"])
+		},
+		why: "A token whose signer certificate carries its extended key usage extension twice " +
+			"fails the anchor check, because no extension may appear twice.",
+	}, {
+		name: "anchor-cert-key-unused-bits",
+		mutate: func(t *tokenTree) {
+			k := t.n["spkiKey"]
+			k.val = append([]byte{0x01}, k.val[1:]...)
+		},
+		why: "A token whose signer key BIT STRING declares unused bits fails the anchor check, " +
+			"because a key is whole octets.",
+	}, {
+		name: "anchor-cert-ed25519-parameters",
+		mutate: func(t *tokenTree) {
+			alg := t.n["spkiAlg"]
+			alg.kids = append(alg.kids, &derNode{tag: 0x05})
+		},
+		why: "A token whose Ed25519 signer key carries algorithm parameters fails the anchor " +
+			"check, because RFC 8410 requires them absent.",
+	}, {
+		name: "anchor-signature-algorithm-key-mismatch",
+		mutate: func(t *tokenTree) {
+			t.n["sigAlgOID"].val = oidBytes(asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2})
+		},
+		why: "A token whose Ed25519 signature is labeled ecdsa-with-SHA256 fails the anchor " +
+			"check, because the signature algorithm must match the signer key, and a verifier " +
+			"never checks a signature under a scheme the signer did not name.",
+	}, {
+		name: "anchor-ec-p256", signer: ecTokenSigner(false, false), ok: true,
+		why: "A token signed by a P-256 ECDSA authority whose key is an uncompressed point " +
+			"verifies.",
+	}, {
+		name: "anchor-ec-signature-trailing", signer: ecTokenSigner(false, false),
+		mutate: func(t *tokenTree) {
+			t.signatureSuffix = []byte{0x00}
+		},
+		why: "A token whose valid ECDSA signature is followed by one more octet fails the " +
+			"anchor check, because an ECDSA signature is exactly one SEQUENCE of two INTEGERs.",
+	}, {
+		name: "anchor-ec-compressed-point", signer: ecTokenSigner(true, false),
+		why: "A token whose ECDSA signer key is a compressed point fails the anchor check, " +
+			"because a verifier reads only the uncompressed form.",
+	}, {
+		name: "anchor-ec-unsupported-curve", signer: ecTokenSigner(false, true),
+		why: "A token whose ECDSA signer key is on secp256k1 fails the anchor check, because a " +
+			"verifier reads keys on P-224, P-256, P-384, and P-521 only.",
+	}, {
+		name: "anchor-rsa-pkcs1", signer: rsaSigner, ok: true,
+		why: "A token signed by a 2048-bit RSA authority with sha256WithRSAEncryption verifies.",
+	}, {
+		name: "anchor-rsa-bare-key-algorithm", signer: rsaSigner, ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["sigAlgOID"].val = oidBytes(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1})
+		},
+		why: "A token whose RSA signature algorithm names only rsaEncryption verifies, checked " +
+			"with the signer's SHA-256 digest.",
+	}, {
+		name: "anchor-rsa-key-1023-bits", signer: rsaSmallSigner(),
+		why: "A token whose RSA signer key has a 1023-bit modulus fails the anchor check, because " +
+			"a verifier reads RSA keys of at least 1024 bits.",
+	}, {
+		name: "anchor-rsa-signature-short", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			t.shortSignature = true
+		},
+		why: "A token whose RSA signature drops a leading zero octet, so it is shorter than the " +
+			"modulus, fails the anchor check, because RFC 8017 requires the signature to be as " +
+			"long as the modulus.",
+	}, {
+		name: "anchor-der-tag-class",
+		mutate: func(t *tokenTree) {
+			t.n["tstVersion"].tag = 0x82
+		},
+		why: "A token whose TSTInfo version is written under the context-specific class with the " +
+			"INTEGER's tag number fails the anchor check, because a verifier compares the whole " +
+			"identifier octet, class included.",
+	}, {
+		name: "anchor-rsa-key-16384-bits", ok: true,
+		signer: rsaMultiPrime(16384, 16384).pkcs1Signer(digestInfoSHA256),
+		why: "A token signed by an RSA authority whose modulus is 16384 bits, the longest a " +
+			"verifier reads, verifies.",
+	}, {
+		name:   "anchor-rsa-key-16385-bits",
+		signer: rsaMultiPrime(16385, 16385).pkcs1Signer(digestInfoSHA256),
+		why: "A token whose valid signature is made with an RSA modulus of 16385 bits fails the " +
+			"anchor check, because a verifier reads RSA keys of at most 16384 bits.",
+	}, {
+		name: "anchor-rsa-exponent-over-31-bits", signer: rsaWideExponentSigner(),
+		why: "A token whose valid signature is made with the RSA public exponent 2^32-5 fails " +
+			"the anchor check, because a verifier reads RSA exponents from 3 to 2^31-1.",
+	}, {
+		name: "anchor-rsa-key-parameters-absent", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			alg := t.n["spkiAlg"]
+			alg.kids = alg.kids[:1]
+		},
+		why: "A token whose RSA signer key names rsaEncryption without the NULL parameters fails " +
+			"the anchor check, because RFC 3279 writes them as NULL.",
+	}, {
+		name: "anchor-rsa-key-trailing", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			k := t.n["spkiKey"]
+			k.val = append(slices.Clone(k.val), 0x05, 0x00)
+		},
+		why: "A token whose RSA key BIT STRING holds another element after the key SEQUENCE " +
+			"fails the anchor check, because the BIT STRING holds exactly one SEQUENCE.",
+	}, {
+		name: "anchor-rsa-key-extra-member", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			k := t.n["spkiKey"]
+			k.val = append([]byte{0}, rsaKeyWith(k.val[1:], 0x02, 0x01, 0x05)...)
+		},
+		why: "A token whose RSA key SEQUENCE holds the INTEGER 5 after the modulus and the " +
+			"exponent fails the anchor check, because the key holds only those two.",
+	}, {
+		name: "anchor-rsa-key-extra-octets", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			k := t.n["spkiKey"]
+			k.val = append([]byte{0}, rsaKeyWith(k.val[1:], 0xff, 0xff, 0xff)...)
+		},
+		why: "A token whose RSA key SEQUENCE holds three octets that are not DER after the " +
+			"modulus and the exponent fails the anchor check, because the key holds only those " +
+			"two, and nothing inside it goes unread.",
+	}, {
+		name: "anchor-cert-ed25519-key-33-octets",
+		mutate: func(t *tokenTree) {
+			k := t.n["spkiKey"]
+			k.val = append(slices.Clone(k.val), 0x00)
+		},
+		why: "A token whose Ed25519 signer key is its true 32 octets followed by a zero octet " +
+			"fails the anchor check, because an Ed25519 key is exactly 32 octets.",
+	}, {
+		name: "anchor-cert-no-timestamping-usage",
+		mutate: func(t *tokenTree) {
+			t.n["eku"].kids = []*derNode{derOID(asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 1})}
+		},
+		why: "A token whose signer certificate's extended key usage lists only serverAuth fails " +
+			"the anchor check, because the signer must be marked for timestamping.",
+	}, {
+		name: "anchor-cert-ski-trailing",
+		mutate: func(t *tokenTree) {
+			ski := t.n["ski"]
+			t.n["skiValue"].fill = func() []byte { return append(ski.encode(), 0x05, 0x00) }
+		},
+		why: "A token whose signer certificate's subject key identifier value holds another " +
+			"element after the identifier fails the anchor check, because the value holds " +
+			"exactly one OCTET STRING.",
+	}, {
+		name: "anchor-no-message-digest",
+		mutate: func(t *tokenTree) {
+			attrs := t.n["attrs"]
+			attrs.kids = attrs.kids[:1]
+		},
+		why: "A token whose signed attributes carry no messageDigest attribute fails the anchor " +
+			"check, because the signature then covers nothing that names the TSTInfo.",
+	}, {
+		name: "anchor-imprint-sha384-algorithm",
+		mutate: func(t *tokenTree) {
+			t.n["imprint"].kids[0] = derSeq(0x30, derOID(oidSHA384))
+		},
+		why: "A token whose message imprint holds the SHA-256 of the right link but names " +
+			"SHA-384 fails the anchor check, because the imprint must use SHA-256.",
+	}, {
+		name: "anchor-two-signers",
+		mutate: func(t *tokenTree) {
+			infos := t.n["signerInfos"]
+			infos.kids = append(infos.kids, t.n["si"])
+		},
+		why: "A token whose signerInfos holds the authority's valid SignerInfo twice fails the " +
+			"anchor check, because a token has exactly one signer.",
+	}, {
+		name: "anchor-der-null-content", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			t.n["spkiAlg"].kids[1].val = []byte{0x00}
+		},
+		why: "A token whose RSA signer key parameters are a NULL holding one octet fails the " +
+			"anchor check, because a DER NULL has no content octets.",
+	}, {
+		name: "anchor-rsa-modulus-even", signer: rsaEvenModulusSigner(),
+		why: "A token whose valid signature is made with an even RSA modulus of 1025 bits fails " +
+			"the anchor check, because an RSA modulus is odd.",
+	}, {
+		name: "anchor-rsa-exponent-one", signer: rsaExponentOneSigner(),
+		why: "A token whose RSA public exponent is 1, so its valid signature is its own encoded " +
+			"message, fails the anchor check, because the exponent is at least 3.",
+	}, {
+		name: "anchor-rsa-exponent-even", signer: rsaExponentFourSigner(),
+		why: "A token whose valid signature is made with the RSA public exponent 4 fails the " +
+			"anchor check, because the exponent is odd.",
+	}, {
+		name: "anchor-rsa-signature-not-below-modulus", signer: odd.pkcs1Signer(digestInfoSHA256),
+		mutate: func(t *tokenTree) {
+			t.rewriteSignature = func(sig []byte) []byte {
+				v := new(big.Int).SetBytes(sig)
+				return v.Add(v, odd.pub.N).FillBytes(make([]byte, len(sig)))
+			}
+		},
+		why: "A token whose RSA signature is a valid signature plus the modulus, written in as " +
+			"many octets as the modulus, fails the anchor check, because RFC 8017 requires the " +
+			"signature to be below the modulus.",
+	}, {
+		name: "anchor-rsa-digest-info-without-null",
+		signer: odd.pkcs1Signer([]byte{0x30, 0x2f, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01,
+			0x65, 0x03, 0x04, 0x02, 0x01, 0x04, 0x20}),
+		why: "A token whose PKCS #1 v1.5 signature encodes the SHA-256 DigestInfo without its NULL " +
+			"parameters fails the anchor check, because a verifier compares the whole encoding " +
+			"with the one RFC 8017 writes.",
+	}, {
+		name: "anchor-rsa-pss", signer: odd.pssSigner(pssForm{salt: 32}), ok: true,
+		why: "A token signed with RSASSA-PSS over SHA-256 with a 32-octet salt, under a 2049-bit " +
+			"modulus whose encoded message is one octet shorter than the signature, verifies.",
+	}, {
+		name: "anchor-rsa-pss-salt-20", signer: odd.pssSigner(pssForm{salt: 20}),
+		why: "A token whose RSASSA-PSS signature is valid with a 20-octet salt fails the anchor " +
+			"check, because a verifier reads PSS with a salt as long as the SHA-256 digest.",
+	}, {
+		name: "anchor-rsa-pss-other-digest", signer: odd.pssSigner(pssForm{salt: 32, other: true}),
+		why: "A token whose well-formed RSASSA-PSS signature covers other attributes than the " +
+			"token carries fails the anchor check.",
+	}, {
+		name: "anchor-rsa-pss-trailer", signer: odd.pssSigner(pssForm{salt: 32, trailer: 0xbb}),
+		why: "A token whose RSASSA-PSS encoding ends in 0xbb rather than 0xbc, and is otherwise " +
+			"right, fails the anchor check.",
+	}, {
+		name: "anchor-rsa-pss-top-bit", signer: even.pssSigner(pssForm{salt: 32, topBit: true}),
+		why: "A token whose RSASSA-PSS encoding under a 2048-bit modulus sets its leftmost bit, " +
+			"which a 2047-bit encoding leaves clear, and is otherwise right, fails the anchor " +
+			"check.",
+	}, {
+		name: "anchor-rsa-pss-leading-octet", signer: odd.pssSigner(pssForm{salt: 32, lead: true}),
+		why: "A token whose RSASSA-PSS signature under a 2049-bit modulus recovers a right " +
+			"encoding behind a leading octet of 1, where a zero octet belongs, fails the anchor " +
+			"check.",
+	}, {
+		name: "anchor-signature-algorithm-rsa-key-mismatch", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			t.n["sigAlgOID"].val = oidBytes(asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2})
+		},
+		why: "A token whose RSA signature is labeled ecdsa-with-SHA256 fails the anchor check, " +
+			"because the signature algorithm must match the signer key.",
+	}, {
+		name: "anchor-signature-algorithm-ec-key-mismatch", signer: ecTokenSigner(false, false),
+		mutate: func(t *tokenTree) {
+			t.n["sigAlgOID"].val = oidBytes(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11})
+		},
+		why: "A token whose ECDSA signature is labeled sha256WithRSAEncryption fails the anchor " +
+			"check, because the signature algorithm must match the signer key.",
+	}, {
+		name: "anchor-signature-invalid",
+		mutate: func(t *tokenTree) {
+			t.rewriteSignature = func(sig []byte) []byte {
+				sig = slices.Clone(sig)
+				sig[0] ^= 0x01
+				return sig
+			}
+		},
+		why: "A token whose Ed25519 signature has one bit changed fails the anchor check.",
+	}, {
+		name: "anchor-imprint-other-link",
+		mutate: func(t *tokenTree) {
+			sum := sha256.Sum256([]byte("another link"))
+			t.n["imprint"].kids[1].val = sum[:]
+		},
+		why: "A token whose SHA-256 message imprint is of another value than the anchored link " +
+			"fails the anchor check, because the token attests to that value and no other.",
+	}, {
+		name: "anchor-no-certificates",
+		mutate: func(t *tokenTree) {
+			sd := t.n["signedData"]
+			sd.kids = slices.DeleteFunc(slices.Clone(sd.kids), func(k *derNode) bool {
+				return k == t.n["certs"]
+			})
+		},
+		why: "A token that carries no certificates fails the anchor check, because its signature " +
+			"can only be checked against a certificate it carries.",
+	}, {
+		name: "anchor-no-signers",
+		mutate: func(t *tokenTree) {
+			t.n["signerInfos"].kids = []*derNode{}
+		},
+		why: "A token whose signerInfos SET is empty fails the anchor check, because a token has " +
+			"exactly one signer.",
+	}, {
+		name: "anchor-message-digest-mismatch",
+		mutate: func(t *tokenTree) {
+			t.n["md"].fill = func() []byte {
+				sum := sha256.Sum256([]byte("another TSTInfo"))
+				return sum[:]
+			}
+		},
+		why: "A token whose messageDigest attribute is the digest of other octets than its " +
+			"eContent fails the anchor check, although its signature over the attributes is valid.",
+	}, {
+		name: "anchor-message-digest-two-values",
+		mutate: func(t *tokenTree) {
+			v := t.n["mdValues"]
+			v.kids = append(v.kids, t.n["md"])
+		},
+		why: "A token whose messageDigest attribute holds the right digest twice fails the anchor " +
+			"check, because its SET holds exactly one OCTET STRING.",
+	}, {
+		name: "anchor-digest-algorithm-sha1",
+		mutate: func(t *tokenTree) {
+			t.n["siDigest"].kids[0] = derOID(asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26})
+			eContent := t.n["eContent"]
+			t.n["md"].fill = func() []byte {
+				sum := sha1.Sum(eContent.fill())
+				return sum[:]
+			}
+		},
+		why: "A token whose signer digests the eContent with SHA-1, consistently and under a " +
+			"valid signature, fails the anchor check, because the digest is SHA-256, SHA-384 or " +
+			"SHA-512.",
+	}, {
+		name: "anchor-signer-not-carried",
+		mutate: func(t *tokenTree) {
+			t.n["sid"].kids[1] = derInt(8)
+		},
+		why: "A token whose signer identifier names serial number 8 under the right issuer, while " +
+			"it carries only the certificate with serial number 7, fails the anchor check, " +
+			"because a verifier never checks a signature against a certificate the signer " +
+			"identifier does not name.",
+	}, {
+		name: "anchor-content-type-not-signed-data",
+		mutate: func(t *tokenTree) {
+			t.n["contentType"].val = oidBytes(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1})
+		},
+		why: "A token whose ContentInfo names id-data rather than signedData fails the anchor " +
+			"check.",
+	}, {
+		name: "anchor-econtent-type-not-tst-info",
+		mutate: func(t *tokenTree) {
+			t.n["eContentType"].val = oidBytes(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1})
+		},
+		why: "A token whose encapsulated content names id-data rather than id-ct-TSTInfo fails " +
+			"the anchor check.",
+	}, {
+		name: "anchor-cert-not-yet-valid",
+		mutate: func(t *tokenTree) {
+			t.n["notBefore"].val = []byte("260727150200Z")
+		},
+		why: "A token whose genTime, 15:01:00, falls a minute before its signer certificate's " +
+			"notBefore fails the anchor check, because the certificate was not yet valid when it " +
+			"signed.",
+	}, {
+		name: "anchor-validity-utc-year-pivot", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["notBefore"].val = []byte("500101000000Z")
+			t.n["notAfter"].val = []byte("491231235959Z")
+		},
+		why: "A token whose signer certificate is valid from the UTCTime 500101000000Z, read as " +
+			"1950, to 491231235959Z, read as 2049, verifies, because a two-digit year from 50 " +
+			"to 99 is 19YY and one below 50 is 20YY.",
+	}, {
+		name: "anchor-cert-time-wrong-tag",
+		mutate: func(t *tokenTree) {
+			t.n["notAfter"].tag = 0x13
+		},
+		why: "A token whose signer certificate's notAfter holds UTCTime text under the " +
+			"PrintableString tag fails the anchor check, because a validity time is a UTCTime " +
+			"or a GeneralizedTime.",
+	}, {
+		name: "anchor-cert-eku-trailing",
+		mutate: func(t *tokenTree) {
+			eku := t.n["eku"]
+			t.n["ekuExt"].kids[2].fill = func() []byte { return append(eku.encode(), 0x05, 0x00) }
+		},
+		why: "A token whose signer certificate's extended key usage value holds another element " +
+			"after the SEQUENCE of purposes fails the anchor check, because the value holds " +
+			"exactly one SEQUENCE.",
+	}, {
+		name: "anchor-cert-extensions-trailing",
+		mutate: func(t *tokenTree) {
+			w := t.n["extsWrap"]
+			w.kids = append(slices.Clone(w.kids), &derNode{tag: 0x05})
+		},
+		why: "A token whose signer certificate's [3] holds another element after the SEQUENCE of " +
+			"extensions fails the anchor check, because an explicit tag holds exactly one element.",
+	}, {
+		name: "anchor-cert-version-trailing",
+		mutate: func(t *tokenTree) {
+			w := t.n["certVersion"]
+			w.kids = append(slices.Clone(w.kids), &derNode{tag: 0x05})
+		},
+		why: "A token whose signer certificate's [0] holds another element after the version " +
+			"INTEGER fails the anchor check, because an explicit tag holds exactly one element.",
+	}, {
+		name: "anchor-der-oid-huge-arc",
+		mutate: func(t *tokenTree) {
+			t.n["imprint"].kids[0].kids[0].val = hugeArc()
+		},
+		why: "A token whose message imprint hash algorithm is an OBJECT IDENTIFIER under 1.2 " +
+			"with one subidentifier of 3,000 octets fails the anchor check, and never faults " +
+			"a verifier, because no subidentifier a verifier reads exceeds 2^31-1.",
+	}, {
+		name: "anchor-der-oid-huge-arc-content-type",
+		mutate: func(t *tokenTree) {
+			t.n["contentType"].val = hugeArc()
+		},
+		why: "A token whose contentType has one subidentifier of 3,000 octets fails the anchor " +
+			"check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-huge-arc-econtent-type",
+		mutate: func(t *tokenTree) {
+			t.n["eContentType"].val = hugeArc()
+		},
+		why: "A token whose eContentType has one subidentifier of 3,000 octets fails the anchor " +
+			"check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-huge-arc-digest-algorithm",
+		mutate: func(t *tokenTree) {
+			t.n["siDigest"].kids[0].val = hugeArc()
+		},
+		why: "A token whose SignerInfo digestAlgorithm has one subidentifier of 3,000 octets " +
+			"fails the anchor check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-huge-arc-signature-algorithm",
+		mutate: func(t *tokenTree) {
+			t.n["sigAlgOID"].val = hugeArc()
+		},
+		why: "A token whose signatureAlgorithm has one subidentifier of 3,000 octets fails the " +
+			"anchor check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-huge-arc-key-algorithm",
+		mutate: func(t *tokenTree) {
+			t.n["spkiAlg"].kids[0].val = hugeArc()
+		},
+		why: "A token whose signer key's algorithm has one subidentifier of 3,000 octets fails " +
+			"the anchor check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-huge-arc-curve", signer: ecTokenSigner(false, false),
+		mutate: func(t *tokenTree) {
+			t.n["spkiAlg"].kids[1].val = hugeArc()
+		},
+		why: "A token whose ECDSA signer key names a curve with one subidentifier of 3,000 " +
+			"octets fails the anchor check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-huge-arc-extension-twice",
+		mutate: func(t *tokenTree) {
+			ext := func() *derNode {
+				return derSeq(0x30, &derNode{tag: 0x06, val: hugeArc()},
+					&derNode{tag: 0x04, val: []byte{0x05, 0x00}})
+			}
+			exts := t.n["exts"]
+			exts.kids = append(slices.Clone(exts.kids), ext(), ext())
+		},
+		why: "A token whose signer certificate carries twice an extension whose extnID has one " +
+			"subidentifier of 3,000 octets fails the anchor check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-huge-arc-extension-critical",
+		mutate: func(t *tokenTree) {
+			exts := t.n["exts"]
+			exts.kids = append(slices.Clone(exts.kids), derSeq(0x30,
+				&derNode{tag: 0x06, val: hugeArc()}, &derNode{tag: 0x01, val: []byte{0x01}},
+				&derNode{tag: 0x04, val: []byte{0x05, 0x00}}))
+		},
+		why: "A token whose signer certificate marks critical, with the BOOLEAN octet 0x01, an " +
+			"extension whose extnID has one subidentifier of 3,000 octets fails the anchor " +
+			"check without a verifier fault.",
+	}, {
+		name: "anchor-der-oid-arc-over-31-bits",
+		mutate: func(t *tokenTree) {
+			t.n["policy"].val = oidBytes(asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 1 << 31})
+		},
+		why: "A token whose policy is 1.3.6.1.4.1.2147483648 fails the anchor check, because no " +
+			"subidentifier a verifier reads exceeds 2^31-1, the bound Go's encoding/asn1 holds " +
+			"one to.",
+	}, {
+		name: "anchor-der-oid-arc-31-bits", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["policy"].val = oidBytes(asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 1<<31 - 1})
+		},
+		why: "A token whose policy is 1.3.6.1.4.1.2147483647 verifies, because a subidentifier " +
+			"of 2^31-1 is within the bound.",
+	}, {
+		name: "anchor-der-oid-extension-non-minimal",
+		mutate: func(t *tokenTree) {
+			exts := t.n["exts"]
+			exts.kids = append(slices.Clone(exts.kids), derSeq(0x30,
+				&derNode{tag: 0x06, val: []byte{0x55, 0x1d, 0x80, 0x0f}},
+				&derNode{tag: 0x04, val: []byte{0x03, 0x02, 0x07, 0x80}}))
+		},
+		why: "A token whose signer certificate carries an extension no verifier interprets, " +
+			"whose extnID pads a subidentifier with 0x80, fails the anchor check, because every " +
+			"extnID is read and DER writes each subidentifier in its shortest form.",
+	}, {
+		name: "anchor-der-oid-key-purpose-non-minimal",
+		mutate: func(t *tokenTree) {
+			eku := t.n["eku"]
+			eku.kids = append(slices.Clone(eku.kids), &derNode{tag: 0x06,
+				val: []byte{0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x80, 0x02}})
+		},
+		why: "A token whose signer certificate lists, after id-kp-timeStamping, a key purpose " +
+			"that pads a subidentifier with 0x80 fails the anchor check, because every key " +
+			"purpose is read.",
+	}, {
+		name: "anchor-der-oid-attribute-type-non-minimal",
+		mutate: func(t *tokenTree) {
+			attrs := t.n["attrs"]
+			attrs.kids = append(slices.Clone(attrs.kids), derSeq(0x30,
+				&derNode{tag: 0x06, val: []byte{0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x09,
+					0x80, 0x05}},
+				derSeq(0x31, &derNode{tag: 0x17, val: []byte("260727150100Z")})))
+		},
+		why: "A token whose signed attributes carry, after the messageDigest, an attribute whose " +
+			"type pads a subidentifier with 0x80 fails the anchor check, because every signed " +
+			"attribute's type is read.",
+	}, {
+		name: "anchor-der-signed-data-version-non-minimal",
+		mutate: func(t *tokenTree) {
+			t.n["signedData"].kids[0].val = []byte{0x00, 0x03}
+		},
+		why: "A token whose SignedData version is the INTEGER 3 written as 00 03 fails the " +
+			"anchor check, because DER writes an INTEGER in its shortest form.",
+	}, {
+		name: "anchor-der-signer-info-version-non-minimal",
+		mutate: func(t *tokenTree) {
+			t.n["si"].kids[0].val = []byte{0x00, 0x01}
+		},
+		why: "A token whose SignerInfo version is the INTEGER 1 written as 00 01 fails the " +
+			"anchor check, because DER writes an INTEGER in its shortest form.",
+	}, {
+		name: "anchor-der-trailing-in-econtent-explicit",
+		mutate: func(t *tokenTree) {
+			w := t.n["signedData"].kids[2].kids[1]
+			w.kids = append(slices.Clone(w.kids), &derNode{tag: 0x05})
+		},
+		why: "A token whose eContent [0] holds a NULL after the OCTET STRING fails the anchor " +
+			"check, because an explicit tag holds exactly one element.",
+	}, {
+		name: "anchor-cert-extra-version-non-minimal",
+		mutate: func(t *tokenTree) {
+			extra := newTokenTree(ed, "00")
+			extra.n["certSerial"].val = []byte{0x08}
+			extra.n["certVersion"].kids[0].val = []byte{0x00, 0x02}
+			t.n["certs"].kids = append(slices.Clone(t.n["certs"].kids), extra.n["cert"])
+		},
+		why: "A token that carries, after its signer certificate, a second certificate whose " +
+			"version is the INTEGER 2 written as 00 02 fails the anchor check, because every " +
+			"carried certificate is read, whichever one signed.",
+	}, {
+		name: "anchor-cert-extra-serial-non-minimal",
+		mutate: func(t *tokenTree) {
+			extra := newTokenTree(ed, "00")
+			extra.n["certSerial"].val = []byte{0x00, 0x08}
+			t.n["certs"].kids = append(slices.Clone(t.n["certs"].kids), extra.n["cert"])
+		},
+		why: "A token that carries, after its signer certificate, a second certificate whose " +
+			"serial number is the INTEGER 8 written as 00 08 fails the anchor check, because " +
+			"every carried certificate is read, whichever one signed.",
+	}, {
+		name: "anchor-rsa-modulus-non-minimal", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			t.n["spkiKey"].val = rsaKeyBits(&rsaKey.PublicKey, func(k *derNode) {
+				k.kids[0].val = append([]byte{0x00}, k.kids[0].val...)
+			})
+		},
+		why: "A token whose RSA signer key writes its modulus with a second leading zero octet " +
+			"fails the anchor check, because DER writes an INTEGER in its shortest form.",
+	}, {
+		name: "anchor-rsa-modulus-negative", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			t.n["spkiKey"].val = rsaKeyBits(&rsaKey.PublicKey, func(k *derNode) {
+				size := len(rsaKey.N.Bytes()) + 1
+				neg := new(big.Int).Lsh(big.NewInt(1), uint(8*size))
+				k.kids[0].val = neg.Sub(neg, rsaKey.N).FillBytes(make([]byte, size))
+			})
+		},
+		why: "A token whose RSA signer key writes its modulus as the negative INTEGER -n, in its " +
+			"shortest form, fails the anchor check, although Go's crypto/rsa verifies the " +
+			"signature made with n under it, because the modulus must be positive.",
+	}, {
+		name: "anchor-rsa-exponent-non-minimal", signer: rsaSigner,
+		mutate: func(t *tokenTree) {
+			t.n["spkiKey"].val = rsaKeyBits(&rsaKey.PublicKey, func(k *derNode) {
+				k.kids[1].val = append([]byte{0x00}, k.kids[1].val...)
+			})
+		},
+		why: "A token whose RSA signer key writes its public exponent 65537 as 00 01 00 01 " +
+			"fails the anchor check, because DER writes an INTEGER in its shortest form.",
+	}, {
+		name: "anchor-signer-name-rfc4514", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName(
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 6}, 0x13, "DE")},
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 10}, 0x0c, "Acme, Inc."),
+					rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 11}, 0x0c, "Time+Stamp")},
+				[]*derNode{rdnAttr(oidEmailAddress, 0x16, "tsa@example.org")},
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 7}, 0x0c, " W\u00fcrzburg")},
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 8}, 0x1e,
+					"\x00B\x00a\x00y\x00e\x00r\x00n")},
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 25}, 0x16,
+					"example")},
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 3}, 0x0c,
+					"#1 TSA; <\"x\"> \\ \x1b\u0085 ")},
+			)
+		},
+		attested: "2026-07-27T15:01:00Z by " +
+			`CN=\#1 TSA\; \<\"x\"\> \\ \1b\c2\85\ ,DC=example,` +
+			"ST=#1e0c00420061007900650072006e," + `L=\ W` + "\u00fc" + "rzburg," +
+			"1.2.840.113549.1.9.1=#160f747361406578616d706c652e6f7267," +
+			`O=Acme\, Inc.+OU=Time\+Stamp,C=DE`,
+		why: "A token whose signer certificate's subject holds a multi-valued RDN, an " +
+			"emailAddress, a BMPString, and text that RFC 4514 escapes verifies, and every " +
+			"verifier names its signer by the one rule FORMAT.md states.",
+	}, {
+		name: "anchor-signer-name-values-as-hex", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName(
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 5}, 0x13, "42")},
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 10}, 0x13, "Acm\xe9")},
+				[]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 11}, 0x0c, "\xff")},
+				[]*derNode{derSeq(0x30, derOID(asn1.ObjectIdentifier{2, 5, 4, 3}),
+					derSeq(0x2c, &derNode{tag: 0x0c, val: []byte("TSA")}))},
+			)
+		},
+		attested: "2026-07-27T15:01:00Z by CN=#2c050c03545341,OU=#0c01ff,O=#130441636de9," +
+			"2.5.4.5=#13023432",
+		why: "A token whose signer certificate's subject holds a constructed UTF8String, a " +
+			"UTF8String that is not UTF-8, a PrintableString that is not ASCII, and a type " +
+			"RFC 4514 has no short name for verifies, and every verifier writes each of those " +
+			"values in hexadecimal.",
+	}, {
+		name: "anchor-signer-name-empty", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName()
+		},
+		attested: "2026-07-27T15:01:00Z by #3000",
+		why: "A token whose signer certificate's subject is an empty SEQUENCE verifies, and " +
+			"every verifier names its signer by the hexadecimal of the subject's encoding.",
+	}, {
+		name: "anchor-signer-name-not-a-name", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = derSeq(0x30, derInt(1))
+		},
+		attested: "2026-07-27T15:01:00Z by #3003020101",
+		why: "A token whose signer certificate's subject is a SEQUENCE holding an INTEGER " +
+			"verifies, and every verifier names its signer by the hexadecimal of the " +
+			"subject's encoding.",
+	}, {
+		name: "anchor-signer-name-rdn-not-a-set", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = derSeq(0x30, derSeq(0x30,
+				rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 3}, 0x0c, "TSA")))
+		},
+		attested: "2026-07-27T15:01:00Z by #300e300c300a06035504030c03545341",
+		why: "A token whose signer certificate's subject holds an RDN written as a SEQUENCE " +
+			"rather than a SET verifies, and every verifier names its signer by the " +
+			"hexadecimal of the subject's encoding.",
+	}, {
+		name: "anchor-signer-name-attribute-not-a-sequence", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = derSeq(0x30, derSeq(0x31, derSeq(0x31,
+				derOID(asn1.ObjectIdentifier{2, 5, 4, 3}),
+				&derNode{tag: 0x0c, val: []byte("TSA")})))
+		},
+		attested: "2026-07-27T15:01:00Z by #300e310c310a06035504030c03545341",
+		why: "A token whose signer certificate's subject holds an attribute written as a SET " +
+			"rather than a SEQUENCE verifies, and every verifier names its signer by the " +
+			"hexadecimal of the subject's encoding.",
+	}, {
+		name: "anchor-signer-name-type-not-an-oid", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{derSeq(0x30,
+				&derNode{tag: 0x86, val: oidBytes(asn1.ObjectIdentifier{2, 5, 4, 3})},
+				&derNode{tag: 0x0c, val: []byte("TSA")})})
+		},
+		attested: "2026-07-27T15:01:00Z by #300e310c300a86035504030c03545341",
+		why: "A token whose signer certificate's subject names an attribute type under the " +
+			"identifier 0x86 verifies, and every verifier names its signer by the hexadecimal " +
+			"of the subject's encoding.",
+	}, {
+		name: "anchor-signer-name-two-values", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{derSeq(0x30,
+				derOID(asn1.ObjectIdentifier{2, 5, 4, 3}), &derNode{tag: 0x0c, val: []byte("TSA")},
+				&derNode{tag: 0x0c, val: []byte("X")})})
+		},
+		attested: "2026-07-27T15:01:00Z by #3011310f300d06035504030c035453410c0158",
+		why: "A token whose signer certificate's subject holds an attribute with two values " +
+			"verifies, and every verifier names its signer by the hexadecimal of the subject's " +
+			"encoding.",
+	}, {
+		name: "anchor-signer-name-empty-rdn", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{})
+		},
+		attested: "2026-07-27T15:01:00Z by #30023100",
+		why: "A token whose signer certificate's subject holds an RDN with no attributes " +
+			"verifies, and every verifier names its signer by the hexadecimal of the subject's " +
+			"encoding.",
+	}, {
+		name: "anchor-signer-name-type-non-minimal", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{derSeq(0x30,
+				&derNode{tag: 0x06, val: []byte{0x55, 0x04, 0x80, 0x03}},
+				&derNode{tag: 0x0c, val: []byte("TSA")})})
+		},
+		attested: "2026-07-27T15:01:00Z by #300f310d300b0604550480030c03545341",
+		why: "A token whose signer certificate's subject names an attribute type that pads a " +
+			"subidentifier with 0x80 verifies, because nothing decides a verdict from the " +
+			"subject, and every verifier names its signer by the hexadecimal of the subject's " +
+			"encoding.",
+	}} {
+		signer := c.signer
+		if signer == nil {
+			signer = ed
+		}
+		s.tokenVector(c.name, at, c.ok, c.why, func(link string) string {
+			t := newTokenTree(signer, link)
+			if c.mutate != nil {
+				c.mutate(t)
+			}
+			return t.encode()
+		})
+		if c.ok {
+			attested := c.attested
+			if attested == "" {
+				attested = vectorAttested
+			}
+			s.expectAttested(c.name, attested)
+		}
+	}
+}
+
+// derTags emits one vector per member a verifier reads by a fixed identifier, each a token whose
+// one member carries another identifier and is otherwise intact, signed over what its encoding
+// became. A constructed member loses its constructed bit and a primitive one moves to the
+// context-specific class, so the walk reads the token as well formed and only the comparison of
+// the whole identifier octet at that one member refuses it. Each fails the anchor check.
+//
+//nolint:funlen // One vector per member, listed in one place.
+func (s *state) derTags() {
+	ed := edTokenSigner()
+	rsaSigner := rsaTokenSigner()
+	rsaKey := rsaVectorKey(2048, 2048, 65537)
+	// node names a member by where it sits in a token's tree.
+	type node func(t *tokenTree) *derNode
+	named := func(name string) node { return func(t *tokenTree) *derNode { return t.n[name] } }
+	kid := func(parent node, i int) node {
+		return func(t *tokenTree) *derNode { return parent(t).kids[i] }
+	}
+	// replace swaps the member at parent's kids[i] for a retagged copy, for a member the tree
+	// shares with another position the token must keep intact.
+	replace := func(parent node, i int) func(t *tokenTree) {
+		return func(t *tokenTree) {
+			p := parent(t)
+			kids := slices.Clone(p.kids)
+			old := kids[i]
+			kids[i] = &derNode{tag: retag(old.tag), header: func(byte, []byte) []byte {
+				full := old.encode()
+				return append([]byte{retag(full[0])}, full[1:]...)
+			}}
+			p.kids = kids
+		}
+	}
+	rsaKeyMember := func(edit func(k *derNode)) func(t *tokenTree) {
+		return func(t *tokenTree) { t.n["spkiKey"].val = rsaKeyBits(&rsaKey.PublicKey, edit) }
+	}
+	for _, c := range []struct {
+		// name is the vector name's suffix after anchor-der-tag-.
+		name string
+		// member says, in the vector's description, which member is retagged.
+		member string
+		// at is the member retagged in place, when mutate is nil.
+		at node
+		// mutate retags the member when it cannot be retagged in place.
+		mutate func(t *tokenTree)
+		// signer signs the token; nil means the Ed25519 authority.
+		signer *tokenSigner
+		// from is the member's own identifier octet.
+		from byte
+	}{
+		{name: "content-info", member: "ContentInfo SEQUENCE", at: named("ci"), from: 0x30},
+		{name: "content-type", member: "contentType", at: named("contentType"), from: 0x06},
+		{name: "content-info-content", member: "ContentInfo [0]", at: named("ciWrap"),
+			from: 0xa0},
+		{name: "signed-data", member: "SignedData SEQUENCE", at: named("signedData"),
+			from: 0x30},
+		{name: "signed-data-version", member: "SignedData version",
+			at: kid(named("signedData"), 0), from: 0x02},
+		{name: "digest-algorithms", member: "digestAlgorithms SET",
+			at: kid(named("signedData"), 1), from: 0x31},
+		{name: "encap-content-info", member: "encapContentInfo SEQUENCE",
+			at: kid(named("signedData"), 2), from: 0x30},
+		{name: "econtent-type", member: "eContentType", at: named("eContentType"), from: 0x06},
+		{name: "econtent-explicit", member: "eContent [0]",
+			at: kid(kid(named("signedData"), 2), 1), from: 0xa0},
+		{name: "econtent", member: "eContent OCTET STRING", at: named("eContent"), from: 0x04},
+		{name: "signer-infos", member: "signerInfos SET", at: named("signerInfos"), from: 0x31},
+		{name: "signer-info", member: "SignerInfo SEQUENCE", at: named("si"), from: 0x30},
+		{name: "signer-info-version", member: "SignerInfo version", at: kid(named("si"), 0),
+			from: 0x02},
+		{name: "sid", member: "signer identifier SEQUENCE", at: named("sid"), from: 0x30},
+		{name: "sid-issuer", member: "signer identifier's issuer",
+			mutate: replace(named("sid"), 0), from: 0x30},
+		{name: "sid-serial", member: "signer identifier's serial number",
+			mutate: replace(named("sid"), 1), from: 0x02},
+		{name: "digest-algorithm", member: "digestAlgorithm SEQUENCE", at: named("siDigest"),
+			from: 0x30},
+		{name: "digest-algorithm-oid", member: "digestAlgorithm OBJECT IDENTIFIER",
+			at: kid(named("siDigest"), 0), from: 0x06},
+		{name: "signature-algorithm", member: "signatureAlgorithm SEQUENCE",
+			at: kid(named("si"), 4), from: 0x30},
+		{name: "signature-algorithm-oid", member: "signatureAlgorithm OBJECT IDENTIFIER",
+			at: named("sigAlgOID"), from: 0x06},
+		{name: "signature", member: "signature OCTET STRING", at: named("sig"), from: 0x04},
+		{name: "signed-attribute", member: "messageDigest attribute SEQUENCE",
+			at: kid(named("attrs"), 1), from: 0x30},
+		{name: "signed-attribute-type", member: "messageDigest attribute type",
+			at: kid(kid(named("attrs"), 1), 0), from: 0x06},
+		{name: "signed-attribute-values", member: "messageDigest attribute's SET of values",
+			at: named("mdValues"), from: 0x31},
+		{name: "message-digest", member: "messageDigest OCTET STRING", at: named("md"),
+			from: 0x04},
+		{name: "policy", member: "TSTInfo policy", at: named("policy"), from: 0x06},
+		{name: "message-imprint", member: "messageImprint SEQUENCE", at: named("imprint"),
+			from: 0x30},
+		{name: "imprint-algorithm", member: "messageImprint hashAlgorithm SEQUENCE",
+			at: kid(named("imprint"), 0), from: 0x30},
+		{name: "imprint-algorithm-oid", member: "messageImprint hashAlgorithm OBJECT IDENTIFIER",
+			at: kid(kid(named("imprint"), 0), 0), from: 0x06},
+		{name: "imprint-digest", member: "messageImprint hashedMessage",
+			at: kid(named("imprint"), 1), from: 0x04},
+		{name: "tst-serial", member: "TSTInfo serial number", at: named("tstSerial"),
+			from: 0x02},
+		{name: "certificate", member: "signer certificate SEQUENCE", at: named("cert"),
+			from: 0x30},
+		{name: "tbs-certificate", member: "tbsCertificate SEQUENCE", at: named("tbs"),
+			from: 0x30},
+		{name: "certificate-version", member: "certificate version INTEGER",
+			at: kid(named("certVersion"), 0), from: 0x02},
+		{name: "certificate-serial", member: "certificate serial number",
+			mutate: replace(named("tbs"), 1), from: 0x02},
+		{name: "certificate-signature-algorithm", member: "certificate signature SEQUENCE",
+			at: kid(named("tbs"), 2), from: 0x30},
+		{name: "certificate-issuer", member: "certificate issuer SEQUENCE",
+			mutate: replace(named("tbs"), 3), from: 0x30},
+		{name: "validity", member: "certificate validity SEQUENCE", at: kid(named("tbs"), 4),
+			from: 0x30},
+		{name: "subject", member: "certificate subject SEQUENCE",
+			mutate: replace(named("tbs"), 5), from: 0x30},
+		{name: "subject-public-key-info", member: "subjectPublicKeyInfo SEQUENCE",
+			at: named("spki"), from: 0x30},
+		{name: "extensions", member: "SEQUENCE of extensions", at: named("exts"), from: 0x30},
+		{name: "extension", member: "extended key usage extension SEQUENCE",
+			at: named("ekuExt"), from: 0x30},
+		{name: "extension-id", member: "extended key usage extnID",
+			at: kid(named("ekuExt"), 0), from: 0x06},
+		{name: "extension-value", member: "extended key usage extnValue",
+			at: kid(named("ekuExt"), 2), from: 0x04},
+		{name: "subject-key-identifier", member: "subject key identifier OCTET STRING",
+			at: named("ski"), from: 0x04},
+		{name: "key-purposes", member: "SEQUENCE of key purposes", at: named("eku"),
+			from: 0x30},
+		{name: "key-purpose", member: "id-kp-timeStamping key purpose",
+			at: kid(named("eku"), 0), from: 0x06},
+		{name: "public-key-algorithm", member: "public key AlgorithmIdentifier SEQUENCE",
+			at: named("spkiAlg"), from: 0x30},
+		{name: "public-key-algorithm-oid", member: "public key algorithm OBJECT IDENTIFIER",
+			at: kid(named("spkiAlg"), 0), from: 0x06},
+		{name: "public-key", member: "subjectPublicKey BIT STRING", at: named("spkiKey"),
+			from: 0x03},
+		{name: "elliptic-curve", member: "ECDSA key's curve OBJECT IDENTIFIER",
+			at: kid(named("spkiAlg"), 1), signer: ecTokenSigner(false, false), from: 0x06},
+		{name: "ecdsa-signature", member: "ECDSA signature SEQUENCE", from: 0x30,
+			signer: ecTokenSigner(false, false), mutate: func(t *tokenTree) {
+				t.rewriteSignature = func(sig []byte) []byte {
+					out := slices.Clone(sig)
+					out[0] = retag(out[0])
+					return out
+				}
+			}},
+		{name: "ecdsa-signature-value", member: "ECDSA signature's first INTEGER", from: 0x02,
+			signer: ecTokenSigner(false, false), mutate: func(t *tokenTree) {
+				t.rewriteSignature = func(sig []byte) []byte {
+					out := slices.Clone(sig)
+					out[2] = retag(out[2])
+					return out
+				}
+			}},
+		{name: "rsa-parameters", member: "RSA key's NULL parameters",
+			at: kid(named("spkiAlg"), 1), signer: rsaSigner, from: 0x05},
+		{name: "rsa-key", member: "RSA key SEQUENCE", signer: rsaSigner, from: 0x30,
+			mutate: rsaKeyMember(func(k *derNode) { k.tag = retag(k.tag) })},
+		{name: "rsa-modulus", member: "RSA modulus", signer: rsaSigner, from: 0x02,
+			mutate: rsaKeyMember(func(k *derNode) { k.kids[0].tag = retag(k.kids[0].tag) })},
+		{name: "rsa-exponent", member: "RSA public exponent", signer: rsaSigner, from: 0x02,
+			mutate: rsaKeyMember(func(k *derNode) { k.kids[1].tag = retag(k.kids[1].tag) })},
+	} {
+		signer := c.signer
+		if signer == nil {
+			signer = ed
+		}
+		why := fmt.Sprintf("A token whose %s is written under the identifier 0x%02x rather than "+
+			"0x%02x fails the anchor check, because a verifier compares the whole identifier "+
+			"octet of every member it reads, class and constructed bit included.", c.member,
+			retag(c.from), c.from)
+		s.tokenVector("anchor-der-tag-"+c.name, at, false, why, func(link string) string {
+			t := newTokenTree(signer, link)
+			if c.mutate != nil {
+				c.mutate(t)
+			} else {
+				n := c.at(t)
+				if n.tag != c.from {
+					panic(fmt.Sprintf("derTags %s: member is 0x%02x, want 0x%02x", c.name, n.tag,
+						c.from))
+				}
+				n.tag = retag(n.tag)
+			}
+			return t.encode()
+		})
+	}
+}
+
+// retag is the identifier a derTags member is written under in place of tag: a constructed
+// identifier without its constructed bit, and a primitive one in the context-specific class.
+func retag(tag byte) byte {
+	if tag&0x20 != 0 {
+		return tag &^ 0x20
+	}
+	return tag | 0x80
+}
+
+// oidEmailAddress is the PKCS #9 emailAddress attribute type, which RFC 4514 has no short name
+// for.
+var oidEmailAddress = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 1}
+
+// hugeArc is the content of an OBJECT IDENTIFIER under 1.2 whose third subidentifier runs 3,000
+// octets, far past the 2^31-1 a verifier reads and past the 4300 decimal digits Python converts.
+func hugeArc() []byte {
+	return append(append([]byte{0x2a}, bytes.Repeat([]byte{0xff}, 2999)...), 0x7f)
+}
+
+// rdnName is a Name node whose relative distinguished names hold the given attributes, in order.
+func rdnName(rdns ...[]*derNode) *derNode {
+	n := &derNode{tag: 0x30, kids: []*derNode{}}
+	for _, attrs := range rdns {
+		n.kids = append(n.kids, derSeq(0x31, attrs...))
+	}
+	return n
+}
+
+// rdnAttr is an attribute node: the type oid and a primitive value of the given identifier whose
+// content is the octets of text.
+func rdnAttr(oid asn1.ObjectIdentifier, tag byte, text string) *derNode {
+	return derSeq(0x30, derOID(oid), &derNode{tag: tag, val: []byte(text)})
+}
+
+// rsaKeyBits is the content of the subjectPublicKey BIT STRING that holds pub, after edit has
+// changed the node of the key SEQUENCE, whose members are the modulus and the exponent.
+func rsaKeyBits(pub *rsa.PublicKey, edit func(key *derNode)) []byte {
+	content := func(v any) []byte {
+		var raw asn1.RawValue
+		if _, err := asn1.Unmarshal(mustMarshal(v), &raw); err != nil {
+			panic(err)
+		}
+		return raw.Bytes
+	}
+	key := derSeq(0x30, &derNode{tag: 0x02, val: content(pub.N)},
+		&derNode{tag: 0x02, val: content(big.NewInt(int64(pub.E)))})
+	edit(key)
+	return append([]byte{0}, key.encode()...)
+}
+
+// vectorAuthority is the common name of the authority every minted token names as its signer.
+const vectorAuthority = "LoomSeal conformance vector timestamp authority"
+
+// vectorAttested is the line a verifier reports for a minted token whose genTime is
+// 20260727150100Z and whose signer is the vector authority.
+const vectorAttested = "2026-07-27T15:01:00Z by CN=" + vectorAuthority
+
+// tokenSKI is the subject key identifier every minted authority certificate carries.
+var tokenSKI = []byte{0x4c, 0x53, 0x01, 0x02}
+
+// derNode is one element of a token the generator builds. It is encoded on demand, so a vector
+// can change any element's encoding while the message digest and the signature still cover
+// whatever the token became.
+type derNode struct {
+	// tag is the identifier octet.
+	tag byte
+	// kids are the members of a constructed element.
+	kids []*derNode
+	// val is the content of a primitive element.
+	val []byte
+	// fill, when set, computes the content at encode time.
+	fill func() []byte
+	// header, when set, writes the whole encoding from the identifier and the content.
+	header func(tag byte, content []byte) []byte
+}
+
+// encode writes the node as DER, or as its header function writes it.
+func (n *derNode) encode() []byte {
+	var c []byte
+	switch {
+	case n.fill != nil:
+		c = n.fill()
+	case n.kids != nil:
+		for _, k := range n.kids {
+			c = append(c, k.encode()...)
+		}
+	default:
+		c = n.val
+	}
+	if n.header != nil {
+		return n.header(n.tag, c)
+	}
+	return derElement(n.tag, c)
+}
+
+// derElement writes one DER element with its length in the shortest form.
+func derElement(tag byte, c []byte) []byte {
+	switch {
+	case len(c) < 0x80:
+		return append([]byte{tag, byte(len(c))}, c...)
+	case len(c) < 0x100:
+		return append([]byte{tag, 0x81, byte(len(c))}, c...)
+	}
+	return append([]byte{tag, 0x82, byte(len(c) >> 8), byte(len(c))}, c...)
+}
+
+// derSeq is a constructed node with the given identifier and members.
+func derSeq(tag byte, kids ...*derNode) *derNode {
+	return &derNode{tag: tag, kids: kids}
+}
+
+// derOID is an OBJECT IDENTIFIER node.
+func derOID(oid asn1.ObjectIdentifier) *derNode {
+	return &derNode{tag: 0x06, val: oidBytes(oid)}
+}
+
+// oidBytes is the DER content of oid.
+func oidBytes(oid asn1.ObjectIdentifier) []byte {
+	return mustMarshal(oid)[2:]
+}
+
+// derInt is an INTEGER node holding v.
+func derInt(v int64) *derNode {
+	return &derNode{tag: 0x02, val: mustMarshal(v)[2:]}
+}
+
+// tokenSigner is an authority a minted token is signed by: its subjectPublicKeyInfo, the
+// signature algorithm it names, and how it signs the signed attributes.
+type tokenSigner struct {
+	// spki builds the subjectPublicKeyInfo node.
+	spki func() *derNode
+	// sigAlg is the signature algorithm the signer info names.
+	sigAlg asn1.ObjectIdentifier
+	// sign signs the signed attributes, given as the SET the signature covers.
+	sign func(signed []byte) []byte
+}
+
+// edTokenSigner is the fixed Ed25519 conformance vector authority.
+func edTokenSigner() *tokenSigner {
+	priv := ed25519.NewKeyFromSeed(bytesRepeat(23))
+	return &tokenSigner{
+		spki: func() *derNode {
+			return derSeq(0x30, derSeq(0x30, derOID(oidEd25519)),
+				&derNode{tag: 0x03, val: append([]byte{0}, priv.Public().(ed25519.PublicKey)...)})
+		},
+		sigAlg: oidEd25519,
+		sign:   func(signed []byte) []byte { return ed25519.Sign(priv, signed) },
+	}
+}
+
+// rsaVectorKey derives an RSA key of the given modulus size and public exponent from a fixed
+// seed, so the vectors are the same on every run.
+func rsaVectorKey(bits int, seed uint64, exponent int64) *rsa.PrivateKey {
+	rng := mathrand.New(mathrand.NewPCG(seed, seed^0x9e3779b97f4a7c15))
+	prime := func(n int) *big.Int {
+		for {
+			b := make([]byte, (n+7)/8)
+			for i := range b {
+				b[i] = byte(rng.Uint32())
+			}
+			p := new(big.Int).SetBytes(b)
+			p.SetBit(p, n-1, 1)
+			p.SetBit(p, n-2, 1)
+			p.SetBit(p, 0, 1)
+			for i := p.BitLen() - 1; i >= n; i-- {
+				p.SetBit(p, i, 0)
+			}
+			if p.ProbablyPrime(32) {
+				return p
+			}
+		}
+	}
+	e := big.NewInt(exponent)
+	for {
+		p, q := prime(bits/2), prime(bits-bits/2)
+		n := new(big.Int).Mul(p, q)
+		phi := new(big.Int).Mul(new(big.Int).Sub(p, big.NewInt(1)),
+			new(big.Int).Sub(q, big.NewInt(1)))
+		d := new(big.Int).ModInverse(e, phi)
+		if n.BitLen() != bits || d == nil {
+			continue
+		}
+		key := &rsa.PrivateKey{PublicKey: rsa.PublicKey{N: n, E: int(exponent)}, D: d,
+			Primes: []*big.Int{p, q}}
+		key.Precompute()
+		return key
+	}
+}
+
+// rsaKeyWith rewrites an RSAPublicKey SEQUENCE so that extra follows the modulus and the
+// exponent inside it.
+func rsaKeyWith(key []byte, extra ...byte) []byte {
+	var seq asn1.RawValue
+	if rest, err := asn1.Unmarshal(key, &seq); err != nil || len(rest) != 0 {
+		panic(fmt.Sprintf("RSA key: %v", err))
+	}
+	return derElement(0x30, append(slices.Clone(seq.Bytes), extra...))
+}
+
+// rsaSPKI is the subjectPublicKeyInfo node of an RSA public key.
+func rsaSPKI(pub *rsa.PublicKey) *derNode {
+	key := mustMarshal(struct {
+		N *big.Int
+		E int
+	}{pub.N, pub.E})
+	return derSeq(0x30, derSeq(0x30, derOID(oidRSAEncryption), &derNode{tag: 0x05}),
+		&derNode{tag: 0x03, val: append([]byte{0}, key...)})
+}
+
+// rsaTokenSigner is a fixed 2048-bit RSA authority signing with sha256WithRSAEncryption.
+func rsaTokenSigner() *tokenSigner {
+	priv := rsaVectorKey(2048, 2048, 65537)
+	return &tokenSigner{
+		spki:   func() *derNode { return rsaSPKI(&priv.PublicKey) },
+		sigAlg: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11},
+		sign: func(signed []byte) []byte {
+			sum := sha256.Sum256(signed)
+			sig, err := rsa.SignPKCS1v15(nil, priv, crypto.SHA256, sum[:])
+			if err != nil {
+				panic(err)
+			}
+			return sig
+		},
+	}
+}
+
+// rsaRaw is an RSA key the generator signs with by its own arithmetic, for keys Go's crypto/rsa
+// will not sign with. Each signature it makes is valid under the public key it carries, so the
+// key alone decides how a verifier treats the token.
+type rsaRaw struct {
+	// pub is the public key the authority certificate carries.
+	pub *rsa.PublicKey
+	// exp raises a message representative to the private exponent, or returns nil when this key
+	// cannot sign that representative, so the token is minted again with another serial.
+	exp func(m *big.Int) *big.Int
+}
+
+// digestInfoSHA256 is the PKCS #1 v1.5 DigestInfo prefix for SHA-256, NULL parameters included.
+var digestInfoSHA256 = []byte{0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65,
+	0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20}
+
+// pkcs1Signer signs with sha256WithRSAEncryption, writing prefix as the DigestInfo before the
+// digest.
+func (k *rsaRaw) pkcs1Signer(prefix []byte) *tokenSigner {
+	return &tokenSigner{
+		spki:   func() *derNode { return rsaSPKI(k.pub) },
+		sigAlg: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11},
+		sign: func(signed []byte) []byte {
+			sum := sha256.Sum256(signed)
+			size := (k.pub.N.BitLen() + 7) / 8
+			em := make([]byte, size)
+			em[1] = 0x01
+			info := append(slices.Clone(prefix), sum[:]...)
+			for i := 2; i < size-len(info)-1; i++ {
+				em[i] = 0xff
+			}
+			copy(em[size-len(info):], info)
+			return k.raise(em, size)
+		},
+	}
+}
+
+// pssForm is how a PSS signature is encoded: its salt length, and the one fault it carries, if
+// any.
+type pssForm struct {
+	// salt is the salt length in octets.
+	salt int
+	// other signs other attributes than the token carries, in an otherwise well-formed encoding.
+	other bool
+	// trailer, when not zero, replaces the 0xbc octet that ends the encoding.
+	trailer byte
+	// topBit sets the encoding's leftmost bit, which its length in bits leaves clear.
+	topBit bool
+	// lead writes the encoding with one more octet in front, of value 1, for a modulus whose
+	// encoding is one octet shorter than its signature.
+	lead bool
+}
+
+// pssSigner signs with RSASSA-PSS over SHA-256 and MGF1 over SHA-256, with a fixed salt, by the
+// encoding RFC 8017 gives, altered as form says.
+func (k *rsaRaw) pssSigner(form pssForm) *tokenSigner {
+	return &tokenSigner{
+		spki:   func() *derNode { return rsaSPKI(k.pub) },
+		sigAlg: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 10},
+		sign: func(signed []byte) []byte {
+			if form.other {
+				signed = append(slices.Clone(signed), 0x00)
+			}
+			mHash := sha256.Sum256(signed)
+			salt := bytes.Repeat([]byte{0x5a}, form.salt)
+			h := sha256.Sum256(slices.Concat(make([]byte, 8), mHash[:], salt))
+			emBits := k.pub.N.BitLen() - 1
+			emLen := (emBits + 7) / 8
+			db := make([]byte, emLen-sha256.Size-1)
+			db[len(db)-form.salt-1] = 0x01
+			copy(db[len(db)-form.salt:], salt)
+			mask := mgf1SHA256(h[:], len(db))
+			for i := range db {
+				db[i] ^= mask[i]
+			}
+			db[0] &= 0xff >> (8*emLen - emBits)
+			trailer := byte(0xbc)
+			if form.trailer != 0 {
+				trailer = form.trailer
+			}
+			em := slices.Concat(db, h[:], []byte{trailer})
+			if form.topBit {
+				em[0] |= 0x80
+			}
+			if form.lead {
+				em = append([]byte{0x01}, em...)
+			}
+			return k.raise(em, (k.pub.N.BitLen()+7)/8)
+		},
+	}
+}
+
+// raise turns an encoded message into a signature of size octets, or returns nil when the key
+// cannot sign it, the encoded message not being below the modulus among the reasons.
+func (k *rsaRaw) raise(em []byte, size int) []byte {
+	m := new(big.Int).SetBytes(em)
+	if m.Cmp(k.pub.N) >= 0 {
+		return nil
+	}
+	sig := k.exp(m)
+	if sig == nil {
+		return nil
+	}
+	return sig.FillBytes(make([]byte, size))
+}
+
+// mgf1SHA256 expands seed to length octets with MGF1 over SHA-256.
+func mgf1SHA256(seed []byte, length int) []byte {
+	var out []byte
+	for counter := uint32(0); len(out) < length; counter++ {
+		sum := sha256.Sum256(append(slices.Clone(seed), byte(counter>>24), byte(counter>>16),
+			byte(counter>>8), byte(counter)))
+		out = append(out, sum[:]...)
+	}
+	return out[:length]
+}
+
+// privateExp is the private operation of a two-prime key made by rsaVectorKey.
+func privateExp(priv *rsa.PrivateKey) func(m *big.Int) *big.Int {
+	return func(m *big.Int) *big.Int { return new(big.Int).Exp(m, priv.D, priv.N) }
+}
+
+// rsaSmallSigner is an authority whose RSA modulus is 1023 bits. Go's crypto/rsa will not sign
+// with a key that small, so the PKCS #1 v1.5 signature is computed directly, and it is a valid
+// signature: only the key size rule refuses the token.
+func rsaSmallSigner() *tokenSigner {
+	priv := rsaVectorKey(1023, 1023, 65537)
+	return (&rsaRaw{pub: &priv.PublicKey, exp: privateExp(priv)}).pkcs1Signer(digestInfoSHA256)
+}
+
+// rsaWideExponentSigner is an authority whose RSA public exponent is 2^32-5, a prime past the
+// 2^31-1 bound. Go's crypto/rsa will not sign with that exponent, so the signature is computed
+// directly, and it is a valid signature: only the exponent bound refuses the token.
+func rsaWideExponentSigner() *tokenSigner {
+	priv := rsaVectorKey(2048, 4096, 1<<32-5)
+	return (&rsaRaw{pub: &priv.PublicKey, exp: privateExp(priv)}).pkcs1Signer(digestInfoSHA256)
+}
+
+// rsaExponentOneSigner is an authority whose RSA public exponent is 1, under which a signature is
+// its own encoded message, so the signature is valid and only the exponent's lower bound refuses
+// the token.
+func rsaExponentOneSigner() *tokenSigner {
+	priv := rsaVectorKey(2048, 2048, 65537)
+	k := &rsaRaw{pub: &rsa.PublicKey{N: priv.N, E: 1}, exp: func(m *big.Int) *big.Int { return m }}
+	return k.pkcs1Signer(digestInfoSHA256)
+}
+
+// rsaExponentFourSigner is an authority whose RSA modulus is a 1024-bit prime p with p = 3 mod 4
+// and whose public exponent is 4. A message representative that is a square mod p has a fourth
+// root, m^(((p+1)/4)^2), and the token is minted again until its representative is a square, so
+// the signature is valid and only the rule that the exponent is odd refuses the token.
+func rsaExponentFourSigner() *tokenSigner {
+	v := newVectorRand(4)
+	p := v.prime(1024, true)
+	one := big.NewInt(1)
+	half := new(big.Int).Rsh(new(big.Int).Sub(p, one), 1)
+	quarter := new(big.Int).Rsh(new(big.Int).Add(p, one), 2)
+	root := new(big.Int).Mul(quarter, quarter)
+	k := &rsaRaw{pub: &rsa.PublicKey{N: p, E: 4}, exp: func(m *big.Int) *big.Int {
+		if new(big.Int).Exp(m, half, p).Cmp(one) != 0 {
+			return nil
+		}
+		return new(big.Int).Exp(m, root, p)
+	}}
+	return k.pkcs1Signer(digestInfoSHA256)
+}
+
+// rsaEvenModulusSigner is an authority whose RSA modulus is twice a 1024-bit prime p, an even
+// number of 1025 bits. A signature s with s = m mod 2 and s = m^d mod p is valid under 65537,
+// because an odd power keeps the parity, so only the rule that the modulus is odd refuses the
+// token.
+func rsaEvenModulusSigner() *tokenSigner {
+	v := newVectorRand(1025)
+	p := v.prime(1024, false)
+	one := big.NewInt(1)
+	d := new(big.Int).ModInverse(big.NewInt(65537), new(big.Int).Sub(p, one))
+	n := new(big.Int).Lsh(p, 1)
+	k := &rsaRaw{pub: &rsa.PublicKey{N: n, E: 65537}, exp: func(m *big.Int) *big.Int {
+		sp := new(big.Int).Exp(m, d, p)
+		if sp.Bit(0) != m.Bit(0) {
+			sp.Add(sp, p)
+		}
+		return sp
+	}}
+	return k.pkcs1Signer(digestInfoSHA256)
+}
+
+// rsaMultiPrime is an RSA key whose modulus is exactly bits long, the product of 512-bit primes
+// and one last prime sized to fit, with the public exponent 65537. A key this long takes many
+// minutes to derive from two primes, while many small primes take moments, and a signature made
+// with them through the Chinese remainder theorem is an ordinary valid signature under the
+// modulus and 65537.
+func rsaMultiPrime(bits int, seed uint64) *rsaRaw {
+	v := newVectorRand(seed)
+	one := big.NewInt(1)
+	var primes []*big.Int
+	n := big.NewInt(1)
+	for bits-n.BitLen() > 1024 {
+		p := v.prime(512, false)
+		if !slices.ContainsFunc(primes, func(q *big.Int) bool { return q.Cmp(p) == 0 }) {
+			primes = append(primes, p)
+			n.Mul(n, p)
+		}
+	}
+	lo := new(big.Int).Lsh(one, uint(bits-1))
+	lo.Add(lo, new(big.Int).Sub(n, one)).Div(lo, n)
+	hi := new(big.Int).Lsh(one, uint(bits))
+	hi.Sub(hi, one).Div(hi, n)
+	primes = append(primes, v.primeBetween(lo, hi, false))
+	n.Mul(n, primes[len(primes)-1])
+	if n.BitLen() != bits {
+		panic(fmt.Sprintf("multi-prime modulus is %d bits, want %d", n.BitLen(), bits))
+	}
+	e := big.NewInt(65537)
+	return &rsaRaw{pub: &rsa.PublicKey{N: n, E: 65537}, exp: func(m *big.Int) *big.Int {
+		s := new(big.Int)
+		for _, p := range primes {
+			sp := new(big.Int).Exp(m, new(big.Int).ModInverse(e, new(big.Int).Sub(p, one)), p)
+			rest := new(big.Int).Div(n, p)
+			s.Add(s, sp.Mul(sp, rest).Mul(sp, new(big.Int).ModInverse(rest, p)))
+		}
+		return s.Mod(s, n)
+	}}
+}
+
+// vectorRand draws the numbers vector keys are made from, from a fixed seed, so the keys are the
+// same on every run.
+type vectorRand struct {
+	// rng is the seeded source.
+	rng *mathrand.Rand
+}
+
+// newVectorRand returns a source seeded with seed.
+func newVectorRand(seed uint64) *vectorRand {
+	return &vectorRand{rng: mathrand.New(mathrand.NewPCG(seed, seed^0x9e3779b97f4a7c15))}
+}
+
+// below returns a number from zero up to, but not including, limit.
+func (v *vectorRand) below(limit *big.Int) *big.Int {
+	b := make([]byte, (limit.BitLen()+7)/8+8)
+	for i := range b {
+		b[i] = byte(v.rng.Uint32())
+	}
+	return new(big.Int).Mod(new(big.Int).SetBytes(b), limit)
+}
+
+// prime returns a prime of exactly bits bits for which 65537 is coprime with p-1, and with
+// p = 3 mod 4 when threeMod4 is set.
+func (v *vectorRand) prime(bits int, threeMod4 bool) *big.Int {
+	lo := new(big.Int).Lsh(big.NewInt(1), uint(bits-1))
+	hi := new(big.Int).Lsh(big.NewInt(1), uint(bits))
+	return v.primeBetween(lo, hi.Sub(hi, big.NewInt(1)), threeMod4)
+}
+
+// primeBetween returns a prime from lo to hi for which 65537 is coprime with p-1, and with
+// p = 3 mod 4 when threeMod4 is set.
+func (v *vectorRand) primeBetween(lo, hi *big.Int, threeMod4 bool) *big.Int {
+	one := big.NewInt(1)
+	span := new(big.Int).Sub(hi, lo)
+	for {
+		p := new(big.Int).Add(lo, v.below(span))
+		p.SetBit(p, 0, 1)
+		if threeMod4 {
+			p.SetBit(p, 1, 1)
+		}
+		gcd := new(big.Int).GCD(nil, nil, big.NewInt(65537), new(big.Int).Sub(p, one))
+		if p.Cmp(hi) <= 0 && gcd.Cmp(one) == 0 && p.ProbablyPrime(32) {
+			return p
+		}
+	}
+}
+
+// weierstrass is a short Weierstrass curve y^2 = x^3 + ax + b over the field of p, with base point
+// (gx, gy) of order n, enough to sign deterministically with a curve crypto/ecdsa does not offer.
+type weierstrass struct {
+	// p is the field prime.
+	p *big.Int
+	// a is the curve's linear coefficient.
+	a *big.Int
+	// n is the order of the base point.
+	n *big.Int
+	// gx and gy are the base point's coordinates.
+	gx, gy *big.Int
+	// size is the length of a coordinate in octets.
+	size int
+}
+
+// add returns the sum of two affine points, with nil as the point at infinity.
+func (c *weierstrass) add(x1, y1, x2, y2 *big.Int) (*big.Int, *big.Int) {
+	if x1 == nil {
+		return x2, y2
+	}
+	if x2 == nil {
+		return x1, y1
+	}
+	var l *big.Int
+	if x1.Cmp(x2) == 0 {
+		if new(big.Int).Mod(new(big.Int).Add(y1, y2), c.p).Sign() == 0 {
+			return nil, nil
+		}
+		num := new(big.Int).Add(new(big.Int).Mul(big.NewInt(3), new(big.Int).Mul(x1, x1)), c.a)
+		den := new(big.Int).ModInverse(new(big.Int).Mul(big.NewInt(2), y1), c.p)
+		l = new(big.Int).Mul(num, den)
+	} else {
+		den := new(big.Int).ModInverse(new(big.Int).Mod(new(big.Int).Sub(x2, x1), c.p), c.p)
+		l = new(big.Int).Mul(new(big.Int).Sub(y2, y1), den)
+	}
+	l.Mod(l, c.p)
+	x3 := new(big.Int).Sub(new(big.Int).Sub(new(big.Int).Mul(l, l), x1), x2)
+	x3.Mod(x3, c.p)
+	y3 := new(big.Int).Sub(new(big.Int).Mul(l, new(big.Int).Sub(x1, x3)), y1)
+	y3.Mod(y3, c.p)
+	return x3, y3
+}
+
+// mul returns k times the base point.
+func (c *weierstrass) mul(k *big.Int) (*big.Int, *big.Int) {
+	var rx, ry *big.Int
+	ax, ay := c.gx, c.gy
+	for i := 0; i < k.BitLen(); i++ {
+		if k.Bit(i) == 1 {
+			rx, ry = c.add(rx, ry, ax, ay)
+		}
+		ax, ay = c.add(ax, ay, ax, ay)
+	}
+	return rx, ry
+}
+
+// sign returns a DER ECDSA signature over digest with private scalar d, its nonce derived from
+// d and digest so that the vectors are the same on every run.
+func (c *weierstrass) sign(d *big.Int, digest []byte) []byte {
+	e := new(big.Int).SetBytes(digest)
+	seed := sha512.Sum512(append(d.Bytes(), digest...))
+	k := new(big.Int).Mod(new(big.Int).SetBytes(seed[:]), new(big.Int).Sub(c.n, big.NewInt(1)))
+	k.Add(k, big.NewInt(1))
+	rx, _ := c.mul(k)
+	r := new(big.Int).Mod(rx, c.n)
+	s := new(big.Int).Mul(r, d)
+	s.Add(s, e)
+	s.Mul(s, new(big.Int).ModInverse(k, c.n))
+	s.Mod(s, c.n)
+	return mustMarshal(struct{ R, S *big.Int }{r, s})
+}
+
+// hexInt reads a hexadecimal constant.
+func hexInt(h string) *big.Int {
+	v, ok := new(big.Int).SetString(h, 16)
+	if !ok {
+		panic(h)
+	}
+	return v
+}
+
+// ecTokenSigner is an ECDSA authority with a fixed scalar, signing ecdsa-with-SHA256 with a
+// deterministic nonce. The P-256 form writes its key as a compressed point, and the secp256k1 form
+// is a key on that curve; each signature is valid, so only the key form or the curve refuses it.
+func ecTokenSigner(compressed, otherCurve bool) *tokenSigner {
+	c := &weierstrass{
+		p:    hexInt("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff"),
+		a:    big.NewInt(-3),
+		n:    hexInt("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"),
+		gx:   hexInt("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"),
+		gy:   hexInt("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"),
+		size: 32,
+	}
+	curve := asn1.ObjectIdentifier{1, 2, 840, 10045, 3, 1, 7}
+	if otherCurve {
+		c = &weierstrass{
+			p:    hexInt("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"),
+			a:    big.NewInt(0),
+			n:    hexInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"),
+			gx:   hexInt("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
+			gy:   hexInt("483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"),
+			size: 32,
+		}
+		curve = asn1.ObjectIdentifier{1, 3, 132, 0, 10}
+	}
+	scalar := sha256.Sum256([]byte("LoomSeal conformance vector ECDSA authority"))
+	d := new(big.Int).Mod(new(big.Int).SetBytes(scalar[:]), c.n)
+	x, y := c.mul(d)
+	point := append(append([]byte{4}, x.FillBytes(make([]byte, c.size))...),
+		y.FillBytes(make([]byte, c.size))...)
+	if compressed {
+		point = append([]byte{byte(2 + y.Bit(0))}, point[1:1+c.size]...)
+	}
+	return &tokenSigner{
+		spki: func() *derNode {
+			return derSeq(0x30, derSeq(0x30, derOID(oidECPublicKey), derOID(curve)),
+				&derNode{tag: 0x03, val: append([]byte{0}, point...)})
+		},
+		sigAlg: asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2},
+		sign: func(signed []byte) []byte {
+			sum := sha256.Sum256(signed)
+			return c.sign(d, sum[:])
+		},
+	}
+}
+
+// tokenTree is a minted token as a tree of named nodes, so a vector can change one element.
+type tokenTree struct {
+	// n holds the token's named nodes.
+	n map[string]*derNode
+	// signer signs the signed attributes.
+	signer *tokenSigner
+	// trailing is appended after the ContentInfo.
+	trailing []byte
+	// shortSignature drops the signature's leading octet, choosing a TSTInfo serial that makes it
+	// zero.
+	shortSignature bool
+	// signatureSuffix is appended to the signature.
+	signatureSuffix []byte
+	// rewriteSignature, when set, replaces the signature with what it returns.
+	rewriteSignature func(sig []byte) []byte
+}
+
+// newTokenTree builds a token over link: a TSTInfo with genTime 20260727150100Z, an authority
+// certificate valid through 2026 and marked for timestamping, and one signer info naming it by
+// issuer and serial.
+//
+//nolint:funlen // The whole token, element by element, so a vector can name any of them.
+func newTokenTree(signer *tokenSigner, link string) *tokenTree {
+	t := &tokenTree{n: map[string]*derNode{}, signer: signer}
+	n := t.n
+	imprint := sha256Imprint(link)
+	n["tstVersion"] = derInt(1)
+	n["policy"] = derOID(oidTSAPolicy)
+	n["imprint"] = derSeq(0x30, derSeq(0x30, derOID(oidSHA256)),
+		&derNode{tag: 0x04, val: imprint.Digest})
+	n["tstSerial"] = derInt(42)
+	n["genTime"] = &derNode{tag: 0x18, val: []byte("20260727150100Z")}
+	n["tst"] = derSeq(0x30, n["tstVersion"], n["policy"], n["imprint"], n["tstSerial"],
+		n["genTime"])
+	tst := n["tst"]
+	n["eContent"] = &derNode{tag: 0x04, fill: tst.encode}
+
+	n["spki"] = signer.spki()
+	n["spkiAlg"], n["spkiKey"] = n["spki"].kids[0], n["spki"].kids[1]
+	name := derSeq(0x30, derSeq(0x31, derSeq(0x30, derOID(asn1.ObjectIdentifier{2, 5, 4, 3}),
+		&derNode{tag: 0x0c, val: []byte(vectorAuthority)})))
+	n["notBefore"] = &derNode{tag: 0x17, val: []byte("260101000000Z")}
+	n["notAfter"] = &derNode{tag: 0x17, val: []byte("270101000000Z")}
+	n["ekuCritical"] = &derNode{tag: 0x01, val: []byte{0xff}}
+	n["eku"] = derSeq(0x30, derOID(asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 8}))
+	eku := n["eku"]
+	n["ekuExt"] = derSeq(0x30, derOID(asn1.ObjectIdentifier{2, 5, 29, 37}), n["ekuCritical"],
+		&derNode{tag: 0x04, fill: eku.encode})
+	n["ski"] = &derNode{tag: 0x04, val: tokenSKI}
+	ski := n["ski"]
+	n["skiValue"] = &derNode{tag: 0x04, fill: ski.encode}
+	n["exts"] = derSeq(0x30, n["ekuExt"], derSeq(0x30, derOID(asn1.ObjectIdentifier{2, 5, 29, 14}),
+		n["skiValue"]))
+	n["issuer"] = name
+	n["certSerial"] = derInt(7)
+	n["certVersion"] = derSeq(0xa0, derInt(2))
+	n["extsWrap"] = derSeq(0xa3, n["exts"])
+	n["tbs"] = derSeq(0x30, n["certVersion"], n["certSerial"],
+		derSeq(0x30, derOID(oidEd25519)), name, derSeq(0x30, n["notBefore"], n["notAfter"]),
+		name, n["spki"], n["extsWrap"])
+	certKey := ed25519.NewKeyFromSeed(bytesRepeat(29))
+	tbs := n["tbs"]
+	n["cert"] = derSeq(0x30, tbs, derSeq(0x30, derOID(oidEd25519)), &derNode{tag: 0x03,
+		fill: func() []byte { return append([]byte{0}, ed25519.Sign(certKey, tbs.encode())...) }})
+	cert := n["cert"]
+
+	eContent := n["eContent"]
+	n["md"] = &derNode{tag: 0x04, fill: func() []byte {
+		sum := sha256.Sum256(eContent.fill())
+		return sum[:]
+	}}
+	n["mdValues"] = derSeq(0x31, n["md"])
+	n["attrs"] = derSeq(0xa0,
+		derSeq(0x30, derOID(oidContentType), derSeq(0x31, derOID(oidTSTInfo))),
+		derSeq(0x30, derOID(oidMessageDigest), n["mdValues"]))
+	n["sid"] = derSeq(0x30,
+		&derNode{header: func(byte, []byte) []byte { return n["issuer"].encode() }},
+		&derNode{header: func(byte, []byte) []byte { return n["certSerial"].encode() }})
+	n["sigAlgOID"] = derOID(signer.sigAlg)
+	n["sig"] = &derNode{tag: 0x04}
+	n["siDigest"] = derSeq(0x30, derOID(oidSHA256))
+	n["si"] = derSeq(0x30, derInt(1), n["sid"], n["siDigest"], n["attrs"],
+		derSeq(0x30, n["sigAlgOID"]), n["sig"])
+	n["signerInfos"] = derSeq(0x31, n["si"])
+	n["eContentType"] = derOID(oidTSTInfo)
+	n["certs"] = derSeq(0xa0, cert)
+	n["signedData"] = derSeq(0x30, derInt(3), derSeq(0x31, derSeq(0x30, derOID(oidSHA256))),
+		derSeq(0x30, n["eContentType"], derSeq(0xa0, eContent)), n["certs"], n["signerInfos"])
+	n["ciWrap"] = derSeq(0xa0, n["signedData"])
+	n["contentType"] = derOID(oidSignedData)
+	n["ci"] = derSeq(0x30, n["contentType"], n["ciWrap"])
+	return t
+}
+
+// encode signs the token as its tree now stands and returns it base64 encoded. The signature
+// covers the signed attributes as encoded, with their [0] identifier rewritten as a SET.
+func (t *tokenTree) encode() string {
+	sign := func() []byte {
+		attrs := t.n["attrs"].encode()
+		return t.signer.sign(append([]byte{0x31}, attrs[1:]...))
+	}
+	sig := sign()
+	for serial := int64(43); sig == nil; serial++ {
+		t.n["tstSerial"].val = mustMarshal(serial)[2:]
+		sig = sign()
+	}
+	t.n["sig"].val = sig
+	for serial := int64(43); t.shortSignature; serial++ {
+		t.n["tstSerial"].val = mustMarshal(serial)[2:]
+		if sig := sign(); sig[0] == 0 {
+			t.n["sig"].val = sig[1:]
+			break
+		}
+	}
+	t.n["sig"].val = append(t.n["sig"].val, t.signatureSuffix...)
+	if t.rewriteSignature != nil {
+		t.n["sig"].val = t.rewriteSignature(t.n["sig"].val)
+	}
+	return base64.StdEncoding.EncodeToString(append(t.n["ci"].encode(), t.trailing...))
+}
+
+// tokenVector adds a signed one-claim chain-v1 bundle whose claim is at claimAt and whose one
+// rfc3161 anchor carries the token mint returns for the head link. A bundle that must verify is
+// expected at the proof-verified anchored level, and one that must not is expected to fail the
+// anchor check.
+func (s *state) tokenVector(name, claimAt string, ok bool, why string, mint func(string) string) {
+	m := s.v1(1, false)
+	m["claims"].([]any)[0].(map[string]any)["at"] = claimAt
+	s.relinkV1(m, false)
+	link := m["chain"].(map[string]any)["head"].(map[string]any)["link"].(string)
+	m["anchors"] = []any{map[string]any{
+		"type": "rfc3161", "seq": int64(1), "link": link, "at": "2026-07-27T15:01:00Z",
+		"ref": "https://tsa.example/tsr", "proof": mint(link),
+	}}
+	if ok {
+		s.add(name, true, "signed, chained (full), anchored (proof verified)", "", why, s.sign(m))
+		return
+	}
+	s.add(name, false, "", "anchor", why, s.sign(m))
+}
+
+// OIDs the minted timestamp tokens carry.
+var (
+	oidSignedData    = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
+	oidTSTInfo       = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 1, 4}
+	oidContentType   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
+	oidMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
+	oidSHA256        = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
+	oidSHA384        = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
+	oidEd25519       = asn1.ObjectIdentifier{1, 3, 101, 112}
+	oidTSAPolicy     = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 99999, 1}
+	oidRSAEncryption = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
+	oidECPublicKey   = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
+)
+
+// tsaAlgorithm is an AlgorithmIdentifier with no parameters.
+type tsaAlgorithm struct {
+	// Algorithm is the algorithm's OID.
+	Algorithm asn1.ObjectIdentifier
+}
+
+// tsaImprint is the hash a token attests to.
+type tsaImprint struct {
+	// Algorithm is the hash function.
+	Algorithm tsaAlgorithm
+	// Digest is the hash of the anchored link's raw bytes.
+	Digest []byte
+}
+
+// tstInfoDER encodes the TSTInfo an authority signs: version 1, a fixed policy, imprint, serial
+// number 42, and genTime written as given, followed by trailing, which are already DER encoded.
+func tstInfoDER(imprint tsaImprint, genTime asn1.RawValue, trailing ...[]byte) []byte {
+	elems := append([][]byte{
+		mustMarshal(1), mustMarshal(oidTSAPolicy), mustMarshal(imprint),
+		mustMarshal(big.NewInt(42)), mustMarshal(genTime),
+	}, trailing...)
+	return mustMarshal(asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagSequence,
+		IsCompound: true, Bytes: bytes.Join(elems, nil)})
+}
+
+// sha256Imprint is the SHA-256 message imprint of link's raw bytes.
+func sha256Imprint(link string) tsaImprint {
+	raw, err := hex.DecodeString(link)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(raw)
+	return tsaImprint{Algorithm: tsaAlgorithm{oidSHA256}, Digest: sum[:]}
+}
+
+// generalizedTime wraps text as a universal GeneralizedTime value.
+func generalizedTime(text string) asn1.RawValue {
+	return asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagGeneralizedTime,
+		Bytes: []byte(text)}
+}
+
+// tsaAttribute is one signed attribute.
+type tsaAttribute struct {
+	// Type names the attribute.
+	Type asn1.ObjectIdentifier
+	// Values is the SET holding its one value.
+	Values asn1.RawValue
+}
+
+// tsaIssuerSerial names the signer certificate by its issuer and serial.
+type tsaIssuerSerial struct {
+	// Issuer is the certificate's raw issuer name.
+	Issuer asn1.RawValue
+	// Serial is the certificate's serial number.
+	Serial *big.Int
+}
+
+// tsaSignerInfo is the authority's one signature over the TSTInfo.
+type tsaSignerInfo struct {
+	// Version is the structure version.
+	Version int
+	// SID names the signer certificate.
+	SID tsaIssuerSerial
+	// DigestAlgorithm is the hash over the TSTInfo the signed attributes commit to.
+	DigestAlgorithm tsaAlgorithm
+	// SignedAttrs are the signed attributes under their implicit [0] tag.
+	SignedAttrs asn1.RawValue
+	// SignatureAlgorithm is the signature scheme.
+	SignatureAlgorithm tsaAlgorithm
+	// Signature is the ed25519 signature over the signed attributes as a SET.
+	Signature []byte
+}
+
+// tsaEncap wraps the DER TSTInfo.
+type tsaEncap struct {
+	// Type names the payload, TSTInfo.
+	Type asn1.ObjectIdentifier
+	// Content is the TSTInfo in an OCTET STRING under an explicit [0] tag.
+	Content asn1.RawValue
+}
+
+// tsaSignedData is the CMS SignedData a token carries.
+type tsaSignedData struct {
+	// Version is the structure version.
+	Version int
+	// DigestAlgorithms is the SET of digests used.
+	DigestAlgorithms asn1.RawValue
+	// Encap holds the TSTInfo.
+	Encap tsaEncap
+	// Certificates carries the authority certificate under an implicit [0] tag.
+	Certificates asn1.RawValue
+	// SignerInfos is the SET holding the one signer.
+	SignerInfos asn1.RawValue
+}
+
+// tsaContentInfo is the outer CMS wrapper.
+type tsaContentInfo struct {
+	// Type names the content, SignedData.
+	Type asn1.ObjectIdentifier
+	// Content is the SignedData under an explicit [0] tag.
+	Content asn1.RawValue
+}
+
+// timestampToken mints an RFC 3161 token, base64 encoded, that signs info, a DER TSTInfo. A fixed
+// ed25519 authority key signs it, holding a certificate valid from the start of 2026 to notAfter
+// and marked for timestamping, so the bytes are the same on every run.
+func timestampToken(info []byte, notAfter time.Time) string {
+	priv := ed25519.NewKeyFromSeed(bytesRepeat(23))
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(7),
+		Subject:      pkix.Name{CommonName: vectorAuthority},
+		NotBefore:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:     notAfter,
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageTimeStamping},
+	}
+	certDER, err := x509.CreateCertificate(nil, tmpl, tmpl, priv.Public(), priv)
+	if err != nil {
+		panic(err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		panic(err)
+	}
+	infoDigest := sha256.Sum256(info)
+	attrs := mustMarshal(derSet(
+		mustMarshal(tsaAttribute{Type: oidContentType,
+			Values: derSet(mustMarshal(oidTSTInfo))}),
+		mustMarshal(tsaAttribute{Type: oidMessageDigest,
+			Values: derSet(mustMarshal(infoDigest[:]))}),
+	))
+	sid := tsaIssuerSerial{
+		Issuer: asn1.RawValue{FullBytes: cert.RawIssuer}, Serial: cert.SerialNumber,
+	}
+	signer := mustMarshal(tsaSignerInfo{
+		Version:            1,
+		SID:                sid,
+		DigestAlgorithm:    tsaAlgorithm{oidSHA256},
+		SignedAttrs:        asn1.RawValue{FullBytes: append([]byte{0xA0}, attrs[1:]...)},
+		SignatureAlgorithm: tsaAlgorithm{oidEd25519},
+		Signature:          ed25519.Sign(priv, attrs),
+	})
+	signed := mustMarshal(tsaSignedData{
+		Version:          3,
+		DigestAlgorithms: derSet(mustMarshal(tsaAlgorithm{oidSHA256})),
+		Encap: tsaEncap{Type: oidTSTInfo, Content: asn1.RawValue{
+			Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: mustMarshal(info)}},
+		Certificates: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true,
+			Bytes: certDER},
+		SignerInfos: derSet(signer),
+	})
+	token := mustMarshal(tsaContentInfo{Type: oidSignedData, Content: asn1.RawValue{
+		Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: signed}})
+	return base64.StdEncoding.EncodeToString(token)
+}
+
+// derSet wraps already encoded elements, given in DER order, as an ASN.1 SET.
+func derSet(elems ...[]byte) asn1.RawValue {
+	return asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagSet, IsCompound: true,
+		Bytes: bytes.Join(elems, nil)}
+}
+
+// mustMarshal DER encodes v, panicking on a value the encoder cannot hold.
+func mustMarshal(v any) []byte {
+	out, err := asn1.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
+
 // switchTenderNanos builds the shipped SwitchTender chain with a sub-microsecond claim time.
 func (s *state) switchTenderNanos() map[string]any {
 	m := s.base()
@@ -2531,6 +4959,18 @@ func (s *state) expectSpan(name, coverage, longest string, gaps ...string) {
 	panic("expectSpan: no vector named " + name)
 }
 
+// expectAttested records the line a verifier must report for each timestamp token it verifies in
+// a vector that must verify, so every verifier names a token's signer by one rule.
+func (s *state) expectAttested(name string, lines ...string) {
+	for i := range s.man.Vectors {
+		if s.man.Vectors[i].Name == name {
+			s.man.Vectors[i].AnchorAttestations = lines
+			return
+		}
+	}
+	panic("expectAttested: no vector named " + name)
+}
+
 // write emits the manifest, with vectors sorted by name for a stable diff.
 func (s *state) write() error {
 	sort.Slice(s.man.Vectors, func(i, j int) bool {
@@ -2668,6 +5108,14 @@ func (s *state) presentations() {
 		name: "present-created-at-comma-fraction", createdAt: "2026-07-27T15:00:00,5Z",
 		why: "A presentation whose created_at has a comma before its fractional second is " +
 			"refused, because the time is not RFC 3339.",
+	}, {
+		name: "present-created-at-offset", createdAt: "2026-07-27T15:00:00+00:00",
+		why: "A presentation whose created_at carries a numeric offset, even +00:00, is refused, " +
+			"because a time ends in Z.",
+	}, {
+		name: "present-created-at-lowercase-z", createdAt: "2026-07-27T15:00:00z",
+		why: "A presentation whose created_at ends in a lower case z is refused, because the " +
+			"time ends in an upper case Z.",
 	}} {
 		pres, err := seal.Present(inner, hpriv, "acme-verifier", "chal-1", c.createdAt)
 		if err != nil {

@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/jcs"
@@ -191,7 +190,7 @@ func checkSwitchTender(raw []byte, b *bundle.Bundle) error {
 		// The time is validated but hashed verbatim, exactly as it appears in the bundle. The claim
 		// member at carries a single value, which the bundle parser's exact-member check guarantees,
 		// so the struct field is the stored byte string.
-		if _, err := time.Parse(time.RFC3339, claim.At); err != nil {
+		if _, err := bundle.ParseTime(claim.At); err != nil {
 			return fmt.Errorf("%w: claim %d at: %w", ErrClaim, i, err)
 		}
 		// Held as a map because the link commits to the canonical JSON object of the entry's

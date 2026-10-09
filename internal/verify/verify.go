@@ -543,7 +543,7 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 	for _, c := range b.Claims {
 		if c.Chain != nil {
 			verified[c.Chain.Seq] = c.Chain.Link
-			if at, err := time.Parse(time.RFC3339, c.At); err == nil {
+			if at, err := bundle.ParseTime(c.At); err == nil {
 				claimAt[c.Chain.Seq] = at
 			}
 		}
@@ -638,7 +638,7 @@ func (r *Report) measureAttestationAge(b *bundle.Bundle, newest time.Time) {
 	if newest.IsZero() {
 		return
 	}
-	created, err := time.Parse(time.RFC3339, b.CreatedAt)
+	created, err := bundle.ParseTime(b.CreatedAt)
 	if err != nil {
 		return
 	}
@@ -667,7 +667,7 @@ func (r *Report) measureUnanchored(b *bundle.Bundle, verified map[int64]string) 
 		if c.Chain == nil {
 			continue
 		}
-		at, err := time.Parse(time.RFC3339, c.At)
+		at, err := bundle.ParseTime(c.At)
 		if err != nil {
 			continue
 		}

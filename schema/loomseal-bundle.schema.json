@@ -63,8 +63,10 @@
   },
   "$defs": {
     "time": {
+      "description": "The one time form the format allows: RFC 3339 date-time narrowed to UTC, with an upper case T and Z, an optional fraction of one or more digits, and a year from 0001 to 9999. FORMAT.md also requires every field in range and refuses a leap second.",
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
     },
     "digest": {
       "type": "string",

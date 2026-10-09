@@ -580,9 +580,8 @@ func stringValue(v element) (string, bool) {
 
 // escapeRDNValue escapes an attribute's text as RFC 4514 requires: a backslash before each of
 // the characters " + , ; < > and backslash, before a # or a space that starts the text, and before
-// a space that ends it. Every character below U+0020 or from U+007F to U+009F is written as a
-// backslash and two lower case hexadecimal digits for each octet of its UTF-8 encoding, so a name
-// cannot act on the terminal that prints it.
+// a space that ends it. Every character hexEscaped names is written as a backslash and two lower
+// case hexadecimal digits for each octet of its UTF-8 encoding.
 func escapeRDNValue(text string) string {
 	var b strings.Builder
 	for i, r := range text {
@@ -591,7 +590,7 @@ func escapeRDNValue(text string) string {
 			r == ' ' && (i == 0 || i+1 == len(text)):
 			b.WriteByte('\\')
 			b.WriteRune(r)
-		case r < 0x20 || r >= 0x7f && r <= 0x9f:
+		case hexEscaped(r):
 			for _, o := range []byte(string(r)) {
 				fmt.Fprintf(&b, "\\%02x", o)
 			}
@@ -600,4 +599,21 @@ func escapeRDNValue(text string) string {
 		}
 	}
 	return b.String()
+}
+
+// hexEscaped reports whether a signer name writes r in hexadecimal rather than as itself. The
+// controls below U+0020 and from U+007F to U+009F could act on the terminal that prints the name.
+// The bidirectional embeddings and overrides from U+202A to U+202E, the isolates from U+2066 to
+// U+2069, the marks U+200E, U+200F and U+061C, and the separators U+2028 and U+2029 could reorder
+// or break how the line naming the signer displays.
+func hexEscaped(r rune) bool {
+	switch {
+	case r < 0x20, r >= 0x7f && r <= 0x9f:
+		return true
+	case r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
+		return true
+	case r == 0x200e, r == 0x200f, r == 0x061c, r == 0x2028, r == 0x2029:
+		return true
+	}
+	return false
 }

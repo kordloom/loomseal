@@ -31,7 +31,23 @@ await new Promise((r) => setTimeout(r, 200));
 
 // render.js attaches LoomSeal to globalThis when no window is present, which is the Node case.
 (0, eval)(fs.readFileSync(path.join(root, "site/public/verify/render.js"), "utf8"));
-const { verifyBytes } = globalThis.LoomSeal;
+const { verifyBytes, reportLines } = globalThis.LoomSeal;
+
+// unopenedNote is the page's note naming carried proofs of a type the verifier cannot open, after
+// its count, in the command line's words.
+const unopenedNote = "carried proof(s) are of a type this verifier cannot open offline, " +
+  "so they were counted and not checked";
+
+// declaredHeadNote is the page's note naming proofs on anchors that match only the unverified
+// declared head, after its count, in the command line's words.
+const declaredHeadNote = "proof(s) sit on the unverified declared head and were not checked; " +
+  "they earn no anchored level";
+
+// countNotes pairs each proof count a vector can pin with the note the page names it in.
+const countNotes = [
+  ["anchor_proofs_unopened", unopenedNote],
+  ["anchor_proofs_on_declared_head", declaredHeadNote],
+];
 
 // readBytes reads a file exactly as the page does, as raw bytes rather than text, so nothing is
 // re-encoded on the way in.
@@ -113,6 +129,29 @@ for (const v of manifest.vectors) {
       problems.push(`anchor_attestations got[${attested}] want[${wantAttested}]`);
     }
   }
+  // A proof is counted as one the verifier cannot open by its type alone, so a token it opened is
+  // never counted there, whether it held or failed, and a proof on an anchor matching only the
+  // unverified declared head is counted on that head whatever its type. Each count is held on
+  // every vector that pins it, and at zero on a vector that must verify and pins none, here as on
+  // the command line. The page names each count in a note, so the note it renders is held to the
+  // same number.
+  for (const [key, note] of countNotes) {
+    if (!Object.prototype.hasOwnProperty.call(v, key) && !v.must_verify) {
+      continue;
+    }
+    const want = v[key] || 0;
+    const got = r[key] || 0;
+    if (got !== want) {
+      problems.push(`${key} got[${got}] want[${want}]`);
+    }
+    const notes = reportLines(r)
+      .filter((row) => row[0] === "note" && row[1].includes(note))
+      .map((row) => row[1]);
+    const wantNotes = want ? [`${want} ${note}`] : [];
+    if (notes.join("|") !== wantNotes.join("|")) {
+      problems.push(`${key} note got[${notes.join("|")}] want[${wantNotes.join("|")}]`);
+    }
+  }
   if (problems.length) {
     bad++;
     console.log(`!! ${v.name.padEnd(30)} ${problems.join("  ")}`);
@@ -141,12 +180,45 @@ refusesPin("uppercase pin", verifyFile(example, "SHA256:" + "00".repeat(32)));
 refusesPin("bare hex pin", verifyFile(example, "00".repeat(32)));
 refusesPin("explicit empty pin", JSON.parse(loomsealVerify(readBytes(example), "")));
 
+// presentationCheckError returns why a presentation report does not fail first at the check the
+// manifest names, or "" if it does, in the order FORMAT.md's "Presentations" section gives: the
+// presentation is read, the embedded bundle is verified, then the holder signature, the audience,
+// and the nonce. Each problem is named by its check, as the command line and the reference name it.
+function presentationCheckError(check, r) {
+  const first = (r.problems || [])[0] || "";
+  const read = !r.bundle && !r.presentation_ok;
+  const bundleOK = !!(r.bundle && r.bundle.ok);
+  switch (check) {
+    case "parse":
+      return read && !r.unsupported && first.startsWith("parse: ") ? "" :
+        "parse case was not refused as it was read";
+    case "unsupported":
+      return read && r.unsupported && first.startsWith("unsupported") ? "" :
+        "unsupported case was not judged unsupported as it was read";
+    case "bundle":
+      return !r.unsupported && r.bundle && !r.bundle.ok ? "" :
+        "bundle case did not fail the embedded bundle";
+    case "presentation":
+      return bundleOK && !r.presentation_ok && first.startsWith("presentation: ") ? "" :
+        "presentation case did not fail first on the holder";
+    case "audience":
+      return bundleOK && r.presentation_ok && r.audience_match === false ? "" :
+        "audience case did not fail first on the audience";
+    case "nonce":
+      return bundleOK && r.presentation_ok && r.audience_match !== false &&
+        r.nonce_match === false ? "" : "nonce case did not fail first on the nonce";
+    default:
+      return `manifest names an unknown presentation failing_check ${check}`;
+  }
+}
+
 // The page verifies holder presentations through the same dispatcher, held to the presentation
-// vectors as the command line is, including the audience and nonce pins each vector declares.
-// Every report must come from the presentation entry point, or a vector that must not verify
-// would pass for the wrong reason. The one exception is a document nested past the depth bound:
-// nothing reads it far enough to find the presentation member, so the command line and the
-// reference refuse it at parse on the bundle path too, and the page must do the same.
+// vectors as the command line is, including the audience and nonce pins each vector declares and
+// the check each one fails first. The manifest pins which entry point the dispatcher sends each
+// document to: a presentation report must come from the presentation entry point, or a vector that
+// must not verify would pass for the wrong reason, and a document that is no JSON object carrying
+// a string presentation version is read as a bundle and refused at parse, as the command line and
+// the reference refuse it. The presentation entry point refuses that document at parse too.
 const pres = JSON.parse(
   fs.readFileSync(path.join(root, "testdata/vectors/presentations.json"), "utf8"),
 );
@@ -159,19 +231,33 @@ for (const v of pres.vectors) {
   if (empty) {
     const r = JSON.parse(loomsealVerifyPresentation(bytes, v.expect_audience, v.expect_nonce));
     refusesExpectation(v.name, empty, r);
+    if (v.failing_check !== "expectation") {
+      bad++;
+      console.log(`!! ${v.name.padEnd(30)} refused as an empty expectation, ` +
+        `want ${v.failing_check}`);
+    }
     continue;
   }
   const r = verifyBytes(bytes, {
     audience: v.expect_audience || "", nonce: v.expect_nonce || "",
   });
   const problems = [];
-  const pastBound = (r.problems || []).length === 1 &&
-    /^parse: .*nesting exceeds \d+ levels$/.test(r.problems[0]);
-  if (!Object.prototype.hasOwnProperty.call(r, "presentation_ok") && !pastBound) {
-    problems.push("routed to the bundle entry point");
+  const routed = !Object.prototype.hasOwnProperty.call(r, "presentation_ok");
+  let report = r;
+  if (routed !== !!v.routes_as_bundle) {
+    problems.push(`routed to the bundle entry point ${routed}`);
+  } else if (routed) {
+    if (r.ok || r.unsupported || r.signature_ok || r.level !== "not verified" ||
+      !((r.problems || [])[0] || "").startsWith("parse: ")) {
+      problems.push(`read as a bundle and not refused at parse: ${JSON.stringify(r.problems)}`);
+    }
+    report = JSON.parse(loomsealVerifyPresentation(bytes, v.expect_audience, v.expect_nonce));
   }
-  if (r.ok !== v.must_verify) {
-    problems.push(`ok=${r.ok} expect=${v.must_verify}`);
+  if (report.ok !== v.must_verify) {
+    problems.push(`ok=${report.ok} expect=${v.must_verify}`);
+  } else if (!v.must_verify) {
+    const why = presentationCheckError(v.failing_check, report);
+    if (why) problems.push(`${why}: ${JSON.stringify(report.problems)}`);
   }
   if (problems.length) {
     bad++;
@@ -198,6 +284,27 @@ function refusesExpectation(name, member, r) {
   if (r.ok || !refused || !shaped) {
     bad++;
     console.log(`!! ${name} was not refused as an empty expectation: ${JSON.stringify(r)}`);
+  }
+}
+
+// A name the producer wrote reaches the page in the command line's form: quoted by the compiled
+// verifier's own rule when a character in it does not print, so a control or bidi character can
+// neither act on the reader nor reorder the line, and unchanged otherwise.
+const named = globalThis.LoomSeal.reportLines({
+  ok: true, level: "signed", signature_ok: true, producer_pinned: true, disclosed_unchecked: 1,
+  disclosed: [
+    { claim: 1, member: "decision_body", state: "checked", detail: "" },
+    { claim: 1, member: "x\u001b[2J", state: "checked", detail: "" },
+    { claim: 2, member: "y\u202ez", state: "unchecked", detail: "not declared\nVERIFIED" },
+  ],
+}).map((row) => row[0] + "|" + row[1]);
+for (const want of [
+  'checked|decision_body 1, "x\\x1b[2J" 1',
+  'unchecked|claim 2 "y\\u202ez": "not declared\\nVERIFIED"',
+]) {
+  if (!named.includes(want)) {
+    bad++;
+    console.log(`!! name not shown in the command line's form: ${JSON.stringify(want)}`);
   }
 }
 

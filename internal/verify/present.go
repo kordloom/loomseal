@@ -3,6 +3,7 @@ package verify
 import (
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -74,6 +75,9 @@ type PresentationReport struct {
 	OK bool `json:"ok"`
 	// PresentationOK reports whether the holder signature verified over the presented bundle.
 	PresentationOK bool `json:"presentation_ok"`
+	// Unsupported reports that the presentation declares a version this verifier does not
+	// implement, so nothing in it was judged.
+	Unsupported bool `json:"unsupported,omitempty"`
 	// HolderKeyID is the holder key fingerprint computed from the embedded public key.
 	HolderKeyID string `json:"holder_key_id,omitempty"`
 	// Audience echoes who the presentation was addressed to.
@@ -109,9 +113,11 @@ var (
 	holderMembers = []string{"alg", "key_id", "public_key"}
 )
 
-// LooksLikePresentation reports whether raw is a presentation rather than a bundle, by the presence
-// of the presentation version member under its exact name. It lets one command accept either
-// document.
+// LooksLikePresentation reports whether raw is a presentation rather than a bundle: a JSON
+// document, read as a bundle is read, whose object carries the presentation version member under
+// its exact name with a string value, an empty one included. It lets one command accept either
+// document, and every document it routes to the presentation checks is one they read a version
+// from.
 func LooksLikePresentation(raw []byte) bool {
 	if bundle.CheckDepth(raw, bundle.MaxDepth) != nil {
 		return false
@@ -121,14 +127,17 @@ func LooksLikePresentation(raw []byte) bool {
 		return false
 	}
 	obj, _ := tree.(map[string]any)
-	version, _ := obj["loomseal_presentation"].(string)
-	return version != ""
+	_, ok := obj["loomseal_presentation"].(string)
+	return ok
 }
 
-// parsePresentation reads a presentation from its parsed canonical tree, every member by its exact
-// name. The presented bundle is carried forward as its canonical bytes, which are what the holder
-// signature covers and what the bundle's own signature is checked over.
-func parsePresentation(raw []byte) (Presentation, error) {
+// readPresentation reads a presentation in the order FORMAT.md's "Presentations" section gives, the
+// order a bundle is read in: the document as JSON within the nesting bound, then its version, then
+// the number profile, then every member by its exact name and type. A version other than 0.1 is
+// unsupported whatever else the document carries. The presented bundle is carried forward as its
+// canonical bytes, which are what the holder signature covers and what the bundle's own signature
+// is checked over.
+func readPresentation(raw []byte) (Presentation, error) {
 	if err := bundle.CheckDepth(raw, bundle.MaxDepth); err != nil {
 		return Presentation{}, err
 	}
@@ -139,6 +148,12 @@ func parsePresentation(raw []byte) (Presentation, error) {
 	obj, ok := tree.(map[string]any)
 	if !ok {
 		return Presentation{}, fmt.Errorf("a presentation is a JSON object")
+	}
+	if err := checkPresentationVersion(obj); err != nil {
+		return Presentation{}, err
+	}
+	if err := jcs.CheckNumbers(tree); err != nil {
+		return Presentation{}, err
 	}
 	if name, found := unknownMember(obj, presentationMembers); found {
 		return Presentation{}, fmt.Errorf("presentation carries an unknown member %q", name)
@@ -176,12 +191,35 @@ func parsePresentation(raw []byte) (Presentation, error) {
 		}
 		*f.into = text
 	}
-	if b, present := obj["bundle"]; present {
-		if p.Bundle, err = jcs.Serialize(b); err != nil {
-			return Presentation{}, fmt.Errorf("presentation bundle: %w", err)
-		}
+	b, present := obj["bundle"]
+	if !present {
+		return Presentation{}, fmt.Errorf("presentation carries no bundle member")
+	}
+	if p.Bundle, err = jcs.Serialize(b); err != nil {
+		return Presentation{}, fmt.Errorf("presentation bundle: %w", err)
 	}
 	return p, nil
+}
+
+// checkPresentationVersion reads the loomseal_presentation member of a parsed presentation, as the
+// bundle package reads a bundle's loomseal member. A document without it, or with a value that is
+// not a string, declares no presentation version and is refused at parse. A string other than
+// PresentationVersion is unsupported, and nothing else in the document is judged.
+func checkPresentationVersion(obj map[string]any) error {
+	v, present := obj["loomseal_presentation"]
+	if !present {
+		return fmt.Errorf("presentation carries no loomseal_presentation member, so it declares " +
+			"no format version")
+	}
+	version, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("presentation member loomseal_presentation is not a string")
+	}
+	if version != PresentationVersion {
+		return fmt.Errorf("%w: loomseal_presentation version %q, this verifier implements %q",
+			ErrUnsupportedPresentation, version, PresentationVersion)
+	}
+	return nil
 }
 
 // unknownMember returns the lowest-named member of obj outside allowed, so a refusal names the same
@@ -201,16 +239,20 @@ func unknownMember(obj map[string]any, allowed []string) (string, bool) {
 }
 
 // RunPresentation verifies raw as a presentation and always returns a report; a document that cannot
-// be parsed is a failed verification, not a crash.
+// be parsed is a failed verification, not a crash. The checks run in the order FORMAT.md gives:
+// the presentation is read, the embedded bundle is verified, then the holder signature, then each
+// expectation the caller supplied. Each problem is named by the check that found it, as the
+// reference verifier names it.
 func RunPresentation(raw []byte, opts PresentationOptions) *PresentationReport {
 	r := &PresentationReport{}
-	p, err := parsePresentation(raw)
+	p, err := readPresentation(raw)
 	if err != nil {
+		if errors.Is(err, ErrUnsupportedPresentation) {
+			r.Unsupported = true
+			r.problem("%v", err)
+			return r
+		}
 		r.problem("parse: %v", err)
-		return r
-	}
-	if p.Version != PresentationVersion {
-		r.problem("presentation version %q, want %q", p.Version, PresentationVersion)
 		return r
 	}
 	r.Audience, r.Nonce, r.CreatedAt = p.Audience, p.Nonce, p.CreatedAt
@@ -220,11 +262,8 @@ func RunPresentation(raw []byte, opts PresentationOptions) *PresentationReport {
 
 	// The holder signature binds the exact presented bundle, the verifier, the challenge, and the
 	// time, so a presentation cannot be replayed to another verifier or with a stale challenge.
-	bundleCanon, err := jcs.Canonicalize(p.Bundle)
-	if err != nil {
-		r.problem("canonicalize bundle: %v", err)
-	} else if err := r.checkHolderSignature(p, bundleCanon); err != nil {
-		r.problem("%v", err)
+	if err := r.checkHolderSignature(p); err != nil {
+		r.problem("presentation: %v", err)
 	}
 
 	if opts.Audience != "" {
@@ -248,8 +287,8 @@ func RunPresentation(raw []byte, opts PresentationOptions) *PresentationReport {
 }
 
 // checkHolderSignature verifies the holder key self-description and the signature over the canonical
-// binding.
-func (r *PresentationReport) checkHolderSignature(p Presentation, bundleCanon []byte) error {
+// binding. The presented bundle is already in canonical form, as readPresentation serialized it.
+func (r *PresentationReport) checkHolderSignature(p Presentation) error {
 	if p.Holder.Alg != "ed25519" {
 		return fmt.Errorf("holder alg %q, want ed25519", p.Holder.Alg)
 	}
@@ -262,13 +301,13 @@ func (r *PresentationReport) checkHolderSignature(p Presentation, bundleCanon []
 		return fmt.Errorf("holder key_id does not match the embedded public key")
 	}
 	if _, err := bundle.ParseTime(p.CreatedAt); err != nil {
-		return fmt.Errorf("presentation created_at: %v", err)
+		return fmt.Errorf("created_at: %v", err)
 	}
 	sig, err := bundle.DecodeBase64(p.Sig)
 	if err != nil {
 		return fmt.Errorf("holder signature is not base64: %v", err)
 	}
-	preimage, err := bundle.PresentationSigningInput(p.Audience, p.Nonce, p.CreatedAt, bundleCanon)
+	preimage, err := bundle.PresentationSigningInput(p.Audience, p.Nonce, p.CreatedAt, p.Bundle)
 	if err != nil {
 		return err
 	}

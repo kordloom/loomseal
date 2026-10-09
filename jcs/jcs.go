@@ -202,15 +202,62 @@ func writeInt(b *bytes.Buffer, n int64) error {
 // writeNumber serializes a parsed number literal. Only plain integer literals within the
 // profile bound are accepted; fractions and exponents are invalid in a bundle.
 func writeNumber(b *bytes.Buffer, n json.Number) error {
+	v, err := numberValue(n)
+	if err != nil {
+		return err
+	}
+	return writeInt(b, v)
+}
+
+// numberValue reads a parsed number literal as an integer, refusing a fraction, an exponent, and a
+// literal that does not fit 64 bits. The 2^53 bound is writeInt's and CheckNumbers'.
+func numberValue(n json.Number) (int64, error) {
 	s := string(n)
 	if strings.ContainsAny(s, ".eE") {
-		return fmt.Errorf("%w: non-integer literal %q", ErrNumber, s)
+		return 0, fmt.Errorf("%w: non-integer literal %q", ErrNumber, s)
 	}
 	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return fmt.Errorf("%w: integer literal %q does not fit 64 bits", ErrNumber, s)
+		return 0, fmt.Errorf("%w: integer literal %q does not fit 64 bits", ErrNumber, s)
 	}
-	return writeInt(b, v)
+	return v, nil
+}
+
+// CheckNumbers refuses the first number in a tree Parse returned that lies outside the profile: a
+// literal with a fraction or an exponent, or an integer of magnitude above 2^53. Serialize makes
+// the same check as it writes, and this lets a reader make it at the point its own rules fix,
+// before anything decodes the document. Object members are visited in sorted order, so the number
+// it names is the same on every run, and the walk keeps its own stack rather than recursing.
+func CheckNumbers(v any) error {
+	stack := []any{v}
+	for len(stack) > 0 {
+		v := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch t := v.(type) {
+		case json.Number:
+			n, err := numberValue(t)
+			if err != nil {
+				return err
+			}
+			if n > maxSafeInt || n < -maxSafeInt {
+				return fmt.Errorf("%w: integer %d exceeds 2^53", ErrNumber, n)
+			}
+		case []any:
+			for i := len(t) - 1; i >= 0; i-- {
+				stack = append(stack, t[i])
+			}
+		case map[string]any:
+			keys := make([]string, 0, len(t))
+			for k := range t {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for i := len(keys) - 1; i >= 0; i-- {
+				stack = append(stack, t[keys[i]])
+			}
+		}
+	}
+	return nil
 }
 
 // writeString serializes a string with RFC 8785 minimal escaping: shorthand escapes where

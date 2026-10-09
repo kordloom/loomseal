@@ -167,14 +167,25 @@
       "must_verify": false,
       "level": "not verified",
       "failing_check": "anchor",
-      "why": "An rfc3161 proof that does not open as a timestamp token fails the anchor check: a carried proof that is garbage must never grade the same as no proof."
+      "why": "An rfc3161 proof that does not open as a timestamp token fails the anchor check: a carried proof that is garbage must never grade the same as no proof.",
+      "anchor_proofs_unopened": 0
     },
     {
       "name": "anchor-declared-head-proof",
       "file": "anchor-declared-head-proof.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full)",
-      "why": "An rfc3161 proof on a declared head beyond the bundled claims is not opened and earns no anchored level, because the link it attests is tied to nothing the verifier confirmed."
+      "why": "An rfc3161 proof on a declared head beyond the bundled claims is not opened and earns no anchored level, because the link it attests is tied to nothing the verifier confirmed.",
+      "anchor_proofs_on_declared_head": 1
+    },
+    {
+      "name": "anchor-declared-head-proof-git-https-rekor",
+      "file": "anchor-declared-head-proof-git-https-rekor.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A git, an https, and a rekor anchor over a declared head beyond the bundled claims, each carrying a proof, earn no anchored level, and a verifier reports their proofs as on the declared head and none as of a type it cannot open.",
+      "anchor_proofs_unopened": 0,
+      "anchor_proofs_on_declared_head": 3
     },
     {
       "name": "anchor-der-critical-false-encoded",
@@ -409,6 +420,24 @@
       "level": "not verified",
       "failing_check": "anchor",
       "why": "A token whose TSTInfo policy ends inside a subidentifier fails the anchor check."
+    },
+    {
+      "name": "anchor-der-serial-21-octets",
+      "file": "anchor-der-serial-21-octets.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose TSTInfo serial number is 2^160-1, 21 octets with the zero octet DER writes before a high bit, verifies, because RFC 3161 has a verifier accept a serial of up to 160 bits.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-der-serial-22-octets",
+      "file": "anchor-der-serial-22-octets.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo serial number is 2^168-1, 22 octets, fails the anchor check, because a serial has at most the 21 octets a 160-bit value takes."
     },
     {
       "name": "anchor-der-sid-constructed",
@@ -1020,7 +1049,8 @@
       "must_verify": false,
       "level": "not verified",
       "failing_check": "anchor",
-      "why": "A token signed 300.1 seconds before the claim it covers predates the entry by more than the five-minute skew and fails the anchor check."
+      "why": "A token signed 300.1 seconds before the claim it covers predates the entry by more than the five-minute skew and fails the anchor check.",
+      "anchor_proofs_unopened": 0
     },
     {
       "name": "anchor-gen-time-offset",
@@ -1176,6 +1206,42 @@
       "level": "not verified",
       "failing_check": "parse",
       "why": "An anchor proof that is not base64 is refused at parse, never reported as anchored by reference."
+    },
+    {
+      "name": "anchor-proof-unopened",
+      "file": "anchor-proof-unopened.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference",
+      "why": "A git anchor carrying a proof verifies by reference, and a verifier reports that proof as one of a type it cannot open offline, carried and not checked.",
+      "anchor_proofs_unopened": 1
+    },
+    {
+      "name": "anchor-proof-unopened-before-failed",
+      "file": "anchor-proof-unopened-before-failed.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A bundle carrying a git anchor's proof and then a timestamp token whose signature has one bit changed fails the anchor check, and a verifier reports one proof of a type it cannot open, the git anchor's, and never counts the token it opened and saw fail.",
+      "anchor_proofs_unopened": 1
+    },
+    {
+      "name": "anchor-proof-unopened-beside-verified",
+      "file": "anchor-proof-unopened-beside-verified.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A bundle carrying a timestamp token that verifies and a git anchor's proof over the same link reports one proof of a type the verifier cannot open, and never counts the token it opened among them.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ],
+      "anchor_proofs_unopened": 1
+    },
+    {
+      "name": "anchor-proof-unopened-git-https-rekor",
+      "file": "anchor-proof-unopened-git-https-rekor.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference",
+      "why": "A git, an https, and a rekor anchor over the verified head, each carrying a proof, verify by reference, and a verifier reports all three proofs as of a type it cannot open offline.",
+      "anchor_proofs_unopened": 3
     },
     {
       "name": "anchor-rsa-bare-key-algorithm",
@@ -1415,7 +1481,8 @@
       "must_verify": false,
       "level": "not verified",
       "failing_check": "anchor",
-      "why": "A token whose Ed25519 signature has one bit changed fails the anchor check."
+      "why": "A token whose Ed25519 signature has one bit changed fails the anchor check.",
+      "anchor_proofs_unopened": 0
     },
     {
       "name": "anchor-signer-name-attribute-not-a-sequence",
@@ -1425,6 +1492,36 @@
       "why": "A token whose signer certificate's subject holds an attribute written as a SET rather than a SEQUENCE verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
       "anchor_attestations": [
         "2026-07-27T15:01:00Z by #300e310c310a06035504030c03545341"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-bidi-embedding",
+      "file": "anchor-signer-name-bidi-embedding.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer's common name carries each bidirectional embedding and override, U+202A to U+202E, verifies, and every verifier writes each in hexadecimal, so a subject cannot use them to reorder how the line naming its signer displays, and writes U+202F as itself.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=a\\e2\\80\\aab\\e2\\80\\abc\\e2\\80\\acd\\e2\\80\\ade\\e2\\80\\aef g"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-bidi-isolate",
+      "file": "anchor-signer-name-bidi-isolate.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer's common name carries each bidirectional isolate, U+2066 to U+2069, verifies, and every verifier writes each in hexadecimal and writes U+2065 and U+206A as themselves.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=⁥a\\e2\\81\\a6b\\e2\\81\\a7c\\e2\\81\\a8d\\e2\\81\\a9e⁪"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-bidi-mark",
+      "file": "anchor-signer-name-bidi-mark.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer's common name carries the bidirectional marks U+200E, U+200F and U+061C verifies, and every verifier writes each in hexadecimal and writes U+200D, U+2010, U+061B and U+061D as themselves.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=‍a\\e2\\80\\8eb\\e2\\80\\8fc‐d؛e\\d8\\9cf؝"
       ]
     },
     {
@@ -1445,6 +1542,16 @@
       "why": "A token whose signer certificate's subject holds an RDN with no attributes verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
       "anchor_attestations": [
         "2026-07-27T15:01:00Z by #30023100"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-line-separator",
+      "file": "anchor-signer-name-line-separator.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer's common name carries the line separator U+2028 and the paragraph separator U+2029 verifies, and every verifier writes each in hexadecimal, so a subject cannot break the line naming its signer, and writes U+2027 as itself.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=a‧b\\e2\\80\\a8c\\e2\\80\\a9d"
       ]
     },
     {
@@ -2207,6 +2314,14 @@
       "level": "not verified",
       "failing_check": "parse",
       "why": "An integer beyond 2^53 does not round-trip through an IEEE double and is rejected."
+    },
+    {
+      "name": "number-twenty-digits",
+      "file": "number-twenty-digits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An integer literal of twenty digits is outside the integer profile and is refused at parse, before any verifier converts it."
     },
     {
       "name": "params-null",
@@ -4193,6 +4308,22 @@
       "why": "A chain profile this verifier does not implement is refused as unsupported, a fail-closed verdict distinct from verification failure, so a legitimate newer bundle never reads as forged."
     },
     {
+      "name": "unknown-chain-profile-non-integer-number",
+      "file": "unknown-chain-profile-non-integer-number.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A version 0.1 bundle carrying a fractional number is refused at parse even beside a chain profile this verifier does not implement, because the number profile is fixed for the version and is held before the value rules that find the profile unknown."
+    },
+    {
+      "name": "unknown-chain-profile-unknown-member",
+      "file": "unknown-chain-profile-unknown-member.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A version 0.1 bundle whose claim carries a member the schema does not define is refused at parse even beside a chain profile this verifier does not implement, because every member's name is held before the value rules that find the profile unknown."
+    },
+    {
       "name": "unknown-claim-member",
       "file": "unknown-claim-member.loomseal.json",
       "must_verify": false,
@@ -4223,6 +4354,30 @@
       "why": "An astral character encodes as a surrogate pair and verifies."
     },
     {
+      "name": "version-missing",
+      "file": "version-missing.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A bundle with no loomseal member declares no format version and is refused at parse, not as unsupported: a later format is announced by another string in that member, so no newer verifier reads this document either."
+    },
+    {
+      "name": "version-missing-unknown-member",
+      "file": "version-missing-unknown-member.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A bundle with no loomseal member that also carries a member the schema does not define is refused at parse for the missing version, which a verifier reads before any member's name."
+    },
+    {
+      "name": "version-not-a-string",
+      "file": "version-not-a-string.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A loomseal member holding the number 1 rather than a string declares no format version and is refused at parse."
+    },
+    {
       "name": "window-open-no-prev",
       "file": "window-open-no-prev.loomseal.json",
       "must_verify": false,
@@ -4244,6 +4399,94 @@
       "level": "unsupported",
       "failing_check": "unsupported",
       "why": "A loomseal version this verifier does not implement is refused as unsupported without judging the signature. Fail closed, but never worded as a verification failure."
+    },
+    {
+      "name": "wrong-version-attestation-time",
+      "file": "wrong-version-attestation-time.loomseal.json",
+      "must_verify": false,
+      "level": "unsupported",
+      "failing_check": "unsupported",
+      "why": "A bundle declaring a version this verifier does not implement is unsupported although a head attestation carries a time in no form this format reads, because a later version may write times another way."
+    },
+    {
+      "name": "wrong-version-infinity",
+      "file": "wrong-version-infinity.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A bundle declaring a version this verifier does not implement is refused at parse, not judged unsupported, when it carries Infinity where a value belongs: that is not JSON, so no verifier reads its version."
+    },
+    {
+      "name": "wrong-version-long-integer",
+      "file": "wrong-version-long-integer.loomseal.json",
+      "must_verify": false,
+      "level": "unsupported",
+      "failing_check": "unsupported",
+      "why": "A bundle declaring a version this verifier does not implement is unsupported although it carries an integer of twenty digits, because a later version may widen the number profile."
+    },
+    {
+      "name": "wrong-version-nan",
+      "file": "wrong-version-nan.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A bundle declaring a version this verifier does not implement is refused at parse, not judged unsupported, when it carries NaN where a value belongs: that is not JSON, so no verifier reads its version."
+    },
+    {
+      "name": "wrong-version-negative-infinity",
+      "file": "wrong-version-negative-infinity.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A bundle declaring a version this verifier does not implement is refused at parse, not judged unsupported, when it carries -Infinity where a value belongs: that is not JSON, so no verifier reads its version."
+    },
+    {
+      "name": "wrong-version-non-ascii-digit",
+      "file": "wrong-version-non-ascii-digit.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A bundle declaring a version this verifier does not implement is refused at parse, not judged unsupported, when it carries 1 followed by the Arabic-Indic digit one where a value belongs: that is not JSON, so no verifier reads its version."
+    },
+    {
+      "name": "wrong-version-non-integer-number",
+      "file": "wrong-version-non-integer-number.loomseal.json",
+      "must_verify": false,
+      "level": "unsupported",
+      "failing_check": "unsupported",
+      "why": "A bundle declaring a version this verifier does not implement is unsupported although it carries a fractional number, because a later version may widen the number profile."
+    },
+    {
+      "name": "wrong-version-null-member",
+      "file": "wrong-version-null-member.loomseal.json",
+      "must_verify": false,
+      "level": "unsupported",
+      "failing_check": "unsupported",
+      "why": "A bundle declaring a version this verifier does not implement is unsupported although its anchors member is null, because the version is read before any member's value."
+    },
+    {
+      "name": "wrong-version-unknown-claim-member",
+      "file": "wrong-version-unknown-claim-member.loomseal.json",
+      "must_verify": false,
+      "level": "unsupported",
+      "failing_check": "unsupported",
+      "why": "A bundle declaring a version this verifier does not implement is unsupported although a claim carries a member the schema does not define, because the version is read before any member's name."
+    },
+    {
+      "name": "wrong-version-unknown-member",
+      "file": "wrong-version-unknown-member.loomseal.json",
+      "must_verify": false,
+      "level": "unsupported",
+      "failing_check": "unsupported",
+      "why": "A bundle declaring a version this verifier does not implement is unsupported although it also carries a member the schema does not define, because the version is read first and a later version may define new members."
+    },
+    {
+      "name": "wrong-version-wrong-type",
+      "file": "wrong-version-wrong-type.loomseal.json",
+      "must_verify": false,
+      "level": "unsupported",
+      "failing_check": "unsupported",
+      "why": "A bundle declaring a version this verifier does not implement is unsupported although its bundle_id is a number, because a later version may give a member another type."
     }
   ]
 }

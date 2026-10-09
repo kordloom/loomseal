@@ -107,6 +107,41 @@ func TestPresentationHolderKeyGuards(t *testing.T) {
 	}
 }
 
+// TestLooksLikePresentation pins the route a document takes from an entry point that accepts either
+// kind: a JSON object whose loomseal_presentation member is a string, an empty one included, is a
+// presentation, and anything else is read as a bundle.
+func TestLooksLikePresentation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		In         string
+		WantResult bool
+	}{{ // Test 0: A presentation version routes as a presentation.
+		In: `{"loomseal_presentation":"0.1"}`, WantResult: true,
+	}, { // Test 1: A later version routes as a presentation, which then judges it unsupported.
+		In: `{"loomseal_presentation":"0.2","x":1.5}`, WantResult: true,
+	}, { // Test 2: An empty version is a string and routes as a presentation.
+		In: `{"loomseal_presentation":""}`, WantResult: true,
+	}, { // Test 3: A version that is not a string declares none.
+		In: `{"loomseal_presentation":1}`, WantResult: false,
+	}, { // Test 4: A document with no presentation version is a bundle.
+		In: `{"loomseal":"0.1"}`, WantResult: false,
+	}, { // Test 5: NaN is not JSON, so no version is read.
+		In: `{"loomseal_presentation":"0.1","n":NaN}`, WantResult: false,
+	}, { // Test 6: A case variant of the member is a different member.
+		In: `{"Loomseal_presentation":"0.1"}`, WantResult: false,
+	}, { // Test 7: A JSON value that is not an object carries no member.
+		In: `["loomseal_presentation"]`, WantResult: false,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			if got := LooksLikePresentation([]byte(test.In)); got != test.WantResult {
+				t.Errorf("LooksLikePresentation(%s) = %t, want %t", test.In, got, test.WantResult)
+			}
+		})
+	}
+}
+
 // TestCheckExpectation pins that an expected audience or nonce supplied empty is refused. Empty
 // is what a shell sends for an unset variable, and read as no expectation it would skip the
 // comparison.

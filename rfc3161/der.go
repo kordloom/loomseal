@@ -180,6 +180,24 @@ func derVersion(e element, what string) error {
 	return nil
 }
 
+// maxSerialOctets is the most content octets a TSTInfo serial number may have. RFC 3161 has a
+// verifier accept a serial of up to 160 bits and sets no larger bound, and DER writes a positive
+// 160-bit value in 21 octets, a zero octet ahead of its 20 so the top bit does not read as the
+// sign. Without a bound a serial can be as long as the token, and writing one out in decimal takes
+// time that grows faster than its length.
+const maxSerialOctets = 21
+
+// derSerial checks a TSTInfo serial number: a DER INTEGER of at most maxSerialOctets octets.
+func derSerial(e element, what string) error {
+	if err := derInteger(e, what); err != nil {
+		return err
+	}
+	if len(e.content) > maxSerialOctets {
+		return fmt.Errorf("%w: %s: INTEGER longer than %d octets", ErrParse, what, maxSerialOctets)
+	}
+	return nil
+}
+
 // derBigInt reads an INTEGER's checked content as a signed value.
 func derBigInt(content []byte) *big.Int {
 	v := new(big.Int).SetBytes(content)

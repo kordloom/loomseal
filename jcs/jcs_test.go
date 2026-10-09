@@ -76,6 +76,44 @@ func TestCanonicalize(t *testing.T) {
 	}
 }
 
+// TestCheckNumbers pins the number profile CheckNumbers holds a parsed tree to: integer literals of
+// magnitude at most 2^53, wherever they sit, and nothing with a fraction or an exponent.
+func TestCheckNumbers(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		Want error
+		In   string
+	}{{ // Test 0: A tree of safe integers passes.
+		In: `{"a":[1,-9007199254740992,{"b":9007199254740992}],"c":"1.5"}`,
+	}, { // Test 1: A fraction deep inside an array is refused.
+		In: `{"a":[{"b":[0,1.5]}]}`, Want: ErrNumber,
+	}, { // Test 2: An exponent is refused.
+		In: `[1e3]`, Want: ErrNumber,
+	}, { // Test 3: An integer past 2^53 is refused.
+		In: `{"a":9007199254740993}`, Want: ErrNumber,
+	}, { // Test 4: An integer below -2^53 is refused.
+		In: `{"a":-9007199254740993}`, Want: ErrNumber,
+	}, { // Test 5: A literal past 64 bits is refused.
+		In: `{"a":18446744073709551616}`, Want: ErrNumber,
+	}, { // Test 6: A scalar is checked on its own.
+		In: `2.5`, Want: ErrNumber,
+	}, { // Test 7: Strings, booleans and null hold no number.
+		In: `{"a":"9007199254740993","b":true,"c":null}`,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			v, err := Parse([]byte(test.In))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if err := CheckNumbers(v); !errors.Is(err, test.Want) {
+				t.Errorf("error mismatch: got %v, want %v", err, test.Want)
+			}
+		})
+	}
+}
+
 func TestValidateStrings(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

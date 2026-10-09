@@ -28,6 +28,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"time"
 )
@@ -104,8 +105,9 @@ type Result struct {
 	Signer string
 	// Policy is the authority's stated timestamping policy.
 	Policy string
-	// SerialNumber identifies the token at the authority.
-	SerialNumber string
+	// SerialNumber identifies the token at the authority. It is the value as read, never written
+	// out in decimal here, and it has at most 21 octets, the bound maxSerialOctets states.
+	SerialNumber *big.Int
 }
 
 // token is what a verifier reads from a timestamp token before checking it.
@@ -220,7 +222,7 @@ func Verify(raw []byte, link string) (*Result, error) {
 		Time:         genTime,
 		Signer:       signer.subjectName(),
 		Policy:       oidString(tok.info.policy),
-		SerialNumber: derBigInt(tok.info.serial).String(),
+		SerialNumber: derBigInt(tok.info.serial),
 	}, nil
 }
 
@@ -480,7 +482,7 @@ func readTSTInfo(e element) (tstInfo, error) {
 	if err != nil {
 		return info, err
 	}
-	if err := derInteger(serial, "TSTInfo serialNumber"); err != nil {
+	if err := derSerial(serial, "TSTInfo serialNumber"); err != nil {
 		return info, err
 	}
 	info.serial = serial.content

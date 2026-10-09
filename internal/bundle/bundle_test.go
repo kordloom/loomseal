@@ -240,6 +240,50 @@ func TestParse(t *testing.T) {
 			delete(att, "at")
 			claimOf(m)["attestations"] = []any{att}
 		},
+	}, { // Test 39: A bundle with no version declares none and is refused at parse.
+		Mutate:  func(m map[string]any) { delete(m, "loomseal") },
+		Want:    ErrParse,
+		WantMsg: "carries no loomseal member",
+	}, { // Test 40: A version that is not a string declares none and is refused at parse.
+		Mutate:  func(m map[string]any) { m["loomseal"] = 1 },
+		Want:    ErrParse,
+		WantMsg: "loomseal is not a string",
+	}, { // Test 41: Another version is unsupported beside a member the schema does not define.
+		Mutate: func(m map[string]any) {
+			m["loomseal"] = "0.2"
+			m["extra"] = 1
+		},
+		Want: ErrUnsupported,
+	}, { // Test 42: Another version is unsupported beside a number outside the profile.
+		Mutate: func(m map[string]any) {
+			m["loomseal"] = "0.2"
+			claimOf(m)["payload"].(map[string]any)["r"] = 1.5
+		},
+		Want: ErrUnsupported,
+	}, { // Test 43: Version 0.1 refuses a number outside the profile at parse.
+		Mutate:  func(m map[string]any) { claimOf(m)["payload"].(map[string]any)["r"] = 1.5 },
+		Want:    ErrParse,
+		WantMsg: "non-integer literal",
+	}, { // Test 44: The number profile is held before the value rule that finds a chain profile
+		// unknown, so the number is what refuses the bundle.
+		Mutate: func(m map[string]any) {
+			m["chain"] = map[string]any{
+				"profile": "mystery-v9", "keyed": false,
+				"head": map[string]any{"seq": 1, "link": strings.Repeat("ab", 32)},
+			}
+			claimOf(m)["payload"].(map[string]any)["r"] = 1.5
+		},
+		Want: ErrParse,
+	}, { // Test 45: Member names are held before the value rule that finds a chain profile
+		// unknown, so the unknown member is what refuses the bundle.
+		Mutate: func(m map[string]any) {
+			m["chain"] = map[string]any{
+				"profile": "mystery-v9", "keyed": false,
+				"head": map[string]any{"seq": 1, "link": strings.Repeat("ab", 32)},
+			}
+			claimOf(m)["extra"] = "x"
+		},
+		Want: ErrParse,
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {

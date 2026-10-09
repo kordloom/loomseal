@@ -3,8 +3,6 @@ package bundle
 import (
 	"fmt"
 	"sort"
-
-	"github.com/kordloom/loomseal/jcs"
 )
 
 // The exact member set each object in a bundle may carry, mirroring the schema's
@@ -41,19 +39,11 @@ func memberSet(names ...string) map[string]bool {
 	return m
 }
 
-// checkExactMembers parses raw as the canonical tree and refuses any object member outside the
-// exact set allowed at its position. It runs over the same parsed tree the signature and the link
+// checkExactMembers refuses any object member of root, the parsed canonical tree, outside the exact
+// set allowed at its position. It runs over the same parsed tree the signature and the link
 // recomputation read, so a member a verdict reads is one this has already approved by its exact
 // name.
-func checkExactMembers(raw []byte) error {
-	v, err := jcs.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrParse, err)
-	}
-	root, ok := v.(map[string]any)
-	if !ok {
-		return fmt.Errorf("%w: bundle is not a JSON object", ErrParse)
-	}
+func checkExactMembers(root map[string]any) error {
 	if err := exactMembers(root, rootMembers, "bundle"); err != nil {
 		return err
 	}

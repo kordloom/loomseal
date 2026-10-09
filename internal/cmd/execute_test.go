@@ -238,13 +238,14 @@ func TestExecuteVerifyVerdictLines(t *testing.T) {
 	}, { // Test 6: A committed reason the receipt does not carry is named as such.
 		File: "switchtender-record-reason-withheld.loomseal.json",
 		Want: []string{"reasons    1 committed and not disclosed"},
-	}, { // Test 7: Unchecked members qualify the verdict, which names each one after it.
+	}, { // Test 7: Unchecked members are named among the disclosed rows, before the verdict.
 		File: "switchtender-outcome-legacy.loomseal.json",
 		Want: []string{
-			"disclosed  0 checked, 2 unchecked, 0 redacted",
-			"VERIFIED, 2 disclosed record(s) unchecked   signed, chained (full)\n" +
+			"disclosed  0 checked, 2 unchecked, 0 redacted\n" +
 				"unchecked  claim 1 outcome_body: the entry committed it under an older digest form",
-			"unchecked  claim 1 spec_body: no verified decision or outcome names a spec digest",
+			"unchecked  claim 1 spec_body: no verified decision or outcome names a spec digest\n" +
+				"evidence   0 verified, 0 missing, 0 referenced only\n" +
+				"VERIFIED, 2 disclosed record(s) unchecked   signed, chained (full)\n",
 		},
 	}, { // Test 8: A body under the legacy unkeyed form is named as legacy.
 		File: "switchtender-record-unkeyed.loomseal.json",
@@ -269,6 +270,12 @@ func TestExecuteVerifyVerdictLines(t *testing.T) {
 				if !strings.Contains(stdout, want) {
 					t.Errorf("verdict missing %q in:\n%s", want, stdout)
 				}
+			}
+			// The verdict line is the last line, as the browser page ends a wrapped bundle's rows
+			// with it, so every row naming what the verdict counts comes before it.
+			lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+			if last := lines[len(lines)-1]; !strings.HasPrefix(last, "VERIFIED") {
+				t.Errorf("last line %q is not the verdict in:\n%s", last, stdout)
 			}
 		})
 	}
@@ -303,32 +310,6 @@ func TestExecuteVerifyVerdictLines(t *testing.T) {
 	}
 	if strings.Contains(stdout, "\nrecords") || strings.Contains(stdout, "\nreasons") {
 		t.Errorf("a failed receipt still prints a record line:\n%s", stdout)
-	}
-}
-
-// TestPrintableQuotesWhatWouldActOnATerminal pins that a member name or claim type, which the
-// producer writes, reaches the terminal quoted whenever it carries a character that does not print.
-func TestPrintableQuotesWhatWouldActOnATerminal(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		In         string
-		WantResult string
-	}{{ // Test 0: A plain name prints as it is.
-		In: "decision_body", WantResult: "decision_body",
-	}, { // Test 1: A non-ASCII letter prints as it is.
-		In: "deci\u017fion_body", WantResult: "deci\u017fion_body",
-	}, { // Test 2: An escape sequence is quoted, so it cannot recolor or move the terminal.
-		In: "note\x1b[2J", WantResult: `"note\x1b[2J"`,
-	}, { // Test 3: A newline is quoted, so it cannot forge a line of the report.
-		In: "x\nVERIFIED", WantResult: `"x\nVERIFIED"`,
-	}}
-	for testNum, test := range tests {
-		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
-			t.Parallel()
-			if got := printable(test.In); got != test.WantResult {
-				t.Errorf("printable(%q) = %q, want %q", test.In, got, test.WantResult)
-			}
-		})
 	}
 }
 

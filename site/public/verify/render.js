@@ -24,6 +24,16 @@
     return (s + "           ").slice(0, 11);
   }
 
+  // printable returns text as a report line shows it, by the compiled verifier's own rule: quoted
+  // when any character in it does not print, so a control or format character in a name the
+  // producer wrote can neither act on the reader nor reorder the line, and unchanged otherwise.
+  // The command line writes the same text through the same rule. Without the module, as in the
+  // renderer's own test, text is unchanged.
+  function printable(s) {
+    s = String(s);
+    return typeof global.loomsealPrintable === "function" ? global.loomsealPrintable(s) : s;
+  }
+
   // unset reports whether a pin comparison was never made.
   function unset(v) {
     return v === undefined || v === null;
@@ -70,13 +80,29 @@
     return "VERIFIED   " + (report.level || "");
   }
 
+  // presentationVerdict returns the command line's final line for a presentation report. An
+  // unsupported presentation was never judged, so its line says so, as an unsupported bundle's
+  // line does.
+  function presentationVerdict(report) {
+    if (report.unsupported) {
+      return "PRESENTATION UNSUPPORTED  this verifier does not implement what the presentation " +
+        "declares; not judged";
+    }
+    return report.ok === true ? "PRESENTATION VERIFIED" : "PRESENTATION NOT VERIFIED";
+  }
+
   // presentationLines returns a presentation report's own rows in the command line's order and
   // wording: who presented to whom, each pin that was compared, each pin that was not, and the
-  // problems. The wrapped bundle's rows follow separately.
+  // problems. The wrapped bundle's rows follow separately. An unsupported presentation was never
+  // judged, so it returns only its problems and nothing that could read as a judgment.
   function presentationLines(report) {
     var rows = [];
     function row(label, text) { rows.push([label, String(text)]); }
 
+    if (report.unsupported) {
+      (report.problems || []).forEach(function (p) { row("problem", p); });
+      return rows;
+    }
     if (report.presentation_ok) {
       row("presented", "by holder " + (report.holder_key_id || "") + " to " +
         JSON.stringify(report.audience || ""));
@@ -168,10 +194,10 @@
       row("note", report.anchor_proofs_on_declared_head +
         " proof(s) sit on the unverified declared head and were not checked; they earn no anchored level");
     }
-    var unopened = (report.anchor_proofs_carried || 0) - (report.anchor_proofs_verified || 0) -
-      (report.anchor_proofs_on_declared_head || 0);
-    if (unopened > 0) {
-      row("note", unopened +
+    // The report's own count of proofs of a type the verifier cannot open, as the command line
+    // reads it, so a proof that was opened and failed is never also called unopenable.
+    if (report.anchor_proofs_unopened) {
+      row("note", report.anchor_proofs_unopened +
         " carried proof(s) are of a type this verifier cannot open offline, so they were counted and not checked");
     }
     if (report.anchored_through_seq) {
@@ -226,9 +252,8 @@
       });
     }
     // Every member a switchtender-audit-v1 link does not commit, in one of three states, counted as
-    // the command line counts them: a member and the one it travels with are one record. The
-    // command line names the unchecked ones after its verdict; the page's verdict is its banner, so
-    // they follow the redacted ones here.
+    // the command line counts them: a member and the one it travels with are one record. Each
+    // unchecked one is named after the redacted ones, in the row the command line names it in.
     var members = report.disclosed || [];
     if (report.ok && members.length) {
       var counts = { checked: 0, unchecked: 0, redacted: 0 };
@@ -242,12 +267,15 @@
         counts.redacted + " redacted");
       var names = Object.keys(byMember).sort();
       if (names.length) {
-        row("checked", names.map(function (n) { return n + " " + byMember[n]; }).join(", "));
+        row("checked", names.map(function (n) {
+          return printable(n) + " " + byMember[n];
+        }).join(", "));
       }
       ["redacted", "unchecked"].forEach(function (state) {
         members.forEach(function (m) {
           if (m.state === state && !m.with) {
-            row(state, "claim " + m.claim + " " + m.member + ": " + m.detail);
+            row(state, "claim " + m.claim + " " + printable(m.member) + ": " +
+              printable(m.detail));
           }
         });
       });
@@ -318,7 +346,7 @@
     var banner;
     var lines;
     if (isPresentation(report)) {
-      banner = ok ? "PRESENTATION VERIFIED" : "PRESENTATION NOT VERIFIED";
+      banner = presentationVerdict(report);
       lines = presentationLines(report).map(padRow);
       if (report.bundle) {
         lines.push("---");
@@ -337,7 +365,8 @@
   }
 
   global.LoomSeal = {
-    esc: esc, pad: pad, verdict: verdict, verifyBytes: verifyBytes,
-    reportLines: reportLines, presentationLines: presentationLines, renderInto: renderInto,
+    esc: esc, pad: pad, verdict: verdict, presentationVerdict: presentationVerdict,
+    verifyBytes: verifyBytes, reportLines: reportLines, presentationLines: presentationLines,
+    renderInto: renderInto,
   };
 })(typeof window !== "undefined" ? window : globalThis);

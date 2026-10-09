@@ -36,7 +36,8 @@ Present flags:
   --reveal <names>       Comma-separated field names to disclose; others are withheld.
   --at <rfc3339>         Assembly time; defaults to now.
 
-Exit codes: 0 verified, 1 verification failed, 2 usage or read error.`
+Exit codes: 0 verified, 1 verification failed, 2 usage or read error, 3 unsupported: the
+bundle or presentation declares what this verifier does not implement, so it was not judged.`
 
 // Execute runs the CLI with the given arguments and streams and returns the process exit
 // code. It exists apart from main so tests can drive the full command surface.

@@ -7,7 +7,27 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "presentation",
       "why": "A presentation whose holder signature was altered does not verify."
+    },
+    {
+      "name": "present-bundle-fails",
+      "file": "present-bundle-fails.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "bundle",
+      "why": "A presentation whose holder signature verifies over a bundle that does not verify fails on the bundle, which is checked on its own terms before the holder signature."
+    },
+    {
+      "name": "present-bundle-nan",
+      "file": "present-bundle-nan.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "parse",
+      "routes_as_bundle": true,
+      "why": "A presentation whose bundle carries NaN is not JSON, so no verifier finds its version: it is read as a bundle and refused at parse, by the presentation checks too."
     },
     {
       "name": "present-casefold-audience",
@@ -15,6 +35,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "parse",
       "why": "A presentation carrying Audience beside audience is refused at parse: member names are matched exactly, so the variant is not read as the audience a reader sees."
     },
     {
@@ -23,6 +44,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "parse",
       "why": "A holder carrying the signed key id under a name that folds onto key_id is refused at parse, rather than checked in place of the key_id the document shows."
     },
     {
@@ -31,6 +53,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "presentation",
       "why": "A presentation whose created_at has a comma before its fractional second is refused, because the time is not RFC 3339."
     },
     {
@@ -39,6 +62,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "presentation",
       "why": "A presentation whose created_at ends in a lower case z is refused, because the time ends in an upper case Z."
     },
     {
@@ -47,6 +71,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "presentation",
       "why": "A presentation whose created_at carries a numeric offset, even +00:00, is refused, because a time ends in Z."
     },
     {
@@ -55,6 +80,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "presentation",
       "why": "A presentation whose created_at has a one-digit hour is refused, because the time is not RFC 3339."
     },
     {
@@ -63,6 +89,7 @@
       "expect_audience": "",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "expectation",
       "why": "An expected audience supplied empty is refused before anything is verified, by every entry point that can tell it from an absent one, rather than read as no expectation."
     },
     {
@@ -71,6 +98,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "",
       "must_verify": false,
+      "failing_check": "expectation",
       "why": "An expected nonce supplied empty is refused before anything is verified, by every entry point that can tell it from an absent one, rather than read as no expectation and the replay defense skipped."
     },
     {
@@ -79,7 +107,17 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "presentation",
       "why": "A presentation whose holder public_key carries a line break inside its base64 is refused rather than decoded by skipping the break."
+    },
+    {
+      "name": "present-no-bundle",
+      "file": "present-no-bundle.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A presentation that carries no bundle member presents nothing and is refused at parse."
     },
     {
       "name": "present-no-pins",
@@ -88,11 +126,21 @@
       "why": "The same presentation with no pins verifies: the pins are the caller's to require."
     },
     {
+      "name": "present-non-integer-number",
+      "file": "present-non-integer-number.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "parse",
+      "why": "A presentation whose bundle carries a fractional number is recognized as a presentation by every verifier and refused by the presentation checks."
+    },
+    {
       "name": "present-number-exceeds-2p53",
       "file": "present-number-exceeds-2p53.loomseal-presentation.json",
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "parse",
       "why": "A presentation whose bundle carries an integer beyond 2^53 is refused at parse, with a verdict and never a crash."
     },
     {
@@ -101,7 +149,9 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
-      "why": "A presentation nested one level past the bound is refused at parse, although the bundle it carries is within the bound and verifies alone."
+      "failing_check": "parse",
+      "routes_as_bundle": true,
+      "why": "A presentation nested one level past the bound is refused at parse, although the bundle it carries is within the bound and verifies alone. No verifier reads it far enough to find its version, so one taking either kind of document reads it as a bundle."
     },
     {
       "name": "present-sig-line-break",
@@ -109,6 +159,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "presentation",
       "why": "A presentation whose holder signature carries a line break inside its base64 is refused rather than decoded by skipping the break."
     },
     {
@@ -117,6 +168,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "old-nonce",
       "must_verify": false,
+      "failing_check": "nonce",
       "why": "The same presentation fails against a stale challenge, which is what stops a replay."
     },
     {
@@ -125,6 +177,7 @@
       "expect_audience": "acme-verifier",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "bundle",
       "why": "A presentation whose embedded bundle was changed fails: the bundle no longer verifies and its digest no longer matches the holder signature."
     },
     {
@@ -136,11 +189,78 @@
       "why": "A presentation bound to the verifier and nonce it declares verifies under those pins."
     },
     {
+      "name": "present-version-empty",
+      "file": "present-version-empty.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "unsupported",
+      "why": "A presentation whose version is the empty string declares a version other than 0.1, so it is routed to the presentation checks like any other and is unsupported."
+    },
+    {
+      "name": "present-version-later",
+      "file": "present-version-later.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "unsupported",
+      "why": "A presentation declaring a version this verifier does not implement is unsupported, not judged, as a bundle under another version is."
+    },
+    {
+      "name": "present-version-later-nan",
+      "file": "present-version-later-nan.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "parse",
+      "routes_as_bundle": true,
+      "why": "A presentation declaring a version this verifier does not implement and carrying NaN is not JSON, so it is refused at parse rather than judged unsupported."
+    },
+    {
+      "name": "present-version-later-non-integer-number",
+      "file": "present-version-later-non-integer-number.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "unsupported",
+      "why": "A presentation declaring a version this verifier does not implement is unsupported although its bundle carries a fractional number, because the version is read before the number profile is held."
+    },
+    {
+      "name": "present-version-later-unknown-member",
+      "file": "present-version-later-unknown-member.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "unsupported",
+      "why": "A presentation declaring a version this verifier does not implement is unsupported although it carries a member the presentation format does not name, because the version is read before any member's name."
+    },
+    {
+      "name": "present-version-missing",
+      "file": "present-version-missing.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "parse",
+      "routes_as_bundle": true,
+      "why": "A presentation with no loomseal_presentation member declares no version and is refused at parse, by the presentation checks and as a bundle alike."
+    },
+    {
+      "name": "present-version-not-a-string",
+      "file": "present-version-not-a-string.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "failing_check": "parse",
+      "routes_as_bundle": true,
+      "why": "A loomseal_presentation member holding the number 1 declares no version, so the document is refused at parse, by the presentation checks and as a bundle alike."
+    },
+    {
       "name": "present-wrong-audience",
       "file": "present-valid.loomseal-presentation.json",
       "expect_audience": "someone-else",
       "expect_nonce": "chal-1",
       "must_verify": false,
+      "failing_check": "audience",
       "why": "The same presentation fails when the verifier requires a different audience, which is what stops it being replayed to another verifier."
     }
   ]

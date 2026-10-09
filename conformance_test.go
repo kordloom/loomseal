@@ -63,6 +63,26 @@ type conformanceVector struct {
 	// AnchorAttestations lists, in order, the time and signer line a verifier must report for each
 	// timestamp token it verified.
 	AnchorAttestations []string `json:"anchor_attestations"`
+	// AnchorProofsUnopened is how many carried proofs a verifier must report as of a type it cannot
+	// open offline, nil when the vector does not pin it.
+	AnchorProofsUnopened *int `json:"anchor_proofs_unopened"`
+	// AnchorProofsOnDeclaredHead is how many proofs a verifier must report on anchors that match
+	// only the unverified declared head, nil when the vector does not pin it.
+	AnchorProofsOnDeclaredHead *int `json:"anchor_proofs_on_declared_head"`
+}
+
+// wantCount returns the proof count a verifier is held to on v, given v's pin for that count, and
+// false when it is held to none: the pinned count whenever the vector carries one, whether or not
+// the bundle must verify, and otherwise zero on a vector that must verify.
+func (v conformanceVector) wantCount(pin *int) (int, bool) {
+	switch {
+	case pin != nil:
+		return *pin, true
+	case v.MustVerify:
+		return 0, true
+	default:
+		return 0, false
+	}
 }
 
 // TestConformanceVectors drives the verifier from the manifest so the shipped verifier and the
@@ -118,6 +138,20 @@ func TestConformanceVectors(t *testing.T) {
 				t.Errorf("a failed bundle lists %d disclosed members and %d unchecked records",
 					len(report.Disclosed), report.DisclosedUnchecked)
 			}
+			// A proof is counted as one this verifier cannot open by its type alone, so a token it
+			// opened is never counted there, whether it held or failed, and the count is held on
+			// every vector that pins it.
+			if want, ok := v.wantCount(v.AnchorProofsUnopened); ok &&
+				report.AnchorProofsUnopened != want {
+				t.Errorf("unopened proofs %d, want %d", report.AnchorProofsUnopened, want)
+			}
+			// A proof on an anchor matching only the unverified declared head is counted there
+			// whatever its type, and never as carried or unopened.
+			if want, ok := v.wantCount(v.AnchorProofsOnDeclaredHead); ok &&
+				report.AnchorProofsOnDeclaredHead != want {
+				t.Errorf("proofs on the declared head %d, want %d",
+					report.AnchorProofsOnDeclaredHead, want)
+			}
 			if v.MustVerify {
 				if diff := cmp.Diff(v.Legacy, report.LegacyRecords, cmpopts.EquateEmpty()); diff != "" {
 					t.Errorf("legacy records (-want +got):\n%s", diff)
@@ -159,12 +193,22 @@ type presentationManifest struct {
 
 // presentationVector is one presentation conformance case.
 type presentationVector struct {
-	Name           string  `json:"name"`
-	File           string  `json:"file"`
+	// Name identifies the case.
+	Name string `json:"name"`
+	// File is the presentation file name within the vectors directory.
+	File string `json:"file"`
+	// ExpectAudience is the audience the verifier is told to require, nil for none.
 	ExpectAudience *string `json:"expect_audience"`
-	ExpectNonce    *string `json:"expect_nonce"`
-	MustVerify     bool    `json:"must_verify"`
-	Why            string  `json:"why"`
+	// ExpectNonce is the challenge the verifier is told to require, nil for none.
+	ExpectNonce *string `json:"expect_nonce"`
+	// MustVerify is whether the presentation must verify.
+	MustVerify bool `json:"must_verify"`
+	// FailingCheck names the first check a presentation that must not verify fails.
+	FailingCheck string `json:"failing_check"`
+	// RoutesAsBundle marks a document an entry point taking either kind reads as a bundle.
+	RoutesAsBundle bool `json:"routes_as_bundle"`
+	// Why explains the case.
+	Why string `json:"why"`
 }
 
 // TestPresentationConformance drives the presentation verifier from its manifest, so the shipped
@@ -190,6 +234,19 @@ func TestPresentationConformance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read presentation: %v", err)
 			}
+			// The command line routes a document by LooksLikePresentation, and the manifest pins
+			// which way each one goes. A document read as a bundle is refused at parse there.
+			if routed := !verify.LooksLikePresentation(doc); routed != v.RoutesAsBundle {
+				t.Errorf("routed as a bundle %t, want %t", routed, v.RoutesAsBundle)
+			}
+			if v.RoutesAsBundle {
+				report := verify.Run(doc, verify.Options{})
+				if report.OK || report.Level != "not verified" {
+					t.Errorf("read as a bundle: verified %t level %q, want refused at parse",
+						report.OK, report.Level)
+				}
+				assertFailingCheck(t, "parse", report)
+			}
 			// PresentationOptions holds no difference between an expectation supplied empty and
 			// none, so a case that supplies one is held to the check the command line applies to
 			// a flag the caller gave, and must be refused there before anything is verified.
@@ -197,16 +254,68 @@ func TestPresentationConformance(t *testing.T) {
 			err = errors.Join(applyExpectation(v.ExpectAudience, &opts.Audience),
 				applyExpectation(v.ExpectNonce, &opts.Nonce))
 			if err != nil {
-				if v.MustVerify || !errors.Is(err, verify.ErrExpectation) {
-					t.Fatalf("expectation refused with %v, want verified %t", err, v.MustVerify)
+				if v.FailingCheck != "expectation" || !errors.Is(err, verify.ErrExpectation) {
+					t.Fatalf("expectation refused with %v, want failing check %q", err,
+						v.FailingCheck)
 				}
 				return
+			}
+			if v.FailingCheck == "expectation" {
+				t.Fatal("expectation case was not refused")
 			}
 			rep := verify.RunPresentation(doc, opts)
 			if rep.OK != v.MustVerify {
 				t.Fatalf("verified %t, want %t; problems %v", rep.OK, v.MustVerify, rep.Problems)
 			}
+			if !v.MustVerify {
+				assertPresentationCheck(t, v.FailingCheck, rep)
+			}
 		})
+	}
+}
+
+// assertPresentationCheck confirms a presentation failed first at the check the manifest names, in
+// the order FORMAT.md's "Presentations" section gives: the presentation is read, the embedded
+// bundle is verified, then the holder signature, the audience, and the nonce. Each problem is
+// named by its check, as the reference verifier names it.
+func assertPresentationCheck(t *testing.T, check string, r *verify.PresentationReport) {
+	t.Helper()
+	first := ""
+	if len(r.Problems) > 0 {
+		first = r.Problems[0]
+	}
+	read := r.Bundle == nil && !r.PresentationOK
+	bundleOK := r.Bundle != nil && r.Bundle.OK
+	refused := func(match *bool) bool { return match != nil && !*match }
+	switch check {
+	case "parse":
+		if !read || r.Unsupported || !strings.HasPrefix(first, "parse: ") {
+			t.Errorf("parse case was not refused as it was read: unsupported %t problems %v",
+				r.Unsupported, r.Problems)
+		}
+	case "unsupported":
+		if !read || !r.Unsupported || !strings.HasPrefix(first, "unsupported") {
+			t.Errorf("unsupported case was not judged unsupported as it was read: %v", r.Problems)
+		}
+	case "bundle":
+		if r.Unsupported || r.Bundle == nil || r.Bundle.OK {
+			t.Errorf("bundle case did not fail the embedded bundle: %v", r.Problems)
+		}
+	case "presentation":
+		if !bundleOK || r.PresentationOK || !strings.HasPrefix(first, "presentation: ") {
+			t.Errorf("presentation case did not fail first on the holder: bundle ok %t problems %v",
+				bundleOK, r.Problems)
+		}
+	case "audience":
+		if !bundleOK || !r.PresentationOK || !refused(r.AudienceMatch) {
+			t.Errorf("audience case did not fail first on the audience: %v", r.Problems)
+		}
+	case "nonce":
+		if !bundleOK || !r.PresentationOK || refused(r.AudienceMatch) || !refused(r.NonceMatch) {
+			t.Errorf("nonce case did not fail first on the nonce: %v", r.Problems)
+		}
+	default:
+		t.Fatalf("manifest names an unknown presentation failing_check %q", check)
 	}
 }
 

@@ -22,7 +22,19 @@ func main() {
 	js.Global().Set("loomsealVerify", js.FuncOf(verifyBundle))
 	js.Global().Set("loomsealVerifyPresentation", js.FuncOf(verifyPresentation))
 	js.Global().Set("loomsealLooksLikePresentation", js.FuncOf(looksLikePresentation))
+	js.Global().Set("loomsealPrintable", js.FuncOf(printable))
 	select {}
+}
+
+// printable returns its string argument as a report line shows it, quoted when any character in it
+// does not print, by the rule the command line applies, so the page shows a member name the
+// producer wrote in the command line's own form. Any other argument is returned as the empty
+// string.
+func printable(_ js.Value, args []js.Value) any {
+	if len(args) == 0 || args[0].Type() != js.TypeString {
+		return ""
+	}
+	return verify.Printable(args[0].String())
 }
 
 // looksLikePresentation reports whether a file is a holder presentation rather than a bundle, by

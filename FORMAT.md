@@ -72,7 +72,12 @@ case variant of it fails the claim, as "Disclosed records in switchtender.audit/
 `chain.profile`, or a signature `alg` it does not implement reports the bundle as unsupported
 and exits nonzero without judging the signature. Unsupported is fail-closed and never becomes a green
 verdict, but it is a verdict distinct from verification failure, because "this verifier is too
-old for this bundle" and "this bundle did not verify" must never share a message.
+old for this bundle" and "this bundle did not verify" must never share a message. A verifier reads
+the version before it judges anything a later version could change, in the order "Verification"
+states, so a bundle under another version is unsupported whatever members, types, or numbers it
+carries. A document with no `loomseal` member, or one that is not a string, declares no version at
+all and is refused at parse instead: a later format is announced by another string in that member,
+so no newer verifier reads such a document either.
 
 **How each surface grows.**
 
@@ -855,7 +860,27 @@ necessary for the anchored level and never sufficient: that level additionally r
 offline proof the verifier checked, under the rule above. A producer anchoring this profile anchors
 roots; the leaf case is defined so a verifier has an answer, not because it is useful. An anchor type the verifier cannot
 validate offline, such as `git`, `https`, or `rekor`, is matched by coordinates only and reports
-as anchored by reference, leaving the relying party to confirm the ref out of band. Anchoring
+as anchored by reference, leaving the relying party to confirm the ref out of band. A `proof` such
+an anchor carries, when the anchor matched a coordinate the verifier confirmed, is reported as
+carried and as one of a type the verifier cannot open, in the report member
+`anchor_proofs_unopened`, and is never checked. A proof on an anchor that matches only the
+unverified declared head is neither carried nor unopened. It is reported among the proofs on the
+declared head, in `anchor_proofs_on_declared_head`, whatever its type. An `rfc3161` proof the
+verifier opened is never counted as unopened, whether it held or failed the anchor check, because a
+failed proof is a problem of its own, and calling it unopenable as well would give the reader the
+wrong reason. On a bundle that fails, the count covers the anchors a verifier read before it
+stopped: one that stops at the first failure has read those ahead of the failed anchor, and one that
+runs every check has read them all, so a vector pins the count on a failing bundle only where the
+last anchor is the one that fails. `anchor-proof-unopened` and
+`anchor-proof-unopened-beside-verified` pin `anchor_proofs_unopened` at one on bundles that verify,
+and `anchor-proof-unopened-git-https-rekor` pins it at three for a `git`, an `https`, and a
+`rekor` proof on the verified head. `anchor-signature-invalid`, `anchor-corrupt-token`, and
+`anchor-gen-time-fraction-outside-skew` pin it at zero for a token that failed its signature, one
+that did not open as a token, and one that verified but predated the entry it covers, and
+`anchor-proof-unopened-before-failed` pins it at one for a `git` proof read before a token that
+failed. `anchor-declared-head-proof-git-https-rekor` pins it at zero for the same three proofs on a
+declared head beyond the bundled claims and pins `anchor_proofs_on_declared_head` at three, and
+`anchor-declared-head-proof` pins that count at one for an `rfc3161` proof there. Anchoring
 cadence bounds the window in which a compromised producer key could rewrite unanchored history;
 anchor often.
 
@@ -903,6 +928,13 @@ names:
 - An INTEGER has at least one content octet and is in its shortest two's complement form, so its
   first nine bits are never all zero or all one. A version INTEGER also fits a signed 64-bit
   integer.
+- The TSTInfo serial number has at most 21 content octets. RFC 3161 has a verifier accept a serial
+  of up to 160 bits and sets no larger bound, and the ETSI EN 319 422 profile that qualified
+  authorities follow adds no rule of its own on the serial. DER writes a positive 160-bit value in
+  21 octets, a zero octet ahead of its 20 so the top bit does not read as the sign, so 21 is the
+  shortest bound that holds every serial a verifier must accept. Without a bound a serial can be as
+  long as the token, and writing one out in decimal takes time that grows faster than its length.
+  A verifier refuses a longer serial as `TSTInfo serialNumber: INTEGER longer than 21 octets`.
 - An OBJECT IDENTIFIER has at least one content octet, no subidentifier that starts with the octet
   0x80 or exceeds 2^31-1, and ends on the last octet of a subidentifier. 2^31-1 is the bound Go's
   encoding/asn1 holds a subidentifier to. Without a bound one subidentifier can be as long as the
@@ -991,10 +1023,21 @@ subject, by this rule:
 - The value of a named type is written as text when it is a primitive UTF8String holding valid
   UTF-8, or a primitive PrintableString or IA5String holding only ASCII. A backslash goes before
   `"`, `+`, `,`, `;`, `<`, `>` and `\`, before a `#` or a space that starts the text, and before a
-  space that ends it. Each character below U+0020 or from U+007F to U+009F is written as a
-  backslash and two lower case hexadecimal digits for each octet of its UTF-8 encoding, so a name
-  cannot act on the terminal that prints it. Any other value, and every value of a dotted type, is
-  `#` and the lower case hexadecimal of the value's whole encoding.
+  space that ends it. The characters below are written as a backslash and two lower case
+  hexadecimal digits for each octet of their UTF-8 encoding:
+  - each control below U+0020 or from U+007F to U+009F, so a name cannot act on the terminal that
+    prints it
+  - each bidirectional embedding and override from U+202A to U+202E, each isolate from U+2066 to
+    U+2069, the marks U+200E, U+200F and U+061C, and the separators U+2028 and U+2029, so a
+    subject cannot use them to reorder or break the line naming its signer
+
+  The escape removes the explicit embeddings, overrides, isolates, marks and separators. A
+  right-to-left letter is text and is written as it is, and it still reorders the digits and
+  punctuation beside it when the line is displayed, as any right-to-left text does, so a name
+  holding one can display in an order other than the one its octets are written in.
+
+  Any other value, and every value of a dotted type, is `#` and the lower case hexadecimal of the
+  value's whole encoding.
 - Any other subject, an empty SEQUENCE included, is named `#` and the lower case hexadecimal of its
   whole encoding.
 
@@ -1003,7 +1046,10 @@ Every vector that verifies a token pins that line, and the vectors whose names b
 `anchor-signer-name-` pin each clause of the rule. `anchor-signer-name-rfc4514` carries a
 multi-valued RDN, an emailAddress, a BMPString and text that needs every escape, and the shipped
 `switchtender-audit-anchored-proof`, from a public authority, carries an emailAddress and a
-description.
+description. `anchor-signer-name-bidi-embedding`, `anchor-signer-name-bidi-isolate`,
+`anchor-signer-name-bidi-mark` and `anchor-signer-name-line-separator` each carry every character
+of one bidirectional or separator group above, beside its nearest neighbors, which are written as
+themselves.
 
 The signatureAlgorithm names the check, and it must match the signer key's type. It is
 sha256WithRSAEncryption, sha384WithRSAEncryption or sha512WithRSAEncryption, RSASSA-PSS,
@@ -1025,7 +1071,9 @@ OpenSSL PKCS #7 loader refuses.
 
 The vectors whose names begin with `anchor-der-` and `anchor-cert-` pin these rules, and each
 fails at the anchor check, except `anchor-der-oid-arc-31-bits`, a policy subidentifier of exactly
-2^31-1, which verifies. Each rule is pinned where every verifier reads it, not only once:
+2^31-1, and `anchor-der-serial-21-octets`, a serial of 2^160-1, which verify.
+`anchor-der-serial-22-octets`, a serial of 2^168-1, is one octet past the bound. Each rule is
+pinned where every verifier reads it, not only once:
 
 - Each vector whose name begins with `anchor-der-tag-` writes one member a verifier requires under
   another identifier, a constructed one without its constructed bit and a primitive one in the
@@ -1247,7 +1295,32 @@ one: signed, chained, anchored, spanned. No other adjectives.
 
 The verifier performs these steps in order and fails closed:
 
-1. Parse the document, require `loomseal` version `0.1`, validate against the schema.
+1. Read the document, then its version, then the schema, in this order, so that a document with
+   more than one fault reaches one verdict in every verifier:
+   - Read it as JSON: nested within the bound, valid UTF-8 with every escape a Unicode scalar
+     value, no repeated key, one value with nothing after it, and that value an object. JSON's
+     grammar is the whole of it: `NaN`, `Infinity`, `-Infinity`, and any character outside a
+     string that is not ASCII, such as a digit from another script inside a number, are not JSON,
+     though some JSON readers accept them. Any other document is refused at parse, whatever
+     version it would declare, because a version is read only from a document that is JSON.
+   - Read `loomseal`. A string other than `0.1` is unsupported, and nothing else in the document
+     is judged, not its members, their types, its nulls, its times, or its numbers, because a later
+     version may change any of them. A document with no `loomseal` member, or one whose value is
+     not a string, is refused at parse, as "Compatibility" states.
+   - Hold every number to the integer profile, refusing at parse a fraction, an exponent, or a
+     magnitude past 2^53. The profile is fixed for version `0.1` under every chain profile.
+   - Validate against the schema: first every member's exact name, its JSON type, and no null, with
+     the time of every attestation that carries one, and then each value's rule, in the order
+     `bundle_id`, `created_at`, `producer`, `subject`, `chain`, each claim, the proofs and
+     coordinates the claims carry, each anchor, and each signature. A chain profile or a signature
+     `alg` the verifier does not implement is found among those value rules and is unsupported, so
+     a fault any earlier rule finds is refused at parse instead.
+
+   The vectors whose names begin with `version-` or `wrong-version`, `number-twenty-digits`,
+   `unknown-chain-profile-non-integer-number`, and `unknown-chain-profile-unknown-member` pin the
+   order. Each pins one step's fault, alone or beside a fault a later step reads. Among them,
+   `wrong-version-nan`, `wrong-version-infinity`, `wrong-version-negative-infinity`, and
+   `wrong-version-non-ascii-digit` declare a later version and are refused at parse.
 2. Require every `signatures` entry to name `producer.key_id`, reconstruct the canonical form
    with `signatures` emptied, and verify at least one entry against `producer.public_key`. If
    the caller pinned a fingerprint, require `key_id` match.
@@ -1640,8 +1713,29 @@ A presentation's members, and its holder block's, are matched by exact name, as 
 member outside the set this section names, a case variant of a named one included, is refused at
 parse, and each named member other than `holder` and `bundle` must be a string. A verifier that
 folded case would otherwise check an audience, a nonce, or a holder key the document does not show,
-and two conforming verifiers would disagree about the same bytes. The embedded bundle is verified,
-and its digest taken, over its canonical form.
+and two conforming verifiers would disagree about the same bytes. A presentation with no `bundle`
+member presents nothing and is refused at parse. The embedded bundle is verified, and its digest
+taken, over its canonical form.
+
+A verifier reads a presentation in the order verification step 1 reads a bundle, with
+`loomseal_presentation` as its version member, so a presentation with more than one fault reaches
+one verdict in every verifier:
+
+- Read it as JSON under the rules of that step, the presentation's own object counting as the
+  first level of nesting. Any other document is refused at parse.
+- Read `loomseal_presentation`. A string other than `0.1` is unsupported, and nothing else in the
+  presentation is judged, not its members, their types, or its numbers, because a later version
+  may change any of them. The report says unsupported and the command line exits 3, as for a
+  bundle under another version. A presentation with no `loomseal_presentation` member, or one
+  whose value is not a string, declares no version and is refused at parse.
+- Hold every number, the presented bundle's included, to the integer profile, refusing at parse.
+- Hold every member to its exact name and type, as the paragraph above states, refusing at parse.
+
+An entry point that accepts either kind of document, as the command line and the browser page do,
+reads one as a presentation when it is JSON under these rules and its object carries
+`loomseal_presentation` with a string value, an empty one included, and reads any other document
+as a bundle. A document that is not JSON, or that carries no string version, is therefore refused
+at parse whichever way it is read.
 
 The holder key is a key the subject controls. Binding that key to a real-world identity is a
 trust-establishment concern the format leaves to the relying party, exactly as it does for a producer
@@ -1652,6 +1746,16 @@ leaf, the reduced bundle still verifies, and the presentation commits to exactly
 A verifier checks the embedded bundle on its own terms, then the holder signature over the presented
 bundle, and finally that the `audience` and `nonce` match what it expected. It reports the holder
 fingerprint and both matches, and leaves whether the holder is who they claim to the relying party.
+
+Each presentation vector that must not verify names, as its `failing_check`, the first of these
+checks it fails: `expectation` for an expected audience or nonce supplied empty, which is refused
+before anything else, `parse` or `unsupported` for the read, `bundle` when the embedded bundle does
+not verify, `presentation` for the holder key, the presentation's `created_at`, and the holder
+signature, and `audience` or `nonce` for an expectation that does not match. In every verifier a
+problem the read finds begins with `parse:` or `unsupported`, and one the holder checks find
+begins with `presentation:`. A vector whose `routes_as_bundle` is true is one an entry point
+accepting either kind of document reads as a bundle. The vectors whose names begin with
+`present-version` or `present-bundle`, and `present-no-bundle`, pin the order and the route.
 
 An expected audience or nonce is optional, and a verifier that compared neither says so beside the
 verdict. An entry point that can tell a supplied expectation from an absent one refuses one supplied

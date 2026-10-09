@@ -853,3 +853,48 @@ func recordTestLink(t *testing.T, seq int64, at, prev string, p map[string]any) 
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
+
+// TestOutcomeSpec holds the outcome reader to maxOutcomeDepth, counting each array and object in
+// the text as one level and ignoring brackets inside its strings.
+func TestOutcomeSpec(t *testing.T) {
+	t.Parallel()
+	const spec = "sha256:" + "ab"
+	// withSpec nests the record's spec_digest member depth levels deep, the record being the first.
+	withSpec := func(depth int) string {
+		inner := strings.Repeat("[", depth-1) + strings.Repeat("]", depth-1)
+		if depth == 1 {
+			inner = "0"
+		}
+		return `{"deep":` + inner + `,"spec_digest":"` + spec + `"}`
+	}
+	tests := []struct {
+		WantSpec string
+		WantOK   bool
+		In       string
+	}{{ // Test 0: A flat record names its spec.
+		In: withSpec(1), WantSpec: spec, WantOK: true,
+	}, { // Test 1: A record nested exactly to the bound is read.
+		In: withSpec(maxOutcomeDepth), WantSpec: spec, WantOK: true,
+	}, { // Test 2: A record one level past the bound names no spec.
+		In: withSpec(maxOutcomeDepth + 1),
+	}, { // Test 3: A record nested thousands of levels names no spec.
+		In: withSpec(5000),
+	}, { // Test 4: Brackets inside a string are text and do not count toward the bound.
+		In:       `{"note":"` + strings.Repeat("[", 100) + `","spec_digest":"` + spec + `"}`,
+		WantSpec: spec, WantOK: true,
+	}, { // Test 5: A record that is not an object names no spec.
+		In: `["` + spec + `"]`,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			gotSpec, gotOK := outcomeSpec(test.In)
+			if diff := cmp.Diff(test.WantSpec, gotSpec); diff != "" {
+				t.Errorf("spec mismatch (-want +got):\n%s", diff)
+			}
+			if gotOK != test.WantOK {
+				t.Errorf("ok mismatch: got %v, want %v", gotOK, test.WantOK)
+			}
+		})
+	}
+}

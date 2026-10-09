@@ -66,8 +66,9 @@ func claimOf(m map[string]any) map[string]any {
 func TestParse(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		Mutate func(m map[string]any)
-		Want   error
+		Mutate  func(m map[string]any)
+		Want    error
+		WantMsg string
 	}{{ // Test 0: The base bundle is valid.
 		Mutate: func(m map[string]any) {},
 	}, { // Test 1: Unknown top-level fields are rejected.
@@ -142,6 +143,61 @@ func TestParse(t *testing.T) {
 		Mutate: func(m map[string]any) {
 			claimOf(m)["verdict"] = map[string]any{"policy": "p/1"}
 		}, Want: ErrSchema,
+	}, { // Test 20: A genesis claim with an empty prev parses, the control for the null case.
+		Mutate: func(m map[string]any) { chainWithPrev(m, "") },
+	}, { // Test 21: A null prev is rejected rather than read as the empty string.
+		Mutate: func(m map[string]any) { chainWithPrev(m, nil) }, Want: ErrSchema,
+	}, { // Test 22: A null keyed flag is rejected rather than read as false.
+		Mutate: func(m map[string]any) {
+			chainWithPrev(m, "")
+			m["chain"].(map[string]any)["keyed"] = nil
+		}, Want: ErrSchema,
+	}, { // Test 23: A public key carrying a line break inside its base64 is rejected.
+		Mutate: func(m map[string]any) {
+			key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+			producerOf(m)["public_key"] = key[:10] + "\n" + key[10:]
+		}, Want: ErrSchema,
+	}, { // Test 24: A signature carrying a line break inside its base64 is rejected.
+		Mutate: func(m map[string]any) {
+			s, _ := m["signatures"].([]any)
+			first, _ := s[0].(map[string]any)
+			sig := base64.StdEncoding.EncodeToString(make([]byte, 64))
+			first["sig"] = sig[:20] + "\r\n" + sig[20:]
+		}, Want: ErrSchema,
+	}, { // Test 25: A null disclosure value is the one null the schema allows, since the value is
+		// the revealed field itself.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["disclosures"] = []any{
+				map[string]any{"salt": "s", "name": "n", "value": nil},
+			}
+		},
+	}, { // Test 26: A null chain param is rejected rather than read as the empty string.
+		Mutate: func(m map[string]any) {
+			chainWithPrev(m, "")
+			m["chain"].(map[string]any)["params"] = map[string]any{"install_id": nil}
+		}, Want: ErrSchema,
+	}, { // Test 27: A string chain param parses, the control for the null case.
+		Mutate: func(m map[string]any) {
+			chainWithPrev(m, "")
+			m["chain"].(map[string]any)["params"] = map[string]any{"install_id": "in_1"}
+		},
+	}, { // Test 28: A null claim attestation entry is rejected rather than read as an empty one.
+		Mutate: func(m map[string]any) { claimOf(m)["attestations"] = []any{nil} },
+		Want:   ErrSchema,
+	}, { // Test 29: A null head attestation entry is rejected rather than read as an empty one.
+		Mutate: func(m map[string]any) { m["attestations"] = []any{nil} },
+		Want:   ErrSchema,
+	}, { // Test 30: A null disclosure entry is rejected rather than read as an empty one.
+		Mutate: func(m map[string]any) { claimOf(m)["disclosures"] = []any{nil} },
+		Want:   ErrSchema,
+	}, { // Test 31: A null claim is rejected as null rather than read as an empty claim, which
+		// would fail later for its empty fields.
+		Mutate:  func(m map[string]any) { m["claims"] = []any{claimOf(m), nil} },
+		Want:    ErrSchema,
+		WantMsg: "claim 1 is null",
+	}, { // Test 32: A created_at with a one-digit hour is not RFC 3339 and is rejected.
+		Mutate: func(m map[string]any) { m["created_at"] = "2026-07-27T1:00:00Z" },
+		Want:   ErrSchema,
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
@@ -152,8 +208,69 @@ func TestParse(t *testing.T) {
 			if !errors.Is(err, test.Want) {
 				t.Errorf("error mismatch: got %v, want %v", err, test.Want)
 			}
+			if test.WantMsg != "" && (err == nil || !strings.Contains(err.Error(), test.WantMsg)) {
+				t.Errorf("error message mismatch: got %v, want it to contain %q", err, test.WantMsg)
+			}
 		})
 	}
+}
+
+// TestParseTime holds ParseTime to the RFC 3339 date-time production, refusing the looser forms
+// time.Parse accepts under the RFC3339 layout.
+func TestParseTime(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		WantOK bool
+		In     string
+	}{{ // Test 0: A UTC time parses.
+		In: "2026-07-27T15:00:00Z", WantOK: true,
+	}, { // Test 1: A fraction after a period parses at any length.
+		In: "2026-07-27T15:00:00.123456789123Z", WantOK: true,
+	}, { // Test 2: A numeric offset parses.
+		In: "2026-07-27T15:00:00-05:30", WantOK: true,
+	}, { // Test 3: The last minute of an offset's range parses.
+		In: "2026-07-27T15:00:00+23:59", WantOK: true,
+	}, { // Test 4: February 29 parses in year 0000, a leap year.
+		In: "0000-02-29T00:00:00Z", WantOK: true,
+	}, { // Test 5: A one-digit hour is refused.
+		In: "2026-07-27T1:00:00Z",
+	}, { // Test 6: A comma before the fraction is refused.
+		In: "2026-07-27T15:00:00,5Z",
+	}, { // Test 7: An offset hour of 24 is refused.
+		In: "2026-07-27T15:00:00+24:00",
+	}, { // Test 8: An offset minute of 60 is refused.
+		In: "2026-07-27T15:00:00+23:60",
+	}, { // Test 9: A lower case separator is refused.
+		In: "2026-07-27t15:00:00Z",
+	}, { // Test 10: An hour of 24 is refused.
+		In: "2026-07-27T24:00:00Z",
+	}, { // Test 11: February 29 is refused in a common year.
+		In: "1900-02-29T00:00:00Z",
+	}, { // Test 12: A time with no offset is refused.
+		In: "2026-07-27T15:00:00",
+	}, { // Test 13: Trailing text is refused.
+		In: "2026-07-27T15:00:00Z\n",
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseTime(test.In)
+			if got := err == nil; got != test.WantOK {
+				t.Errorf("ok mismatch for %q: got %v, want %v (%v)", test.In, got, test.WantOK, err)
+			}
+		})
+	}
+}
+
+// chainWithPrev declares an unkeyed loomseal-chain-v1 chain on m and gives its one claim genesis
+// coordinates carrying prev, so a test can spell the empty predecessor two ways.
+func chainWithPrev(m map[string]any, prev any) {
+	link := strings.Repeat("ab", 32)
+	m["chain"] = map[string]any{
+		"profile": ProfileV1, "keyed": false,
+		"head": map[string]any{"seq": 1, "link": link},
+	}
+	claimOf(m)["chain"] = map[string]any{"seq": 1, "prev": prev, "link": link}
 }
 
 // Test that trailing data after the bundle document is rejected.
@@ -218,6 +335,7 @@ func TestAnchorValidate(t *testing.T) {
 		{Name: "empty link", Mutate: func(a *Anchor) { a.Link = "" }},
 		{Name: "no reference to check", Mutate: func(a *Anchor) { a.Ref = "" }},
 		{Name: "proof is not base64", Mutate: func(a *Anchor) { a.Proof = "!!! not base64 !!!" }},
+		{Name: "proof carries a line break", Mutate: func(a *Anchor) { a.Proof = "dG9r\nZW4=" }},
 		{Name: "time is not RFC 3339", Mutate: func(a *Anchor) { a.At = "last Tuesday" }},
 	}
 	for _, test := range tests {

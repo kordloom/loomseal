@@ -2,12 +2,18 @@ package verify
 
 import (
 	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/kordloom/loomseal/internal/chain"
+	"github.com/kordloom/loomseal/jcs"
+	"github.com/kordloom/loomseal/merkle"
 	"github.com/kordloom/loomseal/seal"
 )
 
@@ -131,6 +137,36 @@ func TestSpan(t *testing.T) {
 	jittered[3].At = "2026-07-27T12:02:00.004Z"
 	late := spanBase()
 	late[3].At = "2026-07-27T12:02:05Z"
+	halfWindow := spanBase()
+	halfWindow[3].At = "2026-07-27T12:03:30Z"
+	slackEdge := spanBase()
+	slackEdge[3].At = "2026-07-27T12:02:01Z"
+	slackPast := spanBase()
+	slackPast[3].At = "2026-07-27T12:02:02Z"
+	microPastEdge := spanBase()
+	microPastEdge[3].At = "2026-07-27T12:02:01.000001Z"
+	proportionalEdge := spanBase()
+	proportionalEdge[1].Cadence, proportionalEdge[3].Cadence = 600, 600
+	proportionalEdge[3].At = "2026-07-27T12:11:06Z"
+	proportionalPast := spanBase()
+	proportionalPast[1].Cadence, proportionalPast[3].Cadence = 600, 600
+	proportionalPast[3].At = "2026-07-27T12:11:07Z"
+	subMicroPastEdge := spanBase()
+	subMicroPastEdge[3].At = "2026-07-27T12:02:01.0000001Z"
+	halfSecondUp := spanBase()
+	halfSecondUp[3].At = "2026-07-27T12:02:02.5Z"
+	belowHalfSecond := spanBase()
+	belowHalfSecond[3].At = "2026-07-27T12:02:02.4999995Z"
+	centuries := spanBase()
+	centuries[3].At = "2400-01-01T00:00:00Z"
+	maxCadence := spanBase()
+	maxCadence[1].Cadence, maxCadence[3].Cadence = maxCadenceS, maxCadenceS
+	maxCadence[3].At = "2400-01-01T00:00:00Z"
+	pastMaxCadence := spanBase()
+	pastMaxCadence[1].Cadence, pastMaxCadence[3].Cadence = maxCadenceS+1, maxCadenceS+1
+	hugeCadence := spanBase()
+	hugeCadence[1].Cadence, hugeCadence[3].Cadence = 10_000_000_000, 10_000_000_000
+	hugeCadence[3].At = "2026-07-27T12:04:00Z"
 
 	tests := []struct {
 		Entries      []spanTestEntry
@@ -140,6 +176,8 @@ func TestSpan(t *testing.T) {
 		WantLevel    string
 		WantCoverage string
 		WantGaps     int
+		WantGapLines []string
+		WantLongest  string
 		WantCarried  int
 		WantProblem  string
 	}{{ // Test 0: Two verifiable beats on an anchored chain earn the spanned level.
@@ -189,6 +227,75 @@ func TestSpan(t *testing.T) {
 		Entries: late, Anchored: true, WantOK: true, WantSpanOK: true,
 		WantLevel:    "signed, chained (full), anchored by reference, spanned",
 		WantCoverage: "2/2 windows attested", WantGaps: 1,
+	}, { // Test 11: A gap of two and a half cadences counts three windows, halves rounding up,
+		// and is worded in whole seconds with the beat times beside it.
+		Entries: halfWindow, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/4 windows attested", WantGaps: 1, WantLongest: "150s",
+		WantGapLines: []string{"unattested window of 150s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2026-07-27T12:03:30Z)"},
+	}, { // Test 12: A beat exactly one slack past a one minute cadence is on time.
+		Entries: slackEdge, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 0, WantGapLines: []string{},
+	}, { // Test 13: A beat one second past the slack is a gap that missed no whole window.
+		Entries: slackPast, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 1, WantLongest: "62s",
+		WantGapLines: []string{"unattested window of 62s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2026-07-27T12:02:02Z)"},
+	}, { // Test 14: A beat a microsecond past the slack is a gap, worded to the whole second.
+		Entries: microPastEdge, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 1, WantLongest: "61s",
+		WantGapLines: []string{"unattested window of 61s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2026-07-27T12:02:01Z)"},
+	}, { // Test 15: At a ten minute cadence the slack is six seconds, so six seconds late is on
+		// time.
+		Entries: proportionalEdge, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 0, WantGapLines: []string{},
+	}, { // Test 16: At a ten minute cadence seven seconds late is past the slack and is a gap.
+		Entries: proportionalPast, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 1, WantLongest: "607s",
+		WantGapLines: []string{"unattested window of 607s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2026-07-27T12:11:07Z)"},
+	}, { // Test 17: A beat a tenth of a microsecond past the slack is on time, because beat times
+		// are read to the microsecond with finer digits dropped.
+		Entries: subMicroPastEdge, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 0, WantGapLines: []string{},
+	}, { // Test 18: A gap of 62.5s rounds up to 63s while the beat time drops its fraction.
+		Entries: halfSecondUp, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 1, WantLongest: "63s",
+		WantGapLines: []string{"unattested window of 63s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2026-07-27T12:02:02Z)"},
+	}, { // Test 19: A gap of 62.4999995s reads 62s, its half microsecond dropped before rounding.
+		Entries: belowHalfSecond, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/2 windows attested", WantGaps: 1, WantLongest: "62s",
+		WantGapLines: []string{"unattested window of 62s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2026-07-27T12:02:02Z)"},
+	}, { // Test 20: Beats centuries apart are measured exactly, never clamped.
+		Entries: centuries, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/196405200 windows attested", WantGaps: 1, WantLongest: "11784311940s",
+		WantGapLines: []string{"unattested window of 11784311940s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2400-01-01T00:00:00Z)"},
+	}, { // Test 21: The widest cadence the format allows measures a gap of centuries exactly.
+		Entries: maxCadence, Anchored: true, WantOK: true, WantSpanOK: true,
+		WantLevel:    "signed, chained (full), anchored by reference, spanned",
+		WantCoverage: "2/374 windows attested", WantGaps: 1, WantLongest: "11784311940s",
+		WantGapLines: []string{"unattested window of 11784311940s between beat 1 " +
+			"(2026-07-27T12:01:00Z) and beat 2 (2400-01-01T00:00:00Z)"},
+	}, { // Test 22: A cadence one second past the widest the format allows fails the claim.
+		Entries: pastMaxCadence, Anchored: true,
+		WantProblem: "want an integer from 1 to 31622400",
+	}, { // Test 23: A cadence too wide for a nanosecond duration fails the claim, not the math.
+		Entries: hugeCadence, Anchored: true,
+		WantProblem: "want an integer from 1 to 31622400",
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
@@ -212,6 +319,15 @@ func TestSpan(t *testing.T) {
 			}
 			if len(got.SpanGaps) != test.WantGaps {
 				t.Errorf("gaps %d, want %d: %v", len(got.SpanGaps), test.WantGaps, got.SpanGaps)
+			}
+			if test.WantGapLines != nil {
+				lines := cmp.Diff(test.WantGapLines, got.SpanGaps, cmpopts.EquateEmpty())
+				if lines != "" {
+					t.Errorf("gap lines (-want +got):\n%s", lines)
+				}
+				if diff := cmp.Diff(test.WantLongest, got.SpanLongestGap); diff != "" {
+					t.Errorf("longest gap (-want +got):\n%s", diff)
+				}
 			}
 			if got.SpanCountsCarried != test.WantCarried {
 				t.Errorf("carried %d, want %d", got.SpanCountsCarried, test.WantCarried)
@@ -297,8 +413,8 @@ func TestSpanBoundaryValues(t *testing.T) {
 	gapped := spanBase()
 	gapped[3].At = "2026-07-27T12:04:00Z"
 	got = Run(spanTestBundle(t, gapped, true), Options{})
-	if got.SpanLongestGap != "3m0s" {
-		t.Errorf("longest gap %q, want 3m0s", got.SpanLongestGap)
+	if got.SpanLongestGap != "180s" {
+		t.Errorf("longest gap %q, want 180s", got.SpanLongestGap)
 	}
 
 	// Test 3: a bundle with no span claims reports no coverage line at all.
@@ -307,5 +423,168 @@ func TestSpanBoundaryValues(t *testing.T) {
 	if got.SpanCoverage != "" || got.SpanPresent {
 		t.Errorf("spanless coverage %q present %t, want empty and false", got.SpanCoverage,
 			got.SpanPresent)
+	}
+}
+
+// TestSpanCadenceOutOfRange pins that a cadence past the format's range is refused before any
+// arithmetic runs on it, even in a bundle whose signature and canonical form already failed. A
+// cadence of 2^55 seconds wraps to zero nanoseconds and one of 2^58 seconds wraps to zero
+// microseconds, and measuring either would divide by zero.
+func TestSpanCadenceOutOfRange(t *testing.T) {
+	t.Parallel()
+	gapped := spanBase()
+	gapped[3].At = "2026-07-27T12:04:00Z"
+	signed := string(spanTestBundle(t, gapped, true))
+	tests := []struct {
+		Cadence     string
+		WantProblem string
+	}{{ // Test 0: A cadence whose nanosecond product wraps to zero is refused.
+		Cadence: "36028797018963968", WantProblem: "want an integer from 1 to 31622400",
+	}, { // Test 1: The largest int64 cadence is refused.
+		Cadence: "9223372036854775807", WantProblem: "want an integer from 1 to 31622400",
+	}, { // Test 2: A cadence past int64 is refused.
+		Cadence: "18446744073709551616", WantProblem: "want an integer from 1 to 31622400",
+	}, { // Test 3: A cadence whose microsecond product wraps to zero is refused.
+		Cadence: "288230376151711744", WantProblem: "want an integer from 1 to 31622400",
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if p := recover(); p != nil {
+					t.Fatalf("verify panicked on cadence %s: %v", test.Cadence, p)
+				}
+			}()
+			doc := strings.Replace(signed, `"cadence_s":60`, `"cadence_s":`+test.Cadence, 1)
+			if doc == signed {
+				t.Fatal("bundle carries no cadence to replace")
+			}
+			got := Run([]byte(doc), Options{})
+			if got.OK || got.SpanOK {
+				t.Errorf("ok %t span ok %t, want both false", got.OK, got.SpanOK)
+			}
+			if !problemContains(got, test.WantProblem) {
+				t.Errorf("problems %v do not mention %q", got.Problems, test.WantProblem)
+			}
+		})
+	}
+}
+
+// TestSpanMeasure pins the integer helpers the gap measurement uses at their rounding edges.
+func TestSpanMeasure(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		Micros     int64
+		Cadence    int64
+		WantWhole  string
+		WantMissed int64
+		WantTime   string
+	}{{ // Test 0: Half a second rounds the duration up and the beat time down.
+		Micros: 62_500_000, Cadence: 60_000_000, WantWhole: "63s", WantMissed: 0,
+		WantTime: "1970-01-01T00:01:02Z",
+	}, { // Test 1: A microsecond under half a second rounds the duration down.
+		Micros: 62_499_999, Cadence: 60_000_000, WantWhole: "62s", WantMissed: 0,
+		WantTime: "1970-01-01T00:01:02Z",
+	}, { // Test 2: Two and a half cadences count three windows, so two were missed.
+		Micros: 150_000_000, Cadence: 60_000_000, WantWhole: "150s", WantMissed: 2,
+		WantTime: "1970-01-01T00:02:30Z",
+	}, { // Test 3: A beat before the epoch drops its fraction toward the earlier second.
+		Micros: -500_000, Cadence: 1_000_000, WantWhole: "0s", WantMissed: 0,
+		WantTime: "1969-12-31T23:59:59Z",
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			if diff := cmp.Diff(test.WantWhole, wholeSeconds(test.Micros)); diff != "" {
+				t.Errorf("whole seconds mismatch (-want +got):\n%s", diff)
+			}
+			missed := missedWindows(test.Micros, test.Cadence)
+			if diff := cmp.Diff(test.WantMissed, missed); diff != "" {
+				t.Errorf("missed windows mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(test.WantTime, beatTime(test.Micros)); diff != "" {
+				t.Errorf("beat time mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// merkleSpanBundle builds a signed loomseal-merkle-v1 bundle whose one leaf is a span claim. The
+// leaf and the root are honest, so nothing but the span rule itself can refuse the bundle.
+func merkleSpanBundle(t *testing.T) []byte {
+	t.Helper()
+	priv := testKey()
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatal("public key type")
+	}
+	claim := map[string]any{
+		"type": "loomseal.span/1", "at": at,
+		"payload": map[string]any{"stream": "chain", "cadence_s": 60, "beat": 1, "count": 0},
+	}
+	content, err := jcs.Serialize(claim)
+	if err != nil {
+		t.Fatalf("canonicalize claim: %v", err)
+	}
+	leaf, err := jcs.Serialize(map[string]any{
+		"domain": "loomseal-merkle-v1", "install_id": "in_1", "claim": digestOf(content),
+	})
+	if err != nil {
+		t.Fatalf("canonicalize leaf: %v", err)
+	}
+	root := hex.EncodeToString(merkle.Root([][]byte{leaf}))
+	claim["chain"] = map[string]any{
+		"seq": 1, "prev": "", "link": hex.EncodeToString(merkle.LeafHash(leaf)),
+	}
+	claim["inclusion"] = map[string]any{"path": []any{}}
+	m := map[string]any{
+		"loomseal":   "0.1",
+		"bundle_id":  "lsb_tree_span",
+		"created_at": at,
+		"producer": map[string]any{
+			"product": "test", "product_version": "1", "install_id": "in_1",
+			"public_key": base64Std(pub), "key_id": seal.KeyID(pub),
+		},
+		"subject": map[string]any{"type": "fleet", "id": "yard"},
+		"chain": map[string]any{
+			"profile": "loomseal-merkle-v1", "keyed": false,
+			"params": map[string]any{"install_id": "in_1"},
+			"head":   map[string]any{"seq": 1, "link": root},
+		},
+		"claims": []any{claim},
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	signed, err := seal.SignBundle(raw, priv)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return signed
+}
+
+// TestSpanInTreeBundle pins the refusal of a span claim under the tree profile and the report it
+// leaves: the span is present and not ok, so a manifest naming the span check can hold every
+// verifier to the same failing step.
+func TestSpanInTreeBundle(t *testing.T) {
+	t.Parallel()
+	got := Run(merkleSpanBundle(t), Options{})
+	if got.OK {
+		t.Error("a span claim in a tree bundle verified")
+	}
+	if !got.SignatureOK || !got.ChainOK {
+		t.Errorf("signature ok %t chain ok %t, want both true so the span rule alone refuses it",
+			got.SignatureOK, got.ChainOK)
+	}
+	if !got.SpanPresent {
+		t.Error("span claim present but not reported")
+	}
+	if got.SpanOK {
+		t.Error("span reported ok under the tree profile")
+	}
+	want := "is a span claim, which the loomseal-merkle-v1 profile does not carry"
+	if !problemContains(got, want) {
+		t.Errorf("problems %v do not name the tree profile rule", got.Problems)
 	}
 }

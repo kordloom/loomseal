@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/kordloom/loomseal/jcs"
@@ -249,9 +250,12 @@ var (
 	anchorTypes = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
 )
 
-// Parse decodes raw strictly, rejecting unknown fields and trailing data, then validates
-// the structural rules the schema fixes.
+// Parse decodes raw strictly, rejecting nesting past MaxDepth, unknown fields, and trailing data,
+// then validates the structural rules the schema fixes.
 func Parse(raw []byte) (*Bundle, error) {
+	if err := CheckDepth(raw, MaxDepth); err != nil {
+		return nil, err
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var b Bundle
@@ -348,7 +352,7 @@ func (p Producer) validate() error {
 	if p.Product == "" || p.ProductVersion == "" || p.InstallID == "" {
 		return fmt.Errorf("%w: producer fields are incomplete", ErrSchema)
 	}
-	key, err := base64.StdEncoding.DecodeString(p.PublicKey)
+	key, err := DecodeBase64(p.PublicKey)
 	if err != nil {
 		return fmt.Errorf("%w: producer public_key is not base64: %w", ErrSchema, err)
 	}
@@ -466,7 +470,7 @@ func (a Anchor) validate(i int) error {
 		return fmt.Errorf("%w: anchor %d ref is empty", ErrSchema, i)
 	}
 	if a.Proof != "" {
-		if _, err := base64.StdEncoding.DecodeString(a.Proof); err != nil {
+		if _, err := DecodeBase64(a.Proof); err != nil {
 			return fmt.Errorf("%w: anchor %d proof is not base64: %w", ErrSchema, i, err)
 		}
 	}
@@ -481,7 +485,7 @@ func (s Signature) validate(i int) error {
 	if s.Alg != "ed25519" {
 		return fmt.Errorf("%w: signature %d alg %q, this verifier implements ed25519", ErrUnsupported, i, s.Alg)
 	}
-	sig, err := base64.StdEncoding.DecodeString(s.Sig)
+	sig, err := DecodeBase64(s.Sig)
 	if err != nil {
 		return fmt.Errorf("%w: signature %d sig is not base64: %w", ErrSchema, i, err)
 	}
@@ -494,10 +498,38 @@ func (s Signature) validate(i int) error {
 
 // checkTime requires an RFC 3339 timestamp.
 func checkTime(what, s string) error {
-	if _, err := time.Parse(time.RFC3339, s); err != nil {
+	if _, err := ParseTime(s); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrSchema, what, err)
 	}
 	return nil
+}
+
+// reTime is the RFC 3339 date-time production: a four-digit year, two-digit fields, an upper case
+// T, a fraction of any length after a period, and Z or a numeric offset whose hour is below 24 and
+// whose minute is below 60.
+var reTime = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}` +
+	`(\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$`)
+
+// ParseTime parses an RFC 3339 time strictly: the shape reTime fixes, with the calendar fields in
+// range. time.Parse with the RFC3339 layout, and Time.UnmarshalText, which defers to it, also
+// accept a one-digit hour, a comma before the fraction, and offsets up to 24:60, none of which RFC
+// 3339 allows, so every time a bundle or a presentation carries is checked here before it is read.
+func ParseTime(s string) (time.Time, error) {
+	if !reTime.MatchString(s) {
+		return time.Time{}, fmt.Errorf("%q is not an RFC 3339 time", s)
+	}
+	return time.Parse(time.RFC3339, s)
+}
+
+// DecodeBase64 decodes a base64 standard encoding string, refusing any byte outside the alphabet
+// and its padding. The standard library decoder skips carriage returns and newlines, which would
+// give one key or signature many spellings on the wire. Every base64 value a bundle or a
+// presentation carries is decoded here.
+func DecodeBase64(s string) ([]byte, error) {
+	if strings.ContainsAny(s, "\r\n") {
+		return nil, errors.New("base64 contains a line break")
+	}
+	return base64.StdEncoding.DecodeString(s)
 }
 
 // CanonicalUnsigned returns the RFC 8785 canonical form of raw with the members a producer signature

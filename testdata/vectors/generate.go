@@ -90,6 +90,14 @@ type vector struct {
 	// Legacy lists, the same way, every record body a verifier must report verified under the
 	// legacy unkeyed digest form. Empty means none may be.
 	Legacy []string `json:"legacy,omitempty"`
+	// SpanCoverage is the coverage line a verifier must report for a bundle that must verify, such
+	// as "2/4 windows attested". Empty means the bundle carries no span claims.
+	SpanCoverage string `json:"span_coverage,omitempty"`
+	// SpanLongestGap is the longest gap a verifier must report, in whole seconds such as "150s".
+	// Empty means no gap may be reported.
+	SpanLongestGap string `json:"span_longest_gap,omitempty"`
+	// SpanGaps lists, in order, every gap line a verifier must report. Empty means none may be.
+	SpanGaps []string `json:"span_gaps,omitempty"`
 }
 
 // presentationManifest is the conformance document for holder presentations.
@@ -165,6 +173,7 @@ func main() {
 	s.hardening()
 	s.subjects()
 	s.evidence()
+	s.agreement()
 	s.presentations()
 
 	if err := s.write(); err != nil {
@@ -803,6 +812,9 @@ func mutateSigned(signed []byte, fn func(map[string]any)) []byte {
 	return out
 }
 
+// maxCadenceS is the widest cadence a span claim may declare, the seconds in a 366-day year.
+const maxCadenceS = 366 * 24 * 60 * 60
+
 // spanEntry describes one claim in a span vector chain.
 type spanEntry struct {
 	// kind is "audit" or "span".
@@ -813,6 +825,10 @@ type spanEntry struct {
 	beat int64
 	// count is the span claim's declared entry count.
 	count int64
+	// cadence is the span claim's declared cadence in seconds. Zero means 60.
+	cadence int64
+	// members replaces span payload members with values of any JSON type.
+	members map[string]any
 }
 
 // spanBundle builds an unkeyed loomseal-chain-v1 bundle from entries and anchors its head, so
@@ -823,12 +839,17 @@ func (s *state) spanBundle(entries []spanEntry) map[string]any {
 	for i, e := range entries {
 		var c map[string]any
 		if e.kind == "span" {
-			c = map[string]any{
-				"type": "loomseal.span/1", "at": e.at,
-				"payload": map[string]any{
-					"stream": "chain", "cadence_s": int64(60), "beat": e.beat, "count": e.count,
-				},
+			cadence := e.cadence
+			if cadence == 0 {
+				cadence = 60
 			}
+			payload := map[string]any{
+				"stream": "chain", "cadence_s": cadence, "beat": e.beat, "count": e.count,
+			}
+			for name, v := range e.members {
+				payload[name] = v
+			}
+			c = map[string]any{"type": "loomseal.span/1", "at": e.at, "payload": payload}
 		} else {
 			c = map[string]any{
 				"type": "switchtender.audit/1", "at": e.at,
@@ -846,8 +867,6 @@ func (s *state) spanBundle(entries []spanEntry) map[string]any {
 	return m
 }
 
-// spans emits the population attestation vectors: valid, gapped, adopted mid-life, and the two
-// contradictions the profile must fail.
 // merkleNegatives emits the tree profile vectors a conformant verifier must refuse. Each one is a
 // forgery a producer could attempt, and each is signed, so only the profile's own checks catch it.
 func (s *state) merkleNegatives() {
@@ -959,7 +978,11 @@ func (s *state) merkleNegatives() {
 			"recomputes, so only the append-only check catches it.", s.sign(m))
 }
 
+// spans emits the population attestation vectors: valid, gapped, adopted mid-life, the two
+// contradictions the profile must fail, and the gap measurement at its edges, pinned down to the
+// coverage line and each gap's wording so the three verifiers measure a gap one way.
 func (s *state) spans() {
+	const spanned = "signed, chained (full), anchored by reference, spanned"
 	valid := []spanEntry{
 		{kind: "audit", at: "2026-07-27T15:00:10Z"},
 		{kind: "span", at: "2026-07-27T15:01:00Z", beat: 1, count: 1},
@@ -967,22 +990,29 @@ func (s *state) spans() {
 		{kind: "audit", at: "2026-07-27T15:01:40Z"},
 		{kind: "span", at: "2026-07-27T15:02:00Z", beat: 2, count: 2},
 	}
-	s.add("span-valid", true,
-		"signed, chained (full), anchored by reference, spanned", "",
+	// secondBeatAt returns the valid chain with its second beat moved to at, at the cadence given
+	// to both beats when it is not zero.
+	secondBeatAt := func(at string, cadence int64) []spanEntry {
+		moved := make([]spanEntry, len(valid))
+		copy(moved, valid)
+		moved[4].at = at
+		moved[1].cadence, moved[4].cadence = cadence, cadence
+		return moved
+	}
+	s.add("span-valid", true, spanned, "",
 		"Two beats whose counts recompute from the sequence numbers earn the spanned level.",
 		s.sign(s.spanBundle(valid)))
+	s.expectSpan("span-valid", "2/2 windows attested", "")
 
-	gapped := make([]spanEntry, len(valid))
-	copy(gapped, valid)
-	gapped[4].at = "2026-07-27T15:04:00Z"
-	s.add("span-gap", true,
-		"signed, chained (full), anchored by reference, spanned", "",
+	s.add("span-gap", true, spanned, "",
 		"Beats further apart than the declared cadence are a reported gap, never a hidden one "+
 			"and never a failure.",
-		s.sign(s.spanBundle(gapped)))
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:04:00Z", 0))))
+	s.expectSpan("span-gap", "2/4 windows attested", "180s",
+		"unattested window of 180s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2026-07-27T15:04:00Z)")
 
-	s.add("span-mid-adoption", true,
-		"signed, chained (full), anchored by reference, spanned", "",
+	s.add("span-mid-adoption", true, spanned, "",
 		"A chain adopting the profile mid-life attests its entire prior population at beat 1.",
 		s.sign(s.spanBundle([]spanEntry{
 			{kind: "audit", at: "2026-07-27T15:00:10Z"},
@@ -990,6 +1020,119 @@ func (s *state) spans() {
 			{kind: "audit", at: "2026-07-27T15:00:30Z"},
 			{kind: "span", at: "2026-07-27T15:01:00Z", beat: 1, count: 3},
 		})))
+	s.expectSpan("span-mid-adoption", "1/1 windows attested", "")
+
+	// The gap measurement at its edges. At a 60s cadence the scheduling slack is the one second
+	// floor, so an interval of 61s is on time and any wider one is a gap. At a 600s cadence the
+	// slack is the proportional 6s, so 606s is on time and 607s is a gap. A gap of two and a half
+	// cadences counts three windows, since halves round up, so two were missed.
+	s.add("span-slack-edge", true, spanned, "",
+		"A beat landing exactly one scheduling slack past its cadence is on time: the slack is a "+
+			"hundredth of the cadence and never under a second, and the edge is inclusive.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:02:01Z", 0))))
+	s.expectSpan("span-slack-edge", "2/2 windows attested", "")
+
+	s.add("span-slack-past", true, spanned, "",
+		"A beat landing one second past the scheduling slack is a reported gap even though no "+
+			"whole window was missed, so the gap list and the window count answer different "+
+			"questions.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:02:02Z", 0))))
+	s.expectSpan("span-slack-past", "2/2 windows attested", "62s",
+		"unattested window of 62s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2026-07-27T15:02:02Z)")
+
+	s.add("span-jitter", true, spanned, "",
+		"A beat half a second late at a one minute cadence is a timer firing late, inside the "+
+			"slack, and not a gap. Beat times are read to the microsecond.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:02:00.500Z", 0))))
+	s.expectSpan("span-jitter", "2/2 windows attested", "")
+
+	s.add("span-slack-proportional", true, spanned, "",
+		"At a ten minute cadence the scheduling slack is six seconds, a hundredth of the cadence, "+
+			"so a beat six seconds late is on time.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:11:06Z", 600))))
+	s.expectSpan("span-slack-proportional", "2/2 windows attested", "")
+
+	s.add("span-slack-proportional-past", true, spanned, "",
+		"At a ten minute cadence a beat seven seconds late is one second past the slack and is a "+
+			"reported gap.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:11:07Z", 600))))
+	s.expectSpan("span-slack-proportional-past", "2/2 windows attested", "607s",
+		"unattested window of 607s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2026-07-27T15:11:07Z)")
+
+	s.add("span-half-window", true, spanned, "",
+		"A gap of two and a half cadences counts three windows, because halves round up, so two "+
+			"windows were missed and the duration is written in whole seconds.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:03:30Z", 0))))
+	s.expectSpan("span-half-window", "2/4 windows attested", "150s",
+		"unattested window of 150s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2026-07-27T15:03:30Z)")
+
+	// Beat times are read to the microsecond with finer digits dropped, and a gap's duration rounds
+	// to the whole second with halves up while the beat times beside it drop their fraction. A beat
+	// a tenth of a microsecond past the slack edge is therefore on time, a gap of 62.5s reads 63s,
+	// and one of 62.4999995s reads 62s because the half microsecond was dropped before rounding.
+	s.add("span-sub-microsecond", true, spanned, "",
+		"A beat a tenth of a microsecond past the slack edge is on time, because beat times are "+
+			"read to the microsecond with finer digits dropped.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:02:01.0000001Z", 0))))
+	s.expectSpan("span-sub-microsecond", "2/2 windows attested", "")
+
+	s.add("span-round-half-up", true, spanned, "",
+		"A gap of 62.5s reads 63s, because a duration rounds to the nearest whole second with "+
+			"halves up, while the beat time beside it drops its fraction and reads 15:02:02.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:02:02.5Z", 0))))
+	s.expectSpan("span-round-half-up", "2/2 windows attested", "63s",
+		"unattested window of 63s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2026-07-27T15:02:02Z)")
+
+	s.add("span-round-below-half", true, spanned, "",
+		"A gap of 62.4999995s reads 62s: the beat time is read to the microsecond first, which "+
+			"leaves 62.499999s, and that rounds down.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:02:02.4999995Z", 0))))
+	s.expectSpan("span-round-below-half", "2/2 windows attested", "62s",
+		"unattested window of 62s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2026-07-27T15:02:02Z)")
+
+	// The arithmetic is exact. Beats centuries apart are measured as they are, never clamped,
+	// and a cadence is bounded so that no quantity the measurement forms leaves a signed 64-bit
+	// count of microseconds.
+	s.add("span-centuries", true, spanned, "",
+		"Beats centuries apart are a gap measured exactly, with every missed window counted, "+
+			"never clamped to a largest duration.",
+		s.sign(s.spanBundle(secondBeatAt("2400-01-01T00:00:00Z", 0))))
+	s.expectSpan("span-centuries", "2/196405020 windows attested", "11784301140s",
+		"unattested window of 11784301140s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2400-01-01T00:00:00Z)")
+
+	s.add("span-cadence-max", true, spanned, "",
+		"A cadence of 31622400 seconds, a 366-day year, is the widest a span claim may declare, "+
+			"and a gap of centuries at it is measured exactly.",
+		s.sign(s.spanBundle(secondBeatAt("2400-01-01T00:00:00Z", maxCadenceS))))
+	s.expectSpan("span-cadence-max", "2/374 windows attested", "11784301140s",
+		"unattested window of 11784301140s between beat 1 (2026-07-27T15:01:00Z) and beat 2 "+
+			"(2400-01-01T00:00:00Z)")
+
+	s.add("span-cadence-past-max", false, "", "span",
+		"A cadence one second wider than a 366-day year is outside the range the format allows "+
+			"and fails the span check.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:02:00Z", maxCadenceS+1))))
+
+	s.add("span-cadence-huge", false, "", "span",
+		"A cadence of ten billion seconds is inside the integer range but outside the cadence "+
+			"range, so it fails the span check rather than overflowing a verifier's arithmetic.",
+		s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:04:00Z", 10_000_000_000))))
+
+	// A cadence of 2^58 seconds is past the integer range, so the bundle fails to parse, and a
+	// verifier that measured it anyway in microseconds or nanoseconds would wrap to a zero cadence
+	// and divide by it.
+	signed := s.sign(s.spanBundle(secondBeatAt("2026-07-27T15:04:00Z", 0)))
+	signed = []byte(strings.Replace(string(signed), `"cadence_s":60`,
+		`"cadence_s":288230376151711744`, 1))
+	s.add("span-cadence-wraps", false, "", "parse",
+		"A cadence of 2^58 seconds is outside the integer profile and is rejected, and no "+
+			"verifier may crash measuring it, though it wraps to zero in microseconds.", signed)
 
 	falseCount := make([]spanEntry, len(valid))
 	copy(falseCount, valid)
@@ -1004,6 +1147,34 @@ func (s *state) spans() {
 	s.add("span-missing-beat", false, "", "span",
 		"A beat number that skips is a deleted window and fails.",
 		s.sign(s.spanBundle(missingBeat)))
+
+	// A JSON true or false is not a number, though a language that counts booleans as integers
+	// would read true as 1 and false as 0. Each value below would pass if read that way: a cadence
+	// of 1 is in range, beat 1 is the first beat, and no entry lies between the two beats of the
+	// last vector, so its chain shows a count of 0.
+	boolCadence := make([]spanEntry, len(valid))
+	copy(boolCadence, valid)
+	boolCadence[1].members = map[string]any{"cadence_s": true}
+	boolCadence[4].members = map[string]any{"cadence_s": true}
+	s.add("span-cadence-bool", false, "", "span",
+		"A cadence of true is not an integer and fails the span check, never read as 1.",
+		s.sign(s.spanBundle(boolCadence)))
+
+	boolBeat := make([]spanEntry, len(valid))
+	copy(boolBeat, valid)
+	boolBeat[1].members = map[string]any{"beat": true}
+	s.add("span-beat-bool", false, "", "span",
+		"A beat of true is not an integer and fails the span check, never read as beat 1.",
+		s.sign(s.spanBundle(boolBeat)))
+
+	s.add("span-count-bool", false, "", "span",
+		"A count of false is not an integer and fails the span check, never read as 0.",
+		s.sign(s.spanBundle([]spanEntry{
+			{kind: "audit", at: "2026-07-27T15:00:10Z"},
+			{kind: "span", at: "2026-07-27T15:01:00Z", beat: 1, count: 1},
+			{kind: "span", at: "2026-07-27T15:02:00Z", beat: 2,
+				members: map[string]any{"count": false}},
+		})))
 }
 
 // rewriteAlg edits the first signature entry's alg in an already-signed bundle, the way an
@@ -1061,9 +1232,627 @@ func (s *state) hardening() {
 			"reported unchecked.", s.sign(rm))
 	s.expect("record-member-on-nonrecord", []string{"claim 0 reason_text"}, nil)
 
+	// A switchtender-audit-v1 chain declared keyed. The profile is unkeyed, so a reader that took
+	// the flag would check continuity only and never recompute a link. The second vector alters the
+	// payload after its link was computed, which is the edit that reading would let through.
+	sk := s.switchTender()
+	sk["chain"].(map[string]any)["keyed"] = true
+	s.add("switchtender-keyed", false, "", "chain",
+		"A switchtender-audit-v1 chain declared keyed fails the chain check, because the profile "+
+			"is unkeyed and every link must be recomputed.", s.sign(sk))
+	sk = s.switchTender()
+	sk["chain"].(map[string]any)["keyed"] = true
+	sk["claims"].([]any)[0].(map[string]any)["payload"].(map[string]any)["path"] = "/api/evil"
+	s.add("switchtender-keyed-altered", false, "", "chain",
+		"A switchtender-audit-v1 claim altered after its link was computed fails, although the "+
+			"chain declares itself keyed to avoid the recompute.", s.sign(sk))
+
 	s.casefoldSwitchTender()
 	s.casefoldSpan()
 	s.casefoldEnvelope()
+}
+
+// agreement emits the vectors that hold every shipped verifier to one verdict where a lenient
+// reader would reach another: documents the schema forbids by member type or value, null where the
+// schema defines no null, base64 broken across lines, inputs built to crash a verifier rather than
+// reach a verdict, nesting at and past the bound, and a span claim under the tree profile. Each
+// signed vector carries a valid producer signature over the fault, so only the rule under test can
+// refuse it.
+//
+//nolint:funlen // One vector per divergence, listed in one place.
+func (s *state) agreement() {
+	// schemaCase is one schema-forbidden value planted inside the signed bytes of a one-claim
+	// loomseal-chain-v1 bundle.
+	type schemaCase struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// why is the vector's description in the manifest.
+		why string
+		// mutate plants the fault in the bundle before it is signed.
+		mutate func(m map[string]any)
+	}
+	deepLink := strings.Repeat("ab", 32)
+	schemaCases := []schemaCase{{
+		name: "anchor-unknown-type",
+		why: "An anchor type outside the vocabulary the format defines is refused at parse, " +
+			"never reported as anchored by reference.",
+		mutate: func(m map[string]any) {
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			a := gitAnchor(head["seq"].(int64), head["link"].(string))
+			a["type"] = "blockchain"
+			m["anchors"] = []any{a}
+		},
+	}, {
+		name: "anchor-empty-ref",
+		why:  "An anchor with an empty ref locates nothing and is refused at parse.",
+		mutate: func(m map[string]any) {
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			a := gitAnchor(head["seq"].(int64), head["link"].(string))
+			a["ref"] = ""
+			m["anchors"] = []any{a}
+		},
+	}, {
+		name: "anchor-bad-at",
+		why:  "An anchor time that is not RFC 3339 is refused at parse.",
+		mutate: func(m map[string]any) {
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			a := gitAnchor(head["seq"].(int64), head["link"].(string))
+			a["at"] = "yesterday"
+			m["anchors"] = []any{a}
+		},
+	}, {
+		name:   "bundle-id-empty",
+		why:    "An empty bundle_id is refused at parse.",
+		mutate: func(m map[string]any) { m["bundle_id"] = "" },
+	}, {
+		name:   "subject-empty-id",
+		why:    "An empty subject id is refused at parse.",
+		mutate: func(m map[string]any) { m["subject"].(map[string]any)["id"] = "" },
+	}, {
+		name:   "producer-empty-product",
+		why:    "An empty producer product is refused at parse.",
+		mutate: func(m map[string]any) { m["producer"].(map[string]any)["product"] = "" },
+	}, {
+		name:   "created-at-malformed",
+		why:    "A created_at that is not RFC 3339 is refused at parse.",
+		mutate: func(m map[string]any) { m["created_at"] = "yesterday" },
+	}, {
+		name: "created-at-one-digit-hour",
+		why: "A created_at with a one-digit hour is not RFC 3339 and is refused at parse, " +
+			"although a general date parser reads it.",
+		mutate: func(m map[string]any) { m["created_at"] = "2026-07-27T1:00:00Z" },
+	}, {
+		name: "created-at-comma-fraction",
+		why: "A created_at with a comma before its fractional second is not RFC 3339 and is " +
+			"refused at parse.",
+		mutate: func(m map[string]any) { m["created_at"] = "2026-07-27T15:00:00,5Z" },
+	}, {
+		name:   "created-at-offset-hour-24",
+		why:    "A created_at whose offset hour is 24 is not RFC 3339 and is refused at parse.",
+		mutate: func(m map[string]any) { m["created_at"] = "2026-07-27T15:00:00+24:00" },
+	}, {
+		name:   "created-at-offset-minute-60",
+		why:    "A created_at whose offset minute is 60 is not RFC 3339 and is refused at parse.",
+		mutate: func(m map[string]any) { m["created_at"] = "2026-07-27T15:00:00+23:60" },
+	}, {
+		name: "payload-string",
+		why:  "A claim payload that is not a JSON object is refused at parse.",
+		mutate: func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["payload"] = "not an object"
+		},
+	}, {
+		name: "evidence-empty-role",
+		why:  "An evidence entry with an empty role is refused at parse.",
+		mutate: func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["evidence"] = []any{map[string]any{
+				"role": "", "digest": "sha256:" + deepLink,
+			}}
+		},
+	}, {
+		name: "evidence-present-string",
+		why:  "An evidence present flag that is not a boolean is refused at parse.",
+		mutate: func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["evidence"] = []any{map[string]any{
+				"role": "snapshot", "digest": "sha256:" + deepLink, "present": "yes",
+			}}
+		},
+	}, {
+		name:   "keyed-zero",
+		why:    "A chain keyed flag written as a number is refused at parse, never read as false.",
+		mutate: func(m map[string]any) { m["chain"].(map[string]any)["keyed"] = int64(0) },
+	}, {
+		name:   "keyed-string",
+		why:    "A chain keyed flag written as a string is refused at parse, never read as true.",
+		mutate: func(m map[string]any) { m["chain"].(map[string]any)["keyed"] = "yes" },
+	}, {
+		name: "seq-true",
+		why: "A sequence number written as a boolean is refused at parse, never hashed as a " +
+			"number.",
+		mutate: func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["chain"].(map[string]any)["seq"] = true
+			m["chain"].(map[string]any)["head"].(map[string]any)["seq"] = true
+		},
+	}, {
+		name: "seq-zero",
+		why:  "A sequence number below one is refused at parse.",
+		mutate: func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["chain"].(map[string]any)["seq"] = int64(0)
+		},
+	}, {
+		name: "prev-null",
+		why: "A prev written as null is refused at parse rather than read as the empty string " +
+			"and recomputed as genesis.",
+		mutate: func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["chain"].(map[string]any)["prev"] = nil
+		},
+	}, {
+		name: "public-key-line-break",
+		why: "A producer public_key whose base64 carries a line break is refused at parse, " +
+			"because a decoder that skips line breaks would give one key many spellings.",
+		mutate: func(m map[string]any) {
+			p := m["producer"].(map[string]any)
+			key := p["public_key"].(string)
+			p["public_key"] = key[:10] + "\n" + key[10:]
+		},
+	}, {
+		name: "inclusion-under-linear",
+		why: "An inclusion proof on a claim under a linear profile is refused at parse rather " +
+			"than ignored, because a reader who sees a proof assumes some verifier checked it.",
+		mutate: func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["inclusion"] = map[string]any{"path": []any{}}
+		},
+	}, {
+		name: "consistency-under-linear",
+		why: "A consistency proof under a linear profile is refused at parse rather than " +
+			"ignored.",
+		mutate: func(m map[string]any) {
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			m["chain"].(map[string]any)["consistency"] = map[string]any{
+				"from_size": int64(1), "from_root": head["link"], "path": []any{},
+			}
+		},
+	}, {
+		name: "anchor-proof-not-base64",
+		why: "An anchor proof that is not base64 is refused at parse, never reported as " +
+			"anchored by reference.",
+		mutate: func(m map[string]any) {
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			a := gitAnchor(head["seq"].(int64), head["link"].(string))
+			a["proof"] = "!!!!"
+			m["anchors"] = []any{a}
+		},
+	}, {
+		name: "anchor-proof-line-break",
+		why: "An anchor proof whose base64 carries a line break is refused at parse rather " +
+			"than decoded by skipping the break.",
+		mutate: func(m map[string]any) {
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			a := gitAnchor(head["seq"].(int64), head["link"].(string))
+			a["proof"] = "AAAA\nAAAA"
+			m["anchors"] = []any{a}
+		},
+	}, {
+		name: "params-number",
+		why: "A chain params member that is not a string is refused at parse, because the " +
+			"schema types every params value as a string.",
+		mutate: func(m map[string]any) {
+			m["chain"].(map[string]any)["params"].(map[string]any)["extra"] = int64(5)
+		},
+	}, {
+		name: "params-null",
+		why: "A chain params member written as null is refused at parse rather than read as " +
+			"the empty string.",
+		mutate: func(m map[string]any) {
+			m["chain"].(map[string]any)["params"].(map[string]any)["extra"] = nil
+		},
+	}}
+	for _, c := range schemaCases {
+		m := s.v1(1, false)
+		c.mutate(m)
+		s.add(c.name, false, "", "parse", c.why, s.sign(m))
+	}
+	s.typeSweep()
+
+	// The same class of fault on a bundle that declares no chain.
+	m := s.base()
+	delete(m["claims"].([]any)[0].(map[string]any), "at")
+	s.add("claim-without-at", false, "", "parse",
+		"A claim with no at is refused at parse.", s.sign(m))
+
+	m = s.base()
+	delete(m["claims"].([]any)[0].(map[string]any), "type")
+	s.add("claim-without-type", false, "", "parse",
+		"A claim with no type is refused at parse.", s.sign(m))
+
+	m = s.base()
+	m["claims"].([]any)[0].(map[string]any)["payload"] = []any{int64(1)}
+	s.add("payload-array", false, "", "parse",
+		"A claim payload written as an array is refused at parse.", s.sign(m))
+
+	m = s.base()
+	m["claims"].([]any)[0].(map[string]any)["chain"] = map[string]any{
+		"seq": int64(1), "prev": "", "link": deepLink,
+	}
+	s.add("coords-without-chain", false, "", "parse",
+		"Chain coordinates on a claim of a bundle that declares no chain are refused at parse, "+
+			"because unchained claims are unproved by construction.", s.sign(m))
+
+	m = s.base()
+	m["subject"] = "a string"
+	s.add("subject-string", false, "", "parse",
+		"A subject that is not an object is refused at parse, with a verdict and never a crash.",
+		s.sign(m))
+
+	m = s.base()
+	m["claims"] = []any{int64(1)}
+	s.add("claim-number", false, "", "parse",
+		"A claim that is not an object is refused at parse, with a verdict and never a crash.",
+		s.sign(m))
+
+	// Faults outside the signed bytes, planted after signing so the signature stays valid.
+	s.add("signature-line-break", false, "", "parse",
+		"A signature whose base64 carries a line break is refused at parse.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			sig := m["signatures"].([]any)[0].(map[string]any)
+			text := sig["sig"].(string)
+			sig["sig"] = text[:20] + "\r\n" + text[20:]
+		}))
+
+	// A counterparty key broken across lines. The attestation's signature is genuine, so only the
+	// base64 rule refuses it.
+	m = s.attestedBundle()
+	att := m["claims"].([]any)[0].(map[string]any)["attestations"].([]any)[0].(map[string]any)
+	key := att["public_key"].(string)
+	att["public_key"] = key[:12] + "\n" + key[12:]
+	s.add("attestation-key-line-break", false, "", "attestation",
+		"A counterparty attestation whose public_key carries a line break inside its base64 is "+
+			"refused rather than decoded by skipping the break.", s.sign(m))
+
+	// A claim attestation signature broken across lines.
+	m = s.attestedBundle()
+	att = m["claims"].([]any)[0].(map[string]any)["attestations"].([]any)[0].(map[string]any)
+	text := att["sig"].(string)
+	att["sig"] = text[:20] + "\n" + text[20:]
+	s.add("attestation-sig-line-break", false, "", "attestation",
+		"A counterparty attestation whose sig carries a line break inside its base64 is refused "+
+			"rather than decoded by skipping the break.", s.sign(m))
+
+	// A head attestation's key and signature broken across lines, added after signing as a
+	// witness adds one. Its signature over the head is genuine, so only the base64 rule refuses
+	// it.
+	headAttested := func(edit func(att map[string]any)) []byte {
+		return mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			hPriv, hPub := counterpartyKey()
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			att := headAttestation(hPriv, hPub, head["link"].(string), head["seq"], "witness",
+				"2026-08-30T12:00:00Z")
+			edit(att)
+			m["attestations"] = []any{att}
+		})
+	}
+	s.add("head-attestation-key-line-break", false, "", "attestation",
+		"A head attestation whose public_key carries a line break inside its base64 is refused "+
+			"rather than decoded by skipping the break.",
+		headAttested(func(att map[string]any) {
+			key := att["public_key"].(string)
+			att["public_key"] = key[:12] + "\n" + key[12:]
+		}))
+	s.add("head-attestation-sig-line-break", false, "", "attestation",
+		"A head attestation whose sig carries a line break inside its base64 is refused rather "+
+			"than decoded by skipping the break.",
+		headAttested(func(att map[string]any) {
+			sig := att["sig"].(string)
+			att["sig"] = sig[:20] + "\r\n" + sig[20:]
+		}))
+
+	// Signing times that a general date parser reads but RFC 3339 does not allow. The time is
+	// inside the counter-signed bytes, so the signatures are genuine and only the time rule
+	// refuses them.
+	m = s.v1(1, false)
+	tc := m["claims"].([]any)[0].(map[string]any)
+	tPriv, tPub := counterpartyKey()
+	tc["attestations"] = []any{attestationAt(tPriv, tPub,
+		tc["chain"].(map[string]any)["link"].(string), "approver", "2026-08-30T1:00:00Z")}
+	s.add("attestation-at-one-digit-hour", false, "", "attestation",
+		"An attestation whose signed at has a one-digit hour is refused, because the time is not "+
+			"RFC 3339.", s.sign(m))
+	s.add("head-attestation-at-one-digit-hour", false, "", "attestation",
+		"A head attestation whose signed at has a one-digit hour is refused, because the time is "+
+			"not RFC 3339.",
+		mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			hPriv, hPub := counterpartyKey()
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			m["attestations"] = []any{headAttestation(hPriv, hPub, head["link"].(string),
+				head["seq"], "witness", "2026-08-30T1:00:00Z")}
+		}))
+
+	s.add("attestation-null", false, "", "parse",
+		"A null entry in a claim's attestations is refused at parse rather than read as an empty "+
+			"attestation.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["attestations"] = []any{nil}
+		}))
+
+	s.add("disclosure-null", false, "", "parse",
+		"A null entry in a claim's disclosures is refused at parse rather than read as an empty "+
+			"disclosure.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["disclosures"] = []any{nil}
+		}))
+
+	s.add("attestations-string", false, "", "parse",
+		"A head attestations member that is not an array is refused at parse, with a verdict and "+
+			"never a crash.",
+		mutateSigned(s.sign(s.v1(1, false)), func(m map[string]any) {
+			m["attestations"] = "witness"
+		}))
+
+	// A \u escape whose digits are not hex. The edit is textual because no serializer emits it.
+	signed := s.sign(s.v1(1, false))
+	signed = []byte(strings.Replace(string(signed), `"lsb_vectors"`, `"lsb_\uzzzz"`, 1))
+	s.add("escape-invalid-hex", false, "", "parse",
+		"A \\u escape whose digits are not hex is refused at parse, with a verdict and never a "+
+			"crash.", signed)
+
+	// Nesting. A conforming verifier holds a document nested bundle.MaxDepth levels deep and
+	// refuses a deeper one at parse, counting each array or object as one level.
+	m = s.v1(1, false)
+	m["claims"].([]any)[0].(map[string]any)["payload"].(map[string]any)["deep"] = nested(3000)
+	s.relinkV1(m, false)
+	s.add("nesting-3000-deep", true, "signed, chained (full)", "",
+		"A payload nested 3000 levels deep verifies, because it is within the nesting bound and "+
+			"a verifier must reach a verdict rather than exhaust its stack.", s.sign(m))
+
+	m = s.v1(1, false)
+	m["claims"].([]any)[0].(map[string]any)["payload"].(map[string]any)["deep"] =
+		nested(bundle.MaxDepth - envelopeDepth)
+	s.relinkV1(m, false)
+	s.add("nesting-at-bound", true, "signed, chained (full)", "",
+		fmt.Sprintf("A document nested exactly %d levels deep verifies: the bound is inclusive, "+
+			"and a verifier holds it whatever its own stack.", bundle.MaxDepth), s.sign(m))
+
+	// An integer literal thousands of digits long, which a reader converting it before checking
+	// its range may fail on rather than refuse.
+	signed = s.sign(s.v1(1, false))
+	signed = []byte(strings.Replace(string(signed), `"path":"/api/runs"`,
+		`"path":"/api/runs","big":`+strings.Repeat("9", 5000), 1))
+	s.add("number-5000-digits", false, "", "parse",
+		"An integer literal of 5000 digits is refused as beyond 2^53, with a verdict and never a "+
+			"crash.", signed)
+
+	// One level past the bound, honestly linked and signed, so the bound alone refuses it.
+	m = s.v1(1, false)
+	m["claims"].([]any)[0].(map[string]any)["payload"].(map[string]any)["deep"] =
+		nested(bundle.MaxDepth + 1 - envelopeDepth)
+	s.relinkV1(m, false)
+	s.add("nesting-past-bound", false, "", "parse",
+		fmt.Sprintf("A document nested %d levels deep is refused at parse, one level past the "+
+			"bound, before any recursive reader sees it.", bundle.MaxDepth+1), s.sign(m))
+
+	// A span claim under the tree profile. The leaf and the root are honest, so only the rule that
+	// the tree profile carries no span claims can refuse it.
+	s.add("merkle-span-claim", false, "", "span",
+		"A span claim in a tree bundle is refused rather than checked, because a tree has no "+
+			"per-entry predecessor and no contiguous beats for the coverage check to run over.",
+		s.sign(s.merkleBundleShaped(1, []int{0}, 0, func(log []map[string]any) {
+			log[0]["type"] = "loomseal.span/1"
+			log[0]["payload"] = map[string]any{
+				"stream": "chain", "cadence_s": int64(60), "beat": int64(1), "count": int64(0),
+			}
+		})))
+}
+
+// typeCase is one member position the schema types, planted with a value of another JSON type.
+type typeCase struct {
+	// name is the vector's name and the stem of its file.
+	name string
+	// build returns the honest unsigned bundle the value is planted in before signing.
+	build func() map[string]any
+	// signed returns the honest signed document the value is planted in, for a member the
+	// producer signature does not cover. Exactly one of build and signed is set.
+	signed func() []byte
+	// value is the wrongly typed value planted at path.
+	value any
+	// path walks from the bundle to the member: a string names an object member and an int an
+	// array element.
+	path []any
+}
+
+// typeSweep emits one vector for each member position the schema types as a string, an integer,
+// or an array of hashes, each holding a value of another JSON type inside otherwise honest bytes.
+// A reader that skipped the type check would read the value as something no other verifier
+// reads, so every conformant verifier refuses each one at parse. A position some other vector
+// already pins, such as keyed, seq, present, or the subject itself, is not repeated here.
+//
+//nolint:funlen // One row per member position, listed in one place.
+func (s *state) typeSweep() {
+	str, num := any(int64(5)), any(true)
+	hashes := []any{int64(5)}
+	plain := func() map[string]any { return s.v1(1, false) }
+	judged := func() map[string]any {
+		m := s.v1(1, false)
+		c := m["claims"].([]any)[0].(map[string]any)
+		c["evidence"] = []any{map[string]any{
+			"role": "snapshot", "digest": "sha256:" + strings.Repeat("cd", 32),
+			"media_type": "text/html", "present": true, "location": "evidence/snap.html",
+		}}
+		c["verdict"] = map[string]any{
+			"policy": "release-gate/1", "policy_digest": "sha256:" + strings.Repeat("ab", 32),
+			"inputs_digest": "sha256:" + strings.Repeat("ef", 32), "decision": "pass",
+			"detail": "every gate held",
+		}
+		s.relinkV1(m, false)
+		return m
+	}
+	disclosed := func() map[string]any { return s.swatchBundle("title") }
+	attested := func() map[string]any {
+		m := s.v1(1, false)
+		c := m["claims"].([]any)[0].(map[string]any)
+		priv, pub := counterpartyKey()
+		c["attestations"] = []any{attestationAt(priv, pub,
+			c["chain"].(map[string]any)["link"].(string), "approver", "2026-08-30T12:00:00Z")}
+		return m
+	}
+	anchored := func() map[string]any {
+		m := s.v1(1, false)
+		head := m["chain"].(map[string]any)["head"].(map[string]any)
+		m["anchors"] = []any{gitAnchor(head["seq"].(int64), head["link"].(string))}
+		return m
+	}
+	tree := func() map[string]any { return s.merkleBundle(6, []int{1, 4}, 4) }
+	witnessed := func() []byte {
+		return mutateSigned(s.sign(s.v1(2, false)), func(m map[string]any) {
+			priv, pub := counterpartyKey()
+			head := m["chain"].(map[string]any)["head"].(map[string]any)
+			m["attestations"] = []any{headAttestation(priv, pub, head["link"].(string),
+				head["seq"], "witness", "2026-08-30T12:00:00Z")}
+		})
+	}
+	signedPlain := func() []byte { return s.sign(s.v1(1, false)) }
+	claim := func(rest ...any) []any { return append([]any{"claims", 0}, rest...) }
+	linkedMembers := map[string]bool{"type": true, "at": true, "evidence": true, "verdict": true}
+	cases := []typeCase{
+		{"type-loomseal", plain, nil, str, []any{"loomseal"}},
+		{"type-bundle-id", plain, nil, str, []any{"bundle_id"}},
+		{"type-created-at", plain, nil, str, []any{"created_at"}},
+		{"type-producer-product", plain, nil, str, []any{"producer", "product"}},
+		{"type-producer-product-version", plain, nil, str, []any{"producer", "product_version"}},
+		{"type-producer-install-id", plain, nil, str, []any{"producer", "install_id"}},
+		{"type-producer-public-key", plain, nil, str, []any{"producer", "public_key"}},
+		{"type-producer-key-id", plain, nil, str, []any{"producer", "key_id"}},
+		{"type-subject-type", plain, nil, str, []any{"subject", "type"}},
+		{"type-subject-id", plain, nil, str, []any{"subject", "id"}},
+		{"type-chain-profile", plain, nil, str, []any{"chain", "profile"}},
+		{"type-head-prev", plain, nil, str, []any{"chain", "head", "prev"}},
+		{"type-head-link", plain, nil, str, []any{"chain", "head", "link"}},
+		{"type-claim-type", plain, nil, str, claim("type")},
+		{"type-claim-at", plain, nil, str, claim("at")},
+		{"type-claim-seq", plain, nil, num, claim("chain", "seq")},
+		{"type-claim-prev", plain, nil, str, claim("chain", "prev")},
+		{"type-claim-link", plain, nil, str, claim("chain", "link")},
+		{"type-evidence-role", judged, nil, str, claim("evidence", 0, "role")},
+		{"type-evidence-digest", judged, nil, str, claim("evidence", 0, "digest")},
+		{"type-evidence-media-type", judged, nil, str, claim("evidence", 0, "media_type")},
+		{"type-evidence-location", judged, nil, str, claim("evidence", 0, "location")},
+		{"type-verdict-policy", judged, nil, str, claim("verdict", "policy")},
+		{"type-verdict-policy-digest", judged, nil, str, claim("verdict", "policy_digest")},
+		{"type-verdict-inputs-digest", judged, nil, str, claim("verdict", "inputs_digest")},
+		{"type-verdict-decision", judged, nil, str, claim("verdict", "decision")},
+		{"type-verdict-detail", judged, nil, str, claim("verdict", "detail")},
+		{"type-disclosure-salt", disclosed, nil, str, claim("disclosures", 0, "salt")},
+		{"type-disclosure-name", disclosed, nil, str, claim("disclosures", 0, "name")},
+		{"type-attestation-key-id", attested, nil, str, claim("attestations", 0, "key_id")},
+		{"type-attestation-public-key", attested, nil, str, claim("attestations", 0, "public_key")},
+		{"type-attestation-alg", attested, nil, str, claim("attestations", 0, "alg")},
+		{"type-attestation-role", attested, nil, str, claim("attestations", 0, "role")},
+		{"type-attestation-sig", attested, nil, str, claim("attestations", 0, "sig")},
+		{"type-attestation-at", attested, nil, str, claim("attestations", 0, "at")},
+		{"type-head-attestation-key-id", nil, witnessed, str, []any{"attestations", 0, "key_id"}},
+		{"type-head-attestation-public-key", nil, witnessed, str,
+			[]any{"attestations", 0, "public_key"}},
+		{"type-head-attestation-alg", nil, witnessed, str, []any{"attestations", 0, "alg"}},
+		{"type-head-attestation-role", nil, witnessed, str, []any{"attestations", 0, "role"}},
+		{"type-head-attestation-sig", nil, witnessed, str, []any{"attestations", 0, "sig"}},
+		{"type-head-attestation-at", nil, witnessed, str, []any{"attestations", 0, "at"}},
+		{"type-anchor-type", anchored, nil, str, []any{"anchors", 0, "type"}},
+		{"type-anchor-seq", anchored, nil, num, []any{"anchors", 0, "seq"}},
+		{"type-anchor-link", anchored, nil, str, []any{"anchors", 0, "link"}},
+		{"type-anchor-at", anchored, nil, str, []any{"anchors", 0, "at"}},
+		{"type-anchor-ref", anchored, nil, str, []any{"anchors", 0, "ref"}},
+		{"type-anchor-proof", anchored, nil, str, []any{"anchors", 0, "proof"}},
+		{"type-signature-key-id", nil, signedPlain, str, []any{"signatures", 0, "key_id"}},
+		{"type-signature-alg", nil, signedPlain, str, []any{"signatures", 0, "alg"}},
+		{"type-signature-sig", nil, signedPlain, str, []any{"signatures", 0, "sig"}},
+		{"type-consistency-from-size", tree, nil, num, []any{"chain", "consistency", "from_size"}},
+		{"type-consistency-from-root", tree, nil, str, []any{"chain", "consistency", "from_root"}},
+		{"type-consistency-path", tree, nil, hashes, []any{"chain", "consistency", "path"}},
+		{"type-inclusion-path", tree, nil, hashes, claim("inclusion", "path")},
+	}
+	for _, c := range cases {
+		kind := "number"
+		switch c.value.(type) {
+		case bool:
+			kind = "boolean"
+		case []any:
+			kind = "array holding a number"
+		}
+		why := fmt.Sprintf("%s holds a JSON %s, a type the schema does not allow there, so it "+
+			"is refused at parse rather than read as another type.", pathLabel(c.path), kind)
+		var data []byte
+		if c.build != nil {
+			m := c.build()
+			setPath(m, c.path, c.value)
+			// A member inside a claim's committed content is relinked over, so the chain still
+			// recomputes and the type rule is the only one that refuses the bundle.
+			if len(c.path) > 2 && c.path[0] == "claims" && linkedMembers[c.path[2].(string)] {
+				s.relinkV1(m, false)
+			}
+			data = s.sign(m)
+		} else {
+			data = mutateSigned(c.signed(), func(m map[string]any) { setPath(m, c.path, c.value) })
+		}
+		s.add(c.name, false, "", "parse", why, data)
+	}
+}
+
+// setPath stores v at the member path names inside m, where a string step names an object member
+// and an int step an array element. It panics when the path runs through a member or an element
+// the document does not have, because a vector planted anywhere else would not test the member
+// it names.
+func setPath(m map[string]any, path []any, v any) {
+	var cur any = m
+	for i, step := range path {
+		last := i == len(path)-1
+		switch k := step.(type) {
+		case string:
+			obj := cur.(map[string]any)
+			if last {
+				obj[k] = v
+				return
+			}
+			cur = obj[k]
+		case int:
+			arr := cur.([]any)
+			if last {
+				arr[k] = v
+				return
+			}
+			cur = arr[k]
+		default:
+			panic(fmt.Sprintf("setPath: step %v is neither a member nor an index", step))
+		}
+	}
+}
+
+// pathLabel words a member path for a manifest description, such as claims[0].chain.seq.
+func pathLabel(path []any) string {
+	var b strings.Builder
+	for _, step := range path {
+		switch k := step.(type) {
+		case string:
+			if b.Len() > 0 {
+				b.WriteByte('.')
+			}
+			b.WriteString(k)
+		case int:
+			fmt.Fprintf(&b, "[%d]", k)
+		}
+	}
+	return b.String()
+}
+
+// envelopeDepth is the nesting a bundle's envelope takes above a payload member: the bundle, its
+// claims, the claim, and its payload.
+const envelopeDepth = 4
+
+// nested returns an array nested depth levels deep with an empty array at the bottom. The bottom
+// is a non-nil slice, which every serializer writes as [] rather than null.
+func nested(depth int) []any {
+	v := []any{}
+	for i := 1; i < depth; i++ {
+		v = []any{v}
+	}
+	return v
 }
 
 // casefoldSwitchTender plants, for each bound field of the switchtender profile, a case variant
@@ -1728,6 +2517,20 @@ func (s *state) expectLegacy(name string, legacy []string) {
 	panic("expectLegacy: no vector named " + name)
 }
 
+// expectSpan records the coverage line, the longest gap, and the gap lines a verifier must report
+// for a vector that must verify, so every verifier is held to one measurement of a gap.
+func (s *state) expectSpan(name, coverage, longest string, gaps ...string) {
+	for i := range s.man.Vectors {
+		if s.man.Vectors[i].Name == name {
+			s.man.Vectors[i].SpanCoverage = coverage
+			s.man.Vectors[i].SpanLongestGap = longest
+			s.man.Vectors[i].SpanGaps = gaps
+			return
+		}
+	}
+	panic("expectSpan: no vector named " + name)
+}
+
 // write emits the manifest, with vectors sorted by name for a stable diff.
 func (s *state) write() error {
 	sort.Slice(s.man.Vectors, func(i, j int) bool {
@@ -1797,6 +2600,82 @@ func (s *state) presentations() {
 	bf := s.writePresentationFile("present-bad-holder-sig", badSig)
 	s.addPresentation("present-bad-holder-sig", bf, aud, chal, false,
 		"A presentation whose holder signature was altered does not verify.")
+
+	// A presentation counts its own level above the bundle it carries, so a bundle at the nesting
+	// bound, which verifies alone, cannot be presented: the presentation is one level past it.
+	deep := s.v1(1, false)
+	deep["claims"].([]any)[0].(map[string]any)["payload"].(map[string]any)["deep"] =
+		nested(bundle.MaxDepth - envelopeDepth)
+	s.relinkV1(deep, false)
+	deepPres, err := seal.Present(s.sign(deep), hpriv, "acme-verifier", "chal-1", at)
+	if err != nil {
+		panic(err)
+	}
+	df := s.writePresentationFile("present-past-bound", deepPres)
+	s.addPresentation("present-past-bound", df, aud, chal, false,
+		"A presentation nested one level past the bound is refused at parse, although the bundle "+
+			"it carries is within the bound and verifies alone.")
+
+	// An integer beyond 2^53 inside the presented bundle has no canonical form, so the bundle the
+	// holder signature covers cannot be computed and the presentation is refused at parse.
+	big := []byte(strings.Replace(string(valid), `"path":"/api/runs"`,
+		`"path":"/api/runs","big":9007199254740993`, 1))
+	gf := s.writePresentationFile("present-number-exceeds-2p53", big)
+	s.addPresentation("present-number-exceeds-2p53", gf, aud, chal, false,
+		"A presentation whose bundle carries an integer beyond 2^53 is refused at parse, with a "+
+			"verdict and never a crash.")
+
+	// A holder key and a holder signature broken across lines. Each is otherwise genuine, so only
+	// the base64 rule refuses them.
+	lineBroken := func(name string, edit func(p map[string]any), why string) {
+		var p map[string]any
+		if err := json.Unmarshal(valid, &p); err != nil {
+			panic(err)
+		}
+		edit(p)
+		out, err := json.Marshal(p)
+		if err != nil {
+			panic(err)
+		}
+		s.addPresentation(name, s.writePresentationFile(name, out), aud, chal, false, why)
+	}
+	lineBroken("present-holder-key-line-break", func(p map[string]any) {
+		holder := p["holder"].(map[string]any)
+		key := holder["public_key"].(string)
+		holder["public_key"] = key[:12] + "\n" + key[12:]
+	}, "A presentation whose holder public_key carries a line break inside its base64 is "+
+		"refused rather than decoded by skipping the break.")
+	lineBroken("present-sig-line-break", func(p map[string]any) {
+		sig := p["sig"].(string)
+		p["sig"] = sig[:20] + "\r\n" + sig[20:]
+	}, "A presentation whose holder signature carries a line break inside its base64 is "+
+		"refused rather than decoded by skipping the break.")
+
+	// Creation times that a general date parser reads but RFC 3339 does not allow, signed by the
+	// holder, so only the time rule refuses them.
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// createdAt is the presentation's signed creation time.
+		createdAt string
+		// why is the vector's description in the manifest.
+		why string
+	}{{
+		name: "present-created-at-one-digit-hour", createdAt: "2026-07-27T1:00:00Z",
+		why: "A presentation whose created_at has a one-digit hour is refused, because the " +
+			"time is not RFC 3339.",
+	}, {
+		name: "present-created-at-comma-fraction", createdAt: "2026-07-27T15:00:00,5Z",
+		why: "A presentation whose created_at has a comma before its fractional second is " +
+			"refused, because the time is not RFC 3339.",
+	}} {
+		pres, err := seal.Present(inner, hpriv, "acme-verifier", "chal-1", c.createdAt)
+		if err != nil {
+			panic(err)
+		}
+		s.addPresentation(c.name, s.writePresentationFile(c.name, pres), aud, chal, false,
+			c.why)
+	}
 
 	// A member whose name differs from a presentation member only in case is refused, never folded
 	// onto the member a reader sees. Beside audience it holds the same value, so only the name is at
@@ -2128,6 +3007,22 @@ func (s *state) records() {
 	s.expect("switchtender-outcome-legacy",
 		[]string{"claim 1 outcome_body", "claim 1 outcome_nonce", "claim 1 spec_body"}, nil)
 
+	// An outcome record is a string inside the bundle, so the bundle's nesting bound never counts
+	// its brackets. A verifier reading a record for its spec digest must measure the depth without
+	// recursion before it parses, or a record built to exhaust a stack ends the run with no
+	// verdict. The deeper record comes first: a reader whose stack grew to hold it keeps no margin
+	// for the second, which is the order that exhausted the browser build's stack.
+	deep := func(n int) string { return strings.Repeat("[", n) + strings.Repeat("]", n) }
+	s.add("switchtender-outcome-deep", true, "signed, chained (full)", "",
+		"Outcome records nested 20000 and 5000 levels deep reproduce their entries' digests and "+
+			"verify. Each is past the depth an outcome record is read to, so neither names a spec "+
+			"digest, and the spec beside each is unchecked rather than a reason for a verifier to "+
+			"stop without a verdict.",
+		s.sign(s.recordReceipt(recordDisclosure{
+			NoDecision: true, OutcomeTexts: []string{deep(20000), deep(5000)},
+		})))
+	s.expect("switchtender-outcome-deep", []string{"claim 1 spec_body", "claim 2 spec_body"}, nil)
+
 	m = s.recordReceipt(recordDisclosure{NoDecision: true})
 	recordPayload(m, 1)["spec_body"] = `{"command":"deploy --force","tool":"bash"}`
 	s.add("switchtender-outcome-spec-altered", false, "", "record",
@@ -2179,6 +3074,9 @@ type recordDisclosure struct {
 	NoSpec bool
 	// OutcomeSpec is the spec digest the outcome record names, or empty for the run's own spec.
 	OutcomeSpec string
+	// OutcomeTexts, when set, are the bytes of one outcome record each, in place of the single
+	// succeeded record, each committed under the exact form in its own entry.
+	OutcomeTexts []string
 }
 
 // recordReceipt builds a SwitchTender run receipt on switchtender-audit-v1 from the payloads
@@ -2256,26 +3154,32 @@ func recordPayloads(d recordDisclosure) []map[string]any {
 	if outcomeSpec == "" {
 		outcomeSpec = specDigest
 	}
-	outcomeText := recordOutcomeTextNaming("succeeded", outcomeSpec)
+	outcomeTexts := d.OutcomeTexts
+	if len(outcomeTexts) == 0 {
+		outcomeTexts = []string{recordOutcomeTextNaming("succeeded", outcomeSpec)}
+	}
 	nonce := recordBytes("nonce outcome")
-	digest := exactRecordDigest(nonce, []byte(outcomeText))
-	if d.LegacyOutcome {
-		var outcome map[string]any
-		if err := json.Unmarshal([]byte(outcomeText), &outcome); err != nil {
-			panic(err)
+	for _, outcomeText := range outcomeTexts {
+		digest := exactRecordDigest(nonce, []byte(outcomeText))
+		if d.LegacyOutcome {
+			var outcome map[string]any
+			if err := json.Unmarshal([]byte(outcomeText), &outcome); err != nil {
+				panic(err)
+			}
+			digest = keyedRecordDigest(nonce, outcome)
 		}
-		digest = keyedRecordDigest(nonce, outcome)
+		outcomePayload := map[string]any{
+			"actor": "system:dispatcher", "actor_type": "system", "on_behalf_of": "deploy-bot",
+			"method": "RUN", "path": "/runs/" + recordRun + "/outcome/succeeded",
+			"content_digest": digest,
+			"outcome_body":   outcomeText, "outcome_nonce": hex.EncodeToString(nonce),
+		}
+		if !d.NoSpec {
+			outcomePayload["spec_body"] = recordSpec
+		}
+		payloads = append(payloads, outcomePayload)
 	}
-	outcomePayload := map[string]any{
-		"actor": "system:dispatcher", "actor_type": "system", "on_behalf_of": "deploy-bot",
-		"method": "RUN", "path": "/runs/" + recordRun + "/outcome/succeeded",
-		"content_digest": digest,
-		"outcome_body":   outcomeText, "outcome_nonce": hex.EncodeToString(nonce),
-	}
-	if !d.NoSpec {
-		outcomePayload["spec_body"] = recordSpec
-	}
-	return append(payloads, outcomePayload)
+	return payloads
 }
 
 // recordOtherRun is a second run whose records share a bundle with recordRun's.

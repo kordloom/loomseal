@@ -6,7 +6,6 @@ package verify
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -277,10 +276,11 @@ type Report struct {
 	SpanCountsCarried int `json:"span_counts_carried,omitempty"`
 	// SpanCoverage words the population coverage, such as "2/4 windows attested".
 	SpanCoverage string `json:"span_coverage,omitempty"`
-	// SpanGaps describes each unattested window wider than the declared cadence by more than a
-	// timer's scheduling slack.
+	// SpanGaps describes each unattested window wider than the declared cadence by more than the
+	// scheduling slack the format allows, in whole seconds with the beat times at its bounds.
 	SpanGaps []string `json:"span_gaps,omitempty"`
-	// SpanLongestGap is the widest unattested window between consecutive beats.
+	// SpanLongestGap is the widest unattested window between consecutive beats, in whole seconds
+	// such as "150s".
 	SpanLongestGap string `json:"span_longest_gap,omitempty"`
 	// Problems lists every failed check. Empty means verified.
 	Problems []string `json:"problems,omitempty"`
@@ -357,7 +357,7 @@ func (r *Report) checkSignature(raw []byte, b *bundle.Bundle, pin string) {
 		r.problem("canonicalize: %v", err)
 		return
 	}
-	pub, err := base64.StdEncoding.DecodeString(b.Producer.PublicKey)
+	pub, err := bundle.DecodeBase64(b.Producer.PublicKey)
 	if err != nil {
 		r.problem("producer public_key: %v", err)
 		return
@@ -389,7 +389,7 @@ func (r *Report) checkSignature(raw []byte, b *bundle.Bundle, pin string) {
 	// reference reach opposite verdicts on a bundle whose genuine signature sat second.
 	var first string
 	for _, sig := range b.Signatures {
-		sigBytes, err := base64.StdEncoding.DecodeString(sig.Sig)
+		sigBytes, err := bundle.DecodeBase64(sig.Sig)
 		if err != nil {
 			if first == "" {
 				first = fmt.Sprintf("signature: %v", err)
@@ -446,7 +446,7 @@ func (r *Report) checkInstallKey(b *bundle.Bundle, opts Options) {
 	if !r.SignatureOK || b.Chain == nil || b.Chain.Profile != bundle.ProfileSwitchTender {
 		return
 	}
-	pub, err := base64.StdEncoding.DecodeString(b.Producer.PublicKey)
+	pub, err := bundle.DecodeBase64(b.Producer.PublicKey)
 	if err != nil || len(pub) != ed25519.PublicKeySize || !keyMintedForm(id) {
 		return
 	}
@@ -591,7 +591,7 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 		if a.Type != "rfc3161" {
 			continue
 		}
-		token, derr := base64.StdEncoding.DecodeString(a.Proof)
+		token, derr := bundle.DecodeBase64(a.Proof)
 		if derr != nil {
 			r.problem("anchor %d proof is not base64: %v", i, derr)
 			continue

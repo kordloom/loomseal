@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/jcs"
 )
 
@@ -479,11 +480,16 @@ const maxOutcomeDepth = 32
 // outcomeSpec reads the spec digest a verified outcome record names: the spec_digest member of the
 // JSON object the text holds. The text is read under the bundle's own rules, unique keys, valid
 // strings, and integers within 2^53, and within maxOutcomeDepth, so every implementation reads the
-// same value. A record that is not such an object, or names none, commits no spec digest to
-// compare, which is not a failure: the record itself was checked.
+// same value. The text is a string inside the bundle, so the bundle's own depth bound never counts
+// its brackets, and its depth is measured by a loop before the recursive parser reads it. A record
+// that is not such an object, or names none, commits no spec digest to compare, which is not a
+// failure: the record itself was checked.
 func outcomeSpec(text string) (string, bool) {
+	if bundle.CheckDepth([]byte(text), maxOutcomeDepth) != nil {
+		return "", false
+	}
 	tree, err := jcs.Parse([]byte(text))
-	if err != nil || !withinDepth(tree, maxOutcomeDepth) {
+	if err != nil {
 		return "", false
 	}
 	if _, err := jcs.Serialize(tree); err != nil {
@@ -495,32 +501,6 @@ func outcomeSpec(text string) (string, bool) {
 	}
 	spec, ok := obj["spec_digest"].(string)
 	return spec, ok
-}
-
-// withinDepth reports whether v nests no deeper than limit, counting each array and object as one
-// level and a scalar as none.
-func withinDepth(v any, limit int) bool {
-	switch t := v.(type) {
-	case map[string]any:
-		if limit == 0 {
-			return false
-		}
-		for _, e := range t {
-			if !withinDepth(e, limit-1) {
-				return false
-			}
-		}
-	case []any:
-		if limit == 0 {
-			return false
-		}
-		for _, e := range t {
-			if !withinDepth(e, limit-1) {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 // checkSpecs holds the spec digests verified records committed against one another, then every

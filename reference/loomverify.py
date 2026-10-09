@@ -14,12 +14,12 @@ import base64
 import hashlib
 import hmac
 import json
+import json.scanner
 import re
 import os
 import sys
-from datetime import datetime, timezone
-
-import base64
+import threading
+from datetime import datetime, timedelta, timezone
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -29,6 +29,13 @@ from cryptography.hazmat.primitives.serialization import pkcs7
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MAX_SAFE = 2 ** 53
+
+# MAX_DEPTH is how deeply a document may nest, counting each array or object as one level and the
+# outermost as the first. FORMAT.md fixes it at the bound every shipped verifier holds, so a deeper
+# document is refused at parse by all of them rather than exhausting one verifier's stack where
+# another reaches a verdict.
+MAX_DEPTH = 3200
+
 V1 = "loomseal-chain-v1"
 SWITCHTENDER = "switchtender-audit-v1"
 MERKLE = "loomseal-merkle-v1"
@@ -66,15 +73,32 @@ class VError(Exception):
 
 # ---------- RFC 8785 canonicalization ----------
 
-def _reject_bad_strings(text):
-    """Reject lone surrogate escapes inside string literals. Raw invalid UTF-8 is already caught
-    by the bytes.decode('utf-8') that runs before this."""
-    i, n, in_str = 0, len(text), False
+def _hex4(text, i):
+    """Read the four hex digits of a \\u escape starting at i, or reject the escape."""
+    digits = text[i:i + 4]
+    if len(digits) != 4 or any(ch not in "0123456789abcdefABCDEF" for ch in digits):
+        raise VError("parse", f"invalid escape sequence \\u{digits}")
+    return int(digits, 16)
+
+
+def _scan_text(text):
+    """Walk the document once before it is decoded: reject a \\u escape that is not four hex
+    digits or that spells a lone surrogate, and reject nesting past MAX_DEPTH. Raw invalid UTF-8
+    is already caught by the bytes.decode('utf-8') that runs before this. The walk is a loop,
+    never a recursion, so a document built to exhaust a stack is refused before any decoder reads
+    it."""
+    i, n, in_str, depth = 0, len(text), False, 0
     while i < n:
         c = text[i]
         if not in_str:
             if c == '"':
                 in_str = True
+            elif c in "[{":
+                depth += 1
+                if depth > MAX_DEPTH:
+                    raise VError("parse", f"nesting exceeds {MAX_DEPTH} levels")
+            elif c in "]}":
+                depth -= 1
             i += 1
             continue
         if c == '"':
@@ -86,11 +110,11 @@ def _reject_bad_strings(text):
             if text[i + 1] != 'u':
                 i += 2
                 continue
-            hi = int(text[i + 2:i + 6], 16)
+            hi = _hex4(text, i + 2)
             if 0xD800 <= hi <= 0xDBFF:
                 if text[i + 6:i + 8] != '\\u':
                     raise VError("parse", "high surrogate without low surrogate")
-                lo = int(text[i + 8:i + 12], 16)
+                lo = _hex4(text, i + 8)
                 if not 0xDC00 <= lo <= 0xDFFF:
                     raise VError("parse", "high surrogate not followed by low surrogate")
                 i += 12
@@ -112,20 +136,43 @@ def _no_dup_keys(pairs):
     return seen
 
 
+# _RE_INT is a JSON integer literal in ASCII digits. Seventeen digits or more exceed 2^53, and the
+# literal is refused before int() converts it, since converting a long enough literal raises.
+_RE_INT = re.compile(r"-?(?:0|[1-9][0-9]{0,15})")
+
+
+def _parse_int(literal):
+    """Convert an integer literal, refusing one too long to be at most 2^53."""
+    if not _RE_INT.fullmatch(literal):
+        raise VError("parse",
+                     f"integer literal {literal[:20]!r} is not a plain integer within 2^53")
+    return int(literal)
+
+
+def _parse_float(_):
+    """Refuse a number literal with a fraction or an exponent."""
+    raise VError("parse", "non-integer number literal")
+
+
 def parse_strict(raw_bytes):
     """Parse bundle bytes with the strictness canonicalization needs: valid UTF-8, no lone
-    surrogates, no duplicate keys, integer number literals only."""
+    surrogates, no duplicate keys, integer number literals only, nesting within MAX_DEPTH.
+
+    The document is decoded by the standard library's pure Python scanner rather than its C one.
+    On Python 3.12 and 3.13 the C scanner's nesting is capped by a C recursion limit fixed when
+    the interpreter was built, which sys.setrecursionlimit does not raise, so whether a deep
+    document parsed would depend on the interpreter rather than on the format. The Python scanner
+    nests on frames that the recursion limit and the thread verify runs on are sized for."""
     try:
         text = raw_bytes.decode("utf-8")
     except UnicodeDecodeError:
         raise VError("parse", "input is not valid UTF-8")
-    _reject_bad_strings(text)
-
-    def parse_float(_):
-        raise VError("parse", "non-integer number literal")
-
+    _scan_text(text)
+    decoder = json.JSONDecoder(object_pairs_hook=_no_dup_keys, parse_float=_parse_float,
+                               parse_int=_parse_int)
+    decoder.scan_once = json.scanner.py_make_scanner(decoder)
     try:
-        return json.loads(text, object_pairs_hook=_no_dup_keys, parse_float=parse_float)
+        return decoder.decode(text)
     except VError:
         raise
     except json.JSONDecodeError as e:
@@ -138,6 +185,9 @@ def canon(value):
 
 
 def _ser(v):
+    """Serialize one value in RFC 8785 form. The containers recurse through list comprehensions
+    rather than generators: a generator is driven from C by str.join, and each level of that
+    re-entry costs C stack, which a document nested MAX_DEPTH levels deep would exhaust."""
     if v is None:
         return "null"
     if v is True:
@@ -153,10 +203,10 @@ def _ser(v):
     if isinstance(v, str):
         return _ser_str(v)
     if isinstance(v, list):
-        return "[" + ",".join(_ser(e) for e in v) + "]"
+        return "[" + ",".join([_ser(e) for e in v]) + "]"
     if isinstance(v, dict):
         items = sorted(v.items(), key=lambda kv: kv[0].encode("utf-16-be"))
-        return "{" + ",".join(_ser_str(k) + ":" + _ser(val) for k, val in items) + "}"
+        return "{" + ",".join([_ser_str(k) + ":" + _ser(val) for k, val in items]) + "}"
     raise VError("parse", f"unserializable type {type(v)}")
 
 
@@ -467,7 +517,7 @@ def _check_install_key(b, report):
     install = b["producer"].get("install_id", "")
     if not _MINTED_FORM.fullmatch(install):
         return
-    pub = base64.b64decode(b["producer"]["public_key"])
+    pub = _b64(b["producer"]["public_key"])
     if install in ("in_" + hashlib.sha256(pub).hexdigest()[:32], "in_" + pub[:6].hex()):
         report["install_binding"] = "minted from the producer key"
         return
@@ -476,8 +526,63 @@ def _check_install_key(b, report):
                             "re-signed; pin the install's current key and accept the install to verify it")
 
 
+# _DEEP_STACK and _RECURSION_LIMIT size the thread verification runs on. A document nested
+# MAX_DEPTH levels costs the scanner three Python frames per level and the serializer up to two,
+# and on interpreters before 3.11 each of those frames also costs C stack, so the thread reserves
+# several times what either needs.
+_DEEP_STACK = 64 * 1024 * 1024
+_RECURSION_LIMIT = 50_000
+
+# _deep marks the thread verification runs on, so a nested call runs inline on it.
+_deep = threading.local()
+
+
+def _on_deep_stack(fn, *args):
+    """Run fn on a thread whose stack and recursion limit hold a document nested MAX_DEPTH
+    levels, returning its result or raising what it raised. A call already on that thread runs
+    inline, and a platform that refuses a stack or a thread that large runs fn on the caller's
+    thread."""
+    if getattr(_deep, "active", False):
+        return fn(*args)
+    try:
+        old_size = threading.stack_size(_DEEP_STACK)
+    except (ValueError, RuntimeError):
+        return fn(*args)
+    outcome = {}
+
+    def run():
+        _deep.active = True
+        old_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(max(old_limit, _RECURSION_LIMIT))
+        try:
+            outcome["value"] = fn(*args)
+        except BaseException as exc:
+            outcome["error"] = exc
+        finally:
+            sys.setrecursionlimit(old_limit)
+
+    worker = threading.Thread(target=run, name="loomverify")
+    try:
+        worker.start()
+    except RuntimeError:
+        return fn(*args)
+    finally:
+        threading.stack_size(old_size)
+    worker.join()
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 def verify(raw_bytes, evidence_dir=None):
     """Verify one bundle and return a report dict. Failure is a report, never an exception."""
+    return _on_deep_stack(_verify, raw_bytes, evidence_dir)
+
+
+def _verify(raw_bytes, evidence_dir):
+    """Run every check over one bundle and build its report. Every failure, including a fault in
+    this verifier itself, lands in the report as a problem with the verdict not verified, because
+    a caller parses the report and cannot parse a traceback."""
     report = {"ok": False, "level": "not verified", "unsupported": False, "problems": [],
               "signature_ok": False, "chain_present": False, "chain_ok": False,
               "chain_mode": "", "head_matched": False, "anchors_matched": 0,
@@ -510,6 +615,12 @@ def verify(raw_bytes, evidence_dir=None):
         _check_anchors(b, report)
         _check_span(b, report)
         _check_evidence(b, evidence_dir, report)
+        # The disclosed states belong to a verified verdict, so they are listed only when every
+        # check passed, including an evidence check that records its problem without raising. The
+        # Go verifier lists them under the same condition, which is what keeps the two reports the
+        # same on a failing bundle.
+        if not report["problems"]:
+            _classify_disclosed(b, report)
     except VError as e:
         report.pop("_states", None)
         report["problems"].append(f"{e.check}: {e.msg}")
@@ -519,12 +630,11 @@ def verify(raw_bytes, evidence_dir=None):
         else:
             report["level"] = "not verified"
         return report
-    # The disclosed states belong to a verified verdict, so they are listed only when every check
-    # passed, including an evidence check that records its problem without raising. The Go
-    # verifier lists them under the same condition, which is what keeps the two reports the same on
-    # a failing bundle.
-    if not report["problems"]:
-        _classify_disclosed(b, report)
+    except Exception as exc:
+        report.pop("_states", None)
+        report["problems"].append(f"verifier: {type(exc).__name__}: {exc}")
+        report["level"] = "not verified"
+        return report
     report.pop("_states", None)
     report["ok"] = len(report["problems"]) == 0
     # A bundle that failed any check achieved no level, whatever the earlier checks held.
@@ -532,99 +642,321 @@ def verify(raw_bytes, evidence_dir=None):
     return report
 
 
+# ---------- Schema ----------
 
-# _MEMBERS mirrors the schema's additionalProperties: false, object for object. The Go verifier
-# gets this for free from DisallowUnknownFields; the reference implementation must be exactly as
-# strict, because a member the producer signature does not cover (anything under signatures, and
-# every stripped surface) would otherwise ride inside a green verdict.
-_MEMBERS = {
-    "root": {"anchors", "attestations", "bundle_id", "chain", "claims", "created_at",
-             "loomseal", "producer", "signatures", "subject"},
-    "producer": {"install_id", "key_id", "product", "product_version", "public_key"},
-    "subject": {"id", "type"},
-    "chain": {"consistency", "head", "keyed", "params", "profile"},
-    "consistency": {"from_root", "from_size", "path"},
-    "coords": {"link", "prev", "seq"},
-    "claim": {"at", "attestations", "chain", "disclosures", "evidence", "inclusion", "payload",
-              "type", "verdict"},
-    "inclusion": {"path"},
-    "attestation": {"alg", "at", "key_id", "public_key", "role", "sig"},
-    "disclosure": {"name", "salt", "value"},
-    "evidence": {"digest", "location", "media_type", "present", "role"},
-    "verdict": {"decision", "detail", "inputs_digest", "policy", "policy_digest"},
-    "anchor": {"at", "link", "proof", "ref", "seq", "type"},
-    "signature": {"alg", "key_id", "sig"},
+# _ANY marks a member the schema leaves as any JSON value: a claim payload, which the claim's own
+# checks read, and a disclosure value, which is the revealed field itself.
+_ANY = object()
+
+# _SCHEMA mirrors schema/loomseal-bundle.schema.json object for object: the members each object may
+# carry and the JSON type each holds. A type is a Python type, the name of another object in this
+# table, a one-element list naming the type of an array's elements, a one-element tuple naming the
+# type of an open object's values, or _ANY. The Go verifier takes the member names from its exact
+# member pass and the types from its struct decoder; this verifier is exactly as strict, because a
+# member the producer signature does not cover would otherwise ride inside a green verdict, and a
+# value of another type would be read as something the Go verifier never reads.
+_SCHEMA = {
+    "bundle": {"loomseal": str, "bundle_id": str, "created_at": str, "producer": "producer",
+               "subject": "subject", "chain": "chain", "claims": ["claim"],
+               "anchors": ["anchor"], "attestations": ["attestation"],
+               "signatures": ["signature"]},
+    "producer": {"product": str, "product_version": str, "install_id": str, "public_key": str,
+                 "key_id": str},
+    "subject": {"type": str, "id": str},
+    "chain": {"profile": str, "keyed": bool, "params": (str,), "head": "coords",
+              "consistency": "consistency"},
+    "consistency": {"from_size": int, "from_root": str, "path": [str]},
+    "coords": {"seq": int, "prev": str, "link": str},
+    "claim": {"type": str, "at": str, "payload": _ANY, "evidence": ["evidence"],
+              "verdict": "verdict", "chain": "coords", "inclusion": "inclusion",
+              "disclosures": ["disclosure"], "attestations": ["attestation"]},
+    "inclusion": {"path": [str]},
+    "attestation": {"key_id": str, "public_key": str, "alg": str, "role": str, "sig": str,
+                    "at": str},
+    "disclosure": {"salt": str, "name": str, "value": _ANY},
+    "evidence": {"role": str, "digest": str, "media_type": str, "present": bool, "location": str},
+    "verdict": {"policy": str, "policy_digest": str, "inputs_digest": str, "decision": str,
+                "detail": str},
+    "anchor": {"type": str, "seq": int, "link": str, "at": str, "ref": str, "proof": str},
+    "signature": {"key_id": str, "alg": str, "sig": str},
 }
 
+# _ELEMENTS names one element of each array member for a problem line.
+_ELEMENTS = {"claims": "claim", "anchors": "anchor", "attestations": "attestation",
+             "signatures": "signature", "evidence": "evidence", "disclosures": "disclosure",
+             "path": "path"}
 
-def _require_members(obj, kind, where):
+# _TYPE_NAMES words each JSON type for a problem line.
+_TYPE_NAMES = {str: "a string", int: "an integer", bool: "a boolean"}
+
+# The value patterns the schema fixes, matched whole. Digits are ASCII only.
+_RE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
+_RE_LINK = re.compile(r"[0-9a-f]{64}")
+_RE_CLAIM_TYPE = re.compile(r"[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*/[0-9]+")
+_RE_SUBJECT_TYPE = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+
+# _RE_RFC3339 is the RFC 3339 date-time production: a four digit year, two digit fields, an upper
+# case T, a fraction of any length after a period, and Z or a numeric offset whose hour is below 24
+# and whose minute is below 60.
+_RE_RFC3339 = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})"
+                         r"(?:\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])")
+
+# _ANCHOR_TYPES is the anchor vocabulary the format defines. Unlike a subject type, an anchor type
+# outside it is refused at parse, because the type says what proof the anchor carries.
+_ANCHOR_TYPES = {"rfc3161", "git", "https", "rekor"}
+
+
+def _is_int(v):
+    """Report whether v is a JSON integer, which excludes the booleans Python counts as ints."""
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _child(where, name):
+    """Name a member of the object named where for a problem line."""
+    return f"{where} {name}" if where else name
+
+
+def _check_object(obj, kind, where):
+    """Require obj to be an object carrying only the members _SCHEMA allows for kind, each of the
+    JSON type the schema gives it."""
     if not isinstance(obj, dict):
-        return
-    extra = set(obj) - _MEMBERS[kind]
+        raise VError("parse", f"{where or 'bundle'} is not an object")
+    members = _SCHEMA[kind]
+    extra = sorted(set(obj) - set(members))
     if extra:
-        raise VError("parse", f"{where}: unknown member {sorted(extra)[0]!r}")
+        raise VError("parse", f"{where or 'bundle'}: unknown member {extra[0]!r}")
+    for name in sorted(obj):
+        _check_value(obj[name], members[name], where, name)
 
 
-def _members_check(b):
-    _require_members(b, "root", "bundle")
-    _require_members(b.get("producer"), "producer", "producer")
-    _require_members(b.get("subject"), "subject", "subject")
-    _require_members(b.get("chain"), "chain", "chain")
-    if isinstance(b.get("chain"), dict):
-        _require_members(b["chain"].get("consistency"), "consistency", "chain.consistency")
-        # The head carries chain coordinates that drive the head match and anchor resolution, so its
-        # members are checked exactly like a claim's, matching the Go verifier.
-        _require_members(b["chain"].get("head"), "coords", "chain.head")
-    # Head-level attestations sit at the top of the document and are verified and reported, so their
-    # members are checked exactly as claim attestations are, matching the Go verifier.
-    for j, a in enumerate(b.get("attestations") or []):
-        _require_members(a, "attestation", f"head attestation {j}")
-    for i, c in enumerate(b.get("claims") or []):
-        _require_members(c, "claim", f"claim {i}")
-        if isinstance(c, dict):
-            _require_members(c.get("chain"), "coords", f"claim {i} chain")
-            _require_members(c.get("inclusion"), "inclusion", f"claim {i} inclusion")
-            _require_members(c.get("verdict"), "verdict", f"claim {i} verdict")
-            for j, a in enumerate(c.get("attestations") or []):
-                _require_members(a, "attestation", f"claim {i} attestation {j}")
-            for j, d in enumerate(c.get("disclosures") or []):
-                _require_members(d, "disclosure", f"claim {i} disclosure {j}")
-            for j, e in enumerate(c.get("evidence") or []):
-                _require_members(e, "evidence", f"claim {i} evidence {j}")
-    for i, s in enumerate(b.get("signatures") or []):
-        _require_members(s, "signature", f"signature {i}")
-    for i, a in enumerate(b.get("anchors") or []):
-        _require_members(a, "anchor", f"anchor {i}")
+def _check_value(v, spec, where, name):
+    """Require member name of the object named where to hold the JSON type spec gives it. Null is
+    refused everywhere but a member the schema leaves as any JSON: no member the schema defines
+    takes null, and a reader that took null for a zero value would read a null prev as the empty
+    predecessor and a null keyed as false."""
+    if spec is _ANY:
+        return
+    label = _child(where, name)
+    if v is None:
+        raise VError("parse", f"{label} is null")
+    if isinstance(spec, str):
+        _check_object(v, spec, label)
+    elif isinstance(spec, list):
+        if not isinstance(v, list):
+            raise VError("parse", f"{label} is not an array")
+        element = _ELEMENTS[name]
+        if name == "attestations" and not where:
+            element = "head attestation"
+        for i, e in enumerate(v):
+            _check_value(e, spec[0], where, f"{element} {i}")
+    elif isinstance(spec, tuple):
+        if not isinstance(v, dict):
+            raise VError("parse", f"{label} is not an object")
+        for k in sorted(v):
+            _check_value(v[k], spec[0], label, f"member {k!r}")
+    elif not (_is_int(v) if spec is int else isinstance(v, spec)):
+        raise VError("parse", f"{label} is not {_TYPE_NAMES[spec]}")
+
+
+# _RE_BASE64 is the base64 standard encoding, padded, with no line breaks or other bytes.
+_RE_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
+
+
+def _b64(s):
+    """Decode a base64 standard encoding string, refusing any byte outside the alphabet and its
+    padding, as the Go verifier does. Python's own decoder skips excess padding on some versions,
+    so the form is matched first, and every base64 value is decoded here."""
+    if not isinstance(s, str) or not _RE_BASE64.fullmatch(s):
+        raise ValueError("not base64 standard encoding")
+    return base64.b64decode(s, validate=True)
+
+
+def _is_rfc3339(s):
+    """Report whether s is an RFC 3339 time: the shape in _RE_RFC3339 with the calendar fields in
+    range, which is exactly what the Go verifier's strict parse accepts. Year 0000 is a leap year,
+    as in Go. Every time a bundle or a presentation carries is checked here before it is read."""
+    m = _RE_RFC3339.fullmatch(s) if isinstance(s, str) else None
+    if m is None:
+        return False
+    try:
+        datetime(int(m[1]) or 2000, int(m[2]), int(m[3]), int(m[4]), int(m[5]), int(m[6]))
+    except ValueError:
+        return False
+    return True
+
+
+def _check_time(what, s):
+    """Require an RFC 3339 timestamp, refusing the bundle at parse when s is not one."""
+    if not _is_rfc3339(s):
+        raise VError("parse", f"{what}: {s!r} is not RFC 3339")
 
 
 def _schema_check(b):
+    """Validate a parsed bundle against the schema: the version, then every member's name and JSON
+    type, then each value's rule. The value rules run in the order the Go verifier's validate holds
+    them, and a missing member reads as that verifier's zero value, so a document with more than
+    one fault reaches the same failing check in both."""
     if not isinstance(b, dict):
         raise VError("parse", "bundle is not an object")
-    if b.get("loomseal") != "0.1":
-        raise VError("unsupported", f"loomseal version {b.get('loomseal')!r}, this verifier implements 0.1")
-    for req in ("bundle_id", "created_at", "producer", "subject", "claims", "signatures"):
-        if req not in b:
-            raise VError("parse", f"missing required member {req}")
-    if not isinstance(b["claims"], list) or not b["claims"]:
-        raise VError("parse", "claims must be a non-empty array")
-    if not isinstance(b["signatures"], list) or not b["signatures"]:
-        raise VError("parse", "signatures must be a non-empty array")
-    _members_check(b)
-    subj = b.get("subject")
-    if isinstance(subj, dict):
-        st = subj.get("type")
-        if not isinstance(st, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", st):
-            raise VError("parse", f"subject type {st!r} does not match the type pattern")
-    # Unsupported declarations surface at parse, before the signature is touched, so both
-    # reference implementations reach the same verdict on the same bytes regardless of what
-    # else is wrong with the bundle.
-    if isinstance(b.get("chain"), dict):
-        profile = b["chain"].get("profile")
-        if profile not in ("switchtender-audit-v1", "loomseal-chain-v1", "loomseal-merkle-v1"):
-            raise VError("unsupported", f"chain profile {profile!r} is not one this verifier implements")
-    for i, sig in enumerate(b["signatures"]):
-        if isinstance(sig, dict) and sig.get("alg") != "ed25519":
-            raise VError("unsupported", f"signature {i} alg {sig.get('alg')!r}, this verifier implements ed25519")
+    version = b.get("loomseal")
+    if "loomseal" in b and not isinstance(version, str):
+        raise VError("parse", "bundle loomseal is not a string")
+    if version != "0.1":
+        raise VError("unsupported", f"loomseal version {version!r}, this verifier implements 0.1")
+    _check_object(b, "bundle", "")
+    if not b.get("bundle_id"):
+        raise VError("parse", "bundle_id is empty")
+    _check_time("created_at", b.get("created_at", ""))
+    _producer_values(b.get("producer", {}))
+    subject = b.get("subject", {})
+    if not _RE_SUBJECT_TYPE.fullmatch(subject.get("type", "")):
+        raise VError("parse", f"subject type {subject.get('type', '')!r} does not match the type "
+                              "pattern")
+    if not subject.get("id"):
+        raise VError("parse", "subject id is empty")
+    chain = b.get("chain")
+    if chain is not None:
+        _chain_values(chain)
+    claims = b.get("claims", [])
+    if not claims:
+        raise VError("parse", "bundle has no claims")
+    for i, c in enumerate(claims):
+        _claim_values(c, i)
+    # A proof beside a claim tells a reader some verifier checked it, so a proof no profile would
+    # check is refused rather than ignored, as are coordinates in a bundle that declares no chain,
+    # whose claims are unproved by construction.
+    tree = chain is not None and chain.get("profile") == MERKLE
+    for i, c in enumerate(claims):
+        if "inclusion" in c and not tree:
+            raise VError("parse",
+                         f"claim {i} carries an inclusion proof, which belongs to {MERKLE}")
+        if chain is None and "chain" in c:
+            raise VError("parse", f"claim {i} carries chain coordinates but the bundle declares no "
+                                  "chain")
+    for i, a in enumerate(b.get("anchors", [])):
+        _anchor_values(a, i)
+    signatures = b.get("signatures", [])
+    if not signatures:
+        raise VError("parse", "bundle has no signatures")
+    for i, s in enumerate(signatures):
+        _signature_values(s, i)
+
+
+def _producer_values(p):
+    """Require the producer block's fields, its key as 32 bytes of base64, and its fingerprint as
+    a digest."""
+    if not p.get("product") or not p.get("product_version") or not p.get("install_id"):
+        raise VError("parse", "producer fields are incomplete")
+    try:
+        key = _b64(p.get("public_key", ""))
+    except ValueError as exc:
+        raise VError("parse", f"producer public_key is not base64: {exc}") from exc
+    if len(key) != 32:
+        raise VError("parse", f"producer public_key is {len(key)} bytes, want 32")
+    if not _RE_DIGEST.fullmatch(p.get("key_id", "")):
+        raise VError("parse", f"producer key_id {p.get('key_id', '')!r} is not a sha256 digest")
+
+
+def _chain_values(chain):
+    """Require a known profile, a well-formed head, and a consistency proof only under the tree
+    profile. An unsupported profile surfaces here, before the signature is touched, so both
+    verifiers reach the same verdict on the same bytes whatever else is wrong."""
+    profile = chain.get("profile", "")
+    if profile not in (SWITCHTENDER, V1, MERKLE):
+        raise VError("unsupported",
+                     f"chain profile {profile!r} is not one this verifier implements")
+    _coords_values(chain.get("head", {}), "chain head")
+    cons = chain.get("consistency")
+    if cons is None:
+        return
+    if profile != MERKLE:
+        raise VError("parse", f"a consistency proof belongs to {MERKLE}, not {profile}")
+    if cons.get("from_size", 0) < 1:
+        raise VError("parse", f"consistency from_size {cons.get('from_size', 0)}, want at least 1")
+    if not _RE_LINK.fullmatch(cons.get("from_root", "")):
+        raise VError("parse", "consistency from_root is not 64 hex characters")
+    _hashes_values(cons.get("path", []), "consistency path")
+
+
+def _hashes_values(path, where):
+    """Require every element of a proof path to be a bare 64 hex hash."""
+    for j, h in enumerate(path):
+        if not _RE_LINK.fullmatch(h):
+            raise VError("parse", f"{where} {j} is not 64 hex characters")
+
+
+def _coords_values(co, where):
+    """Require chain coordinates: a seq of at least one, a link of 64 hex characters, and a prev
+    that is absent, empty, or 64 hex characters."""
+    if co.get("seq", 0) < 1:
+        raise VError("parse", f"{where} seq {co.get('seq', 0)}, want at least 1")
+    if not _RE_LINK.fullmatch(co.get("link", "")):
+        raise VError("parse", f"{where} link is not 64 hex characters")
+    prev = co.get("prev", "")
+    if prev != "" and not _RE_LINK.fullmatch(prev):
+        raise VError("parse", f"{where} prev is not empty or 64 hex characters")
+
+
+def _claim_values(c, i):
+    """Require a claim's values: a registry-shaped type, an RFC 3339 at, an object payload,
+    evidence with a role and a digest, a complete verdict, hashes in an inclusion path, and
+    well-formed coordinates."""
+    where = f"claim {i}"
+    if not _RE_CLAIM_TYPE.fullmatch(c.get("type", "")):
+        raise VError("parse", f"{where} type {c.get('type', '')!r}")
+    _check_time(f"{where} at", c.get("at", ""))
+    if not isinstance(c.get("payload"), dict):
+        raise VError("parse", f"{where} payload is not a JSON object")
+    for j, e in enumerate(c.get("evidence", [])):
+        if not e.get("role"):
+            raise VError("parse", f"{where} evidence {j} role is empty")
+        if not _RE_DIGEST.fullmatch(e.get("digest", "")):
+            raise VError("parse", f"{where} evidence {j} digest")
+    verdict = c.get("verdict")
+    if verdict is not None and (not verdict.get("policy") or not verdict.get("decision")):
+        raise VError("parse", f"{where} verdict is incomplete")
+    if "inclusion" in c:
+        _hashes_values(c["inclusion"].get("path", []), f"{where} inclusion path")
+    if "chain" in c:
+        _coords_values(c["chain"], f"{where} chain")
+
+
+def _anchor_values(a, i):
+    """Require an anchor's type to be one the format defines, its coordinates well-formed, its
+    ref non-empty, its proof base64 when carried, and its time RFC 3339."""
+    where = f"anchor {i}"
+    if a.get("type") not in _ANCHOR_TYPES:
+        raise VError("parse", f"{where} type {a.get('type', '')!r}")
+    if a.get("seq", 0) < 1:
+        raise VError("parse", f"{where} seq {a.get('seq', 0)}")
+    if not _RE_LINK.fullmatch(a.get("link", "")):
+        raise VError("parse", f"{where} link")
+    if not a.get("ref"):
+        raise VError("parse", f"{where} ref is empty")
+    if a.get("proof"):
+        try:
+            _b64(a["proof"])
+        except ValueError as exc:
+            raise VError("parse", f"{where} proof is not base64: {exc}") from exc
+    _check_time(f"{where} at", a.get("at", ""))
+
+
+def _signature_values(s, i):
+    """Require a signature entry's key_id to be a digest, its alg to be the one this format fixes,
+    and its sig to be 64 bytes of base64. An unsupported alg surfaces here, before the signature
+    is touched, as an unsupported verdict rather than a failed one."""
+    where = f"signature {i}"
+    if not _RE_DIGEST.fullmatch(s.get("key_id", "")):
+        raise VError("parse", f"{where} key_id")
+    if s.get("alg") != "ed25519":
+        raise VError("unsupported", f"{where} alg {s.get('alg', '')!r}, this verifier implements "
+                                    "ed25519")
+    try:
+        sig = _b64(s.get("sig", ""))
+    except ValueError as exc:
+        raise VError("parse", f"{where} sig is not base64: {exc}") from exc
+    if len(sig) != 64:
+        raise VError("parse", f"{where} sig is {len(sig)} bytes, want 64")
 
 
 def _key_id(pub_bytes):
@@ -644,12 +976,8 @@ def _check_signature(raw_bytes, b, report):
             claim.pop("attestations", None)
     canonical = canon(parsed)
     prod = b["producer"]
-    try:
-        pub_bytes = base64.b64decode(prod["public_key"], validate=True)
-    except Exception:
-        raise VError("signature", "producer public_key is not base64")
-    if len(pub_bytes) != 32:
-        raise VError("signature", "producer public_key is not 32 bytes")
+    # The key decoded and measured 32 bytes at parse; only the fingerprint is judged here.
+    pub_bytes = _b64(prod["public_key"])
     if _key_id(pub_bytes) != prod.get("key_id"):
         raise VError("signature", "producer key_id does not match the public key")
     pub = Ed25519PublicKey.from_public_bytes(pub_bytes)
@@ -666,7 +994,7 @@ def _check_signature(raw_bytes, b, report):
         if sig.get("alg") != "ed25519":
             raise VError("unsupported", f"signature alg {sig.get('alg')!r}, this verifier implements ed25519")
         try:
-            pub.verify(base64.b64decode(sig["sig"], validate=True), canonical)
+            pub.verify(_b64(sig["sig"]), canonical)
             report["signature_ok"] = True
             return
         except (InvalidSignature, Exception):
@@ -720,6 +1048,10 @@ def _check_chain(b, report):
             raise VError("chain", "head link does not match the newest claim")
         report["head_matched"] = True
     if chain.get("keyed"):
+        # Only loomseal-chain-v1 defines a keyed form. A switchtender-audit-v1 chain declared keyed
+        # would skip the link recompute, so a payload altered after signing would still pass.
+        if chain["profile"] == SWITCHTENDER:
+            raise VError("chain", f"{SWITCHTENDER} is an unkeyed profile")
         report["chain_mode"] = "structural"
     else:
         _recompute_links(b)
@@ -907,7 +1239,8 @@ def _recompute_links(b):
     elif profile == SWITCHTENDER:
         _links_switchtender(b)
     else:
-        raise VError("unsupported", f"chain profile {profile!r} is not one this verifier implements")
+        raise VError("unsupported",
+                     f"chain profile {profile!r} is not one this verifier implements")
 
 
 def _links_v1(b):
@@ -1567,7 +1900,7 @@ def _check_attestations(b, report):
                 raise VError("attestation",
                              f"claim {i} attestation {j} alg {a.get('alg')!r}, want ed25519")
             try:
-                pub = base64.b64decode(a.get("public_key", ""), validate=True)
+                pub = _b64(a.get("public_key", ""))
             except Exception:
                 raise VError("attestation", f"claim {i} attestation {j} public_key is not base64")
             if len(pub) != 32:
@@ -1580,20 +1913,13 @@ def _check_attestations(b, report):
             if not role:
                 raise VError("attestation", f"claim {i} attestation {j} role is empty")
             try:
-                sig = base64.b64decode(a.get("sig", ""), validate=True)
+                sig = _b64(a.get("sig", ""))
             except Exception:
                 raise VError("attestation", f"claim {i} attestation {j} sig is not base64")
             obj = {"loomseal": "attestation/1", "link": chain["link"], "role": role}
             at = a.get("at")
             if at is not None:
-                bad = not isinstance(at, str) or not at.endswith("Z")
-                if not bad:
-                    body = at[:-1].split(".", 1)[0]
-                    try:
-                        datetime.strptime(body, "%Y-%m-%dT%H:%M:%S")
-                    except ValueError:
-                        bad = True
-                if bad:
+                if not _is_rfc3339(at) or not at.endswith("Z"):
                     raise VError("attestation", f"claim {i} attestation {j} at is not RFC 3339 UTC")
                 obj["at"] = at
             preimage = canon(obj)
@@ -1619,7 +1945,7 @@ def _check_head_attestations(b, report):
         if a.get("alg") != "ed25519":
             raise VError("attestation", f"head attestation {j} alg {a.get('alg')!r}, want ed25519")
         try:
-            pub = base64.b64decode(a.get("public_key", ""), validate=True)
+            pub = _b64(a.get("public_key", ""))
         except Exception:
             raise VError("attestation", f"head attestation {j} public_key is not base64")
         if len(pub) != 32:
@@ -1630,21 +1956,14 @@ def _check_head_attestations(b, report):
         if not role:
             raise VError("attestation", f"head attestation {j} role is empty")
         try:
-            sig = base64.b64decode(a.get("sig", ""), validate=True)
+            sig = _b64(a.get("sig", ""))
         except Exception:
             raise VError("attestation", f"head attestation {j} sig is not base64")
         obj = {"loomseal": "head-attestation/1", "link": head["link"], "seq": head["seq"],
                "role": role}
         at = a.get("at")
         if at is not None:
-            bad = not isinstance(at, str) or not at.endswith("Z")
-            if not bad:
-                body = at[:-1].split(".", 1)[0]
-                try:
-                    datetime.strptime(body, "%Y-%m-%dT%H:%M:%S")
-                except ValueError:
-                    bad = True
-            if bad:
+            if not _is_rfc3339(at) or not at.endswith("Z"):
                 raise VError("attestation", f"head attestation {j} at is not RFC 3339 UTC")
             obj["at"] = at
         preimage = canon(obj)
@@ -1713,7 +2032,7 @@ def _check_anchors(b, report):
         if a["type"] != "rfc3161":
             continue
         try:
-            token = base64.b64decode(a["proof"], validate=True)
+            token = _b64(a["proof"])
         except Exception as exc:
             raise VError("anchor", f"anchor {i} proof is not base64: {exc}") from exc
         when, signer = _verify_timestamp(token, a["link"], i)
@@ -1733,9 +2052,22 @@ def _check_anchors(b, report):
         and report["anchor_proofs_verified"] == report["anchor_proofs_carried"])
 
 
-def _at_epoch(ts, i):
-    """Parse a claim time to epoch seconds for cadence measurement. Fractions beyond microseconds
-    are trimmed here because the value is measured, never hashed."""
+# _EPOCH is the origin beat times are measured from. Measuring in whole microseconds from it, with
+# integer arithmetic throughout, keeps every interval, threshold, and window count exactly what the
+# Go verifier computes in its int64 microsecond counts.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+# SPAN_MAX_CADENCE_S is the widest cadence a span claim may declare, the seconds in a 366-day year.
+# Python integers do not wrap, but the bound is the format's, and a verifier with 64-bit integers
+# needs it to keep every quantity the gap measurement forms in range, so this one refuses the same
+# claims.
+SPAN_MAX_CADENCE_S = 366 * 24 * 60 * 60
+
+
+def _at_micros(ts, i):
+    """Parse a claim time to whole microseconds since the epoch for cadence measurement. Digits
+    beyond the microsecond are dropped, as the format measures beat times, because the value is
+    measured, never hashed."""
     if not isinstance(ts, str) or not ts.endswith("Z"):
         raise VError("span", f"span claim {i} at must be RFC 3339 UTC ending in Z")
     body = ts[:-1]
@@ -1743,9 +2075,23 @@ def _at_epoch(ts, i):
         head, frac = body.split(".", 1)
         body = head + "." + frac[:6]
     try:
-        return datetime.fromisoformat(body + "+00:00").timestamp()
+        at = datetime.fromisoformat(body + "+00:00")
     except ValueError as exc:
         raise VError("span", f"span claim {i} at is not RFC 3339: {exc}") from exc
+    return (at - _EPOCH) // timedelta(microseconds=1)
+
+
+def _beat_time(micros):
+    """Word a beat time as RFC 3339 UTC to the whole second, with the fraction dropped rather than
+    rounded, the form a gap names its bounds in."""
+    at = _EPOCH + timedelta(seconds=micros // 1_000_000)
+    return at.isoformat().replace("+00:00", "Z")
+
+
+def _whole_seconds(micros):
+    """Word a measured interval as whole seconds, rounded to the nearest with halves up, the one
+    form every verifier prints for a gap."""
+    return f"{(micros + 500_000) // 1_000_000}s"
 
 
 def _check_span(b, report):
@@ -1753,10 +2099,19 @@ def _check_span(b, report):
     a contradiction and fails the bundle. Beats further apart than the declared cadence are gaps,
     reported with their bounds and never hidden: coverage is a measurement, not a badge."""
     spans = []
+    chain = b.get("chain")
+    # LoomSpan is defined over the linear profiles. Its beats carry a non-empty chain.prev and its
+    # coverage requires contiguous beats, and the tree profile forbids both by design, so a span
+    # claim in a tree bundle is refused rather than checked: a coverage answer the profile cannot
+    # satisfy would mean nothing. The Go verifier refuses it the same way.
+    tree = isinstance(chain, dict) and chain.get("profile") == MERKLE
     for i, c in enumerate(b["claims"]):
         if c.get("type") != "loomseal.span/1":
             continue
         report["span_present"] = True
+        if tree:
+            raise VError("span", f"claim {i} is a span claim, which the {MERKLE} profile does "
+                                 "not carry")
         if "chain" not in b:
             raise VError("span", "span claims present without a chain declaration")
         if "chain" not in c:
@@ -1766,11 +2121,12 @@ def _check_span(b, report):
             raise VError("span", f"span claim {i} stream {p.get('stream')!r}: this format "
                                  "defines only 'chain'")
         cadence, beat, count = p.get("cadence_s"), p.get("beat"), p.get("count")
-        if not isinstance(cadence, int) or cadence < 1:
-            raise VError("span", f"span claim {i} cadence_s {cadence!r}, want at least 1")
-        if not isinstance(beat, int) or beat < 1:
+        if not _is_int(cadence) or not 1 <= cadence <= SPAN_MAX_CADENCE_S:
+            raise VError("span", f"span claim {i} cadence_s {cadence!r}, want an integer from 1 "
+                                 f"to {SPAN_MAX_CADENCE_S}")
+        if not _is_int(beat) or beat < 1:
             raise VError("span", f"span claim {i} beat {beat!r}, want at least 1")
-        if not isinstance(count, int) or count < 0:
+        if not _is_int(count) or count < 0:
             raise VError("span", f"span claim {i} count {count!r}, want at least 0")
         # A switchtender-audit-v1 link commits the path and not the span members beside it, so
         # under that profile the members are bound through the path they were written into.
@@ -1786,7 +2142,7 @@ def _check_span(b, report):
                                      f"commits: path {p.get('path')!r}, members read {want!r}")
             for member in ("stream", "beat", "count", "cadence_s"):
                 _settle_declared(report, i, "loomseal.span/1", member)
-        spans.append((p, c["chain"]["seq"], _at_epoch(c["at"], i)))
+        spans.append((p, c["chain"]["seq"], _at_micros(c["at"], i)))
     if not report["span_present"]:
         return
     report["span_beats"] = len(spans)
@@ -1805,7 +2161,7 @@ def _check_span(b, report):
         report["span_counts_carried"] += 1
 
     missed = 0
-    longest = 0.0
+    longest = 0
     for i in range(1, len(spans)):
         (pp, pseq, pat), (cp, cseq, cat) = spans[i - 1], spans[i]
         if cp["beat"] != pp["beat"] + 1:
@@ -1820,15 +2176,23 @@ def _check_span(b, report):
         if delta <= 0:
             raise VError("span", f"span beat {cp['beat']} time does not advance past beat "
                                  f"{pp['beat']}")
-        cadence = float(pp["cadence_s"])
-        if delta <= cadence:
+        # The interval is measured against the cadence the earlier beat declares. A timer fires a
+        # little late as a matter of course, so the format allows a scheduling slack of a hundredth
+        # of the cadence and never under a second before an interval is a gap. This matches the Go
+        # verifier's scheduleSlack.
+        cadence = pp["cadence_s"] * 1_000_000
+        if delta <= cadence + max(cadence // 100, 1_000_000):
             continue
-        report["span_gaps"].append(f"unattested window of {int(delta)}s between beat "
-                                   f"{pp['beat']} and beat {cp['beat']}")
+        report["span_gaps"].append(
+            f"unattested window of {_whole_seconds(delta)} between beat {pp['beat']} "
+            f"({_beat_time(pat)}) and beat {cp['beat']} ({_beat_time(cat)})")
         longest = max(longest, delta)
-        missed += max(0, round(delta / cadence) - 1)
+        # A gap swallows the whole windows that fit in it, the interval in cadences rounded to the
+        # nearest with halves up, less the window the arriving beat attests. Integer arithmetic,
+        # because Python's round() takes halves to the even neighbor and the Go verifier does not.
+        missed += max(0, (delta + cadence // 2) // cadence - 1)
     if longest:
-        report["span_longest_gap"] = f"{int(longest)}s"
+        report["span_longest_gap"] = _whole_seconds(longest)
     report["span_coverage"] = f"{len(spans)}/{len(spans) + missed} windows attested"
     report["span_ok"] = True
 
@@ -1942,6 +2306,9 @@ def failing_check_error(check, r):
     if check in ("parse", "signature"):
         if r["signature_ok"]:
             return f"{check} case verified its signature"
+        # A malformed document is not verified, which is a different verdict from unsupported.
+        if check == "parse" and r["unsupported"]:
+            return f"parse case was judged unsupported: {r['problems']}"
     elif check == "chain":
         if not r["chain_present"] or r["chain_ok"]:
             return (f"chain case did not fail the chain: present {r['chain_present']} "
@@ -1995,6 +2362,13 @@ def failing_check_error(check, r):
     return None
 
 
+def _faulted(r):
+    """Report whether report r records a fault in this verifier rather than a verdict on the input.
+    Refusing a vector because the verifier broke is not agreement with a verifier that refused it
+    for a reason."""
+    return any(p.startswith("verifier:") for p in r["problems"])
+
+
 def run_vectors(dirpath):
     """Run every vector in a manifest and report agreement with its declared expectations."""
     man = json.load(open(os.path.join(dirpath, "manifest.json")))
@@ -2035,10 +2409,20 @@ def run_vectors(dirpath):
                 status = "!! "
                 detail = (f"  unknown_subject_type got[{unknown}] "
                           f"want[{v.get('unknown_subject_type') or ''}]")
+            # A gap is measured one way, so the coverage line, the longest gap, and each gap's
+            # wording are part of the verdict a spanned vector pins.
+            for key, empty in (("span_coverage", ""), ("span_longest_gap", ""),
+                               ("span_gaps", [])):
+                want = v.get(key) or empty
+                if r[key] != want:
+                    status = "!! "
+                    detail += f"  {key} got {r[key]!r} want {want!r}"
         if status == "OK " and not v["must_verify"] and v.get("failing_check"):
             why = failing_check_error(v["failing_check"], r)
             if why:
                 status, detail = "!! ", f"  {why}"
+        if _faulted(r):
+            status, detail = "!! ", f"  verifier fault: {r['problems']}"
         if status == "!! ":
             bad += 1
         print(f"{status}{v['name']:<28} ok={ok} expect={v['must_verify']}{detail}")
@@ -2048,7 +2432,14 @@ def run_vectors(dirpath):
 
 def _is_presentation(raw_bytes):
     """Report whether raw is a holder presentation rather than a bundle, by the presence of the
-    presentation version member under its exact name. Mirrors the Go LooksLikePresentation."""
+    presentation version member under its exact name. Mirrors the Go LooksLikePresentation. It
+    reads the document on the stack verify runs on, so a deeply nested presentation is still
+    recognized as one."""
+    return _on_deep_stack(_looks_like_presentation, raw_bytes)
+
+
+def _looks_like_presentation(raw_bytes):
+    """Report whether raw parses to an object carrying a presentation version member."""
     try:
         d = parse_strict(raw_bytes)
     except (VError, RecursionError, ValueError):
@@ -2096,11 +2487,27 @@ def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None)
     None means no expectation. An audience or nonce passed as "" is an expectation that compares
     against nothing, so it is refused before anything is verified, in the wording the browser
     module uses, rather than read as none and the replay defense skipped under a checked verdict."""
+    return _on_deep_stack(_verify_presentation, raw_bytes, audience, nonce, evidence_dir)
+
+
+def _verify_presentation(raw_bytes, audience, nonce, evidence_dir):
+    """Run the presentation checks and build the report, on the stack verify runs on. A fault in
+    this verifier itself lands in the report as a problem, never as a traceback."""
     report = {"ok": False, "presentation_ok": False, "problems": [], "bundle": None}
     for member, expected in (("audience", audience), ("nonce", nonce)):
         if expected == "":
             report["problems"].append(f"{member}: {EMPTY_EXPECTATION}")
             return report
+    try:
+        return _presentation_checks(raw_bytes, audience, nonce, evidence_dir, report)
+    except Exception as exc:
+        report["ok"] = False
+        report["problems"].append(f"verifier: {type(exc).__name__}: {exc}")
+        return report
+
+
+def _presentation_checks(raw_bytes, audience, nonce, evidence_dir, report):
+    """Fill report with the presentation checks and return it."""
     try:
         p = parse_strict(raw_bytes)
     except VError as e:
@@ -2116,7 +2523,12 @@ def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None)
     report["audience"], report["nonce"] = p.get("audience"), p.get("nonce")
     report["created_at"] = p.get("created_at")
     bundle_obj = p.get("bundle")
-    report["bundle"] = verify(canon(bundle_obj), evidence_dir)
+    try:
+        bundle_bytes = canon(bundle_obj)
+    except VError as e:
+        report["problems"].append(f"parse: {e.msg}")
+        return report
+    report["bundle"] = verify(bundle_bytes, evidence_dir)
     try:
         _check_presentation_sig(p, bundle_obj, report)
     except VError as e:
@@ -2143,21 +2555,21 @@ def _check_presentation_sig(p, bundle_obj, report):
     if holder.get("alg") != "ed25519":
         raise VError("presentation", "holder alg is not ed25519")
     try:
-        pub = base64.b64decode(holder.get("public_key", ""), validate=True)
+        pub = _b64(holder.get("public_key", ""))
     except Exception:
         raise VError("presentation", "holder public_key is not base64")
     if len(pub) != 32:
         raise VError("presentation", "holder public_key is not a 32 byte ed25519 key")
     if _key_id(pub) != holder.get("key_id"):
         raise VError("presentation", "holder key_id does not match the embedded public key")
-    if _rfc3339_epoch(p.get("created_at")) is None:
+    if not _is_rfc3339(p.get("created_at")):
         raise VError("presentation", "presentation created_at is not RFC 3339")
     bundle_sha = hashlib.sha256(canon(bundle_obj)).hexdigest()
     preimage = canon({"loomseal": "presentation/1",
                       "audience": p.get("audience", ""), "bundle_sha256": bundle_sha,
                       "created_at": p.get("created_at", ""), "nonce": p.get("nonce", "")})
     try:
-        sig = base64.b64decode(p.get("sig", ""), validate=True)
+        sig = _b64(p.get("sig", ""))
     except Exception:
         raise VError("presentation", "holder signature is not base64")
     try:
@@ -2180,6 +2592,8 @@ def run_presentations(dirpath):
         ok = r["ok"]
         status = "OK " if ok == v["must_verify"] else "!! "
         detail = ""
+        if _faulted(r) or (r["bundle"] is not None and _faulted(r["bundle"])):
+            status, detail = "!! ", "  verifier fault"
         # An expectation supplied empty is refused by name before anything is verified, so a case
         # that carries one fails for that reason and no other.
         for member in ("audience", "nonce"):

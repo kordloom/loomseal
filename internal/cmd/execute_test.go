@@ -194,8 +194,9 @@ func TestExecuteVerifyVerdictLines(t *testing.T) {
 			"anchors    1 matched by coordinates",
 			"anchored   through seq 5",
 			"span       2/4 windows attested",
-			"longest gap 3m0s",
-			"gap        unattested window of 3m0s",
+			"longest gap 180s",
+			"gap        unattested window of 180s between beat 1 (2026-07-27T15:01:00Z) and " +
+				"beat 2 (2026-07-27T15:04:00Z)",
 		},
 	}, { // Test 1: A tree bundle reports its size and proved append-only growth.
 		File: "merkle-consistency-power-of-two.loomseal.json",

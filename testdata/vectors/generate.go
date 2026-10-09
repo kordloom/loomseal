@@ -111,6 +111,13 @@ type vector struct {
 	// it verified: the token's genTime to the second, "by", and the signer named by the rule
 	// FORMAT.md states. Empty means none may be reported.
 	AnchorAttestations []string `json:"anchor_attestations,omitempty"`
+	// AnchorProofsUnopened is how many carried proofs a verifier must report as of a type it cannot
+	// open offline. A verifier is held to it on every vector that carries it, whether or not the
+	// bundle must verify, and to zero on a vector that must verify and does not carry it.
+	AnchorProofsUnopened *int `json:"anchor_proofs_unopened,omitempty"`
+	// AnchorProofsOnDeclaredHead is how many proofs a verifier must report on anchors that match
+	// only the unverified declared head, held the same way as AnchorProofsUnopened.
+	AnchorProofsOnDeclaredHead *int `json:"anchor_proofs_on_declared_head,omitempty"`
 }
 
 // presentationManifest is the conformance document for holder presentations.
@@ -136,6 +143,13 @@ type presentationVector struct {
 	ExpectNonce *string `json:"expect_nonce,omitempty"`
 	// MustVerify is whether a conformant verifier must report the presentation verified.
 	MustVerify bool `json:"must_verify"`
+	// FailingCheck names the first check, in the order FORMAT.md's "Presentations" section gives,
+	// that a presentation which must not verify fails: expectation, parse, unsupported, bundle,
+	// presentation, audience, or nonce.
+	FailingCheck string `json:"failing_check,omitempty"`
+	// RoutesAsBundle marks a document an entry point taking either kind of document reads as a
+	// bundle, because it is not a JSON object whose loomseal_presentation member is a string.
+	RoutesAsBundle bool `json:"routes_as_bundle,omitempty"`
 	// Why explains the case in one sentence.
 	Why string `json:"why"`
 }
@@ -192,6 +206,8 @@ func main() {
 	s.tokenStructure()
 	s.derRules()
 	s.derTags()
+	s.readOrder()
+	s.unopenedProofs()
 	s.presentations()
 
 	if err := s.write(); err != nil {
@@ -280,6 +296,7 @@ func (s *state) positives() {
 		"An rfc3161 proof on a declared head beyond the bundled claims is not opened and earns no "+
 			"anchored level, because the link it attests is tied to nothing the verifier confirmed.",
 		s.sign(s.switchTenderDeclaredHeadProof()))
+	s.expectOnDeclaredHead("anchor-declared-head-proof", 1)
 
 	// Sub-microsecond claim time. A verifier that parses the time into its language's own type and
 	// formats it back loses digits wherever that type is not nanosecond-capable, and reports an
@@ -3465,6 +3482,65 @@ func (s *state) derRules() {
 			"subidentifier with 0x80 verifies, because nothing decides a verdict from the " +
 			"subject, and every verifier names its signer by the hexadecimal of the subject's " +
 			"encoding.",
+	}, {
+		name: "anchor-signer-name-bidi-embedding", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 3}, 0x0c,
+				"a\u202ab\u202bc\u202cd\u202de\u202ef\u202fg")})
+		},
+		attested: "2026-07-27T15:01:00Z by " +
+			`CN=a\e2\80\aab\e2\80\abc\e2\80\acd\e2\80\ade\e2\80\aef` + "\u202fg",
+		why: "A token whose signer's common name carries each bidirectional embedding and override, " +
+			"U+202A to U+202E, verifies, and every verifier writes each in hexadecimal, so a " +
+			"subject cannot use them to reorder how the line naming its signer displays, and " +
+			"writes U+202F as itself.",
+	}, {
+		name: "anchor-signer-name-bidi-isolate", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 3}, 0x0c,
+				"\u2065a\u2066b\u2067c\u2068d\u2069e\u206a")})
+		},
+		attested: "2026-07-27T15:01:00Z by CN=\u2065" +
+			`a\e2\81\a6b\e2\81\a7c\e2\81\a8d\e2\81\a9e` + "\u206a",
+		why: "A token whose signer's common name carries each bidirectional isolate, U+2066 to " +
+			"U+2069, verifies, and every verifier writes each in hexadecimal and writes U+2065 and " +
+			"U+206A as themselves.",
+	}, {
+		name: "anchor-signer-name-bidi-mark", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 3}, 0x0c,
+				"\u200da\u200eb\u200fc\u2010d\u061be\u061cf\u061d")})
+		},
+		attested: "2026-07-27T15:01:00Z by CN=\u200d" + `a\e2\80\8eb\e2\80\8fc` + "\u2010d\u061b" +
+			`e\d8\9cf` + "\u061d",
+		why: "A token whose signer's common name carries the bidirectional marks U+200E, U+200F " +
+			"and U+061C verifies, and every verifier writes each in hexadecimal and writes U+200D, " +
+			"U+2010, U+061B and U+061D as themselves.",
+	}, {
+		name: "anchor-signer-name-line-separator", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tbs"].kids[5] = rdnName([]*derNode{rdnAttr(asn1.ObjectIdentifier{2, 5, 4, 3}, 0x0c,
+				"a\u2027b\u2028c\u2029d")})
+		},
+		attested: "2026-07-27T15:01:00Z by CN=a\u2027" + `b\e2\80\a8c\e2\80\a9d`,
+		why: "A token whose signer's common name carries the line separator U+2028 and the " +
+			"paragraph separator U+2029 verifies, and every verifier writes each in hexadecimal, " +
+			"so a subject cannot break the line naming its signer, and writes U+2027 as itself.",
+	}, {
+		name: "anchor-der-serial-21-octets", ok: true,
+		mutate: func(t *tokenTree) {
+			t.n["tstSerial"].val = append([]byte{0x00}, bytes.Repeat([]byte{0xff}, 20)...)
+		},
+		why: "A token whose TSTInfo serial number is 2^160-1, 21 octets with the zero octet DER " +
+			"writes before a high bit, verifies, because RFC 3161 has a verifier accept a serial " +
+			"of up to 160 bits.",
+	}, {
+		name: "anchor-der-serial-22-octets",
+		mutate: func(t *tokenTree) {
+			t.n["tstSerial"].val = append([]byte{0x00}, bytes.Repeat([]byte{0xff}, 21)...)
+		},
+		why: "A token whose TSTInfo serial number is 2^168-1, 22 octets, fails the anchor check, " +
+			"because a serial has at most the 21 octets a 160-bit value takes.",
 	}} {
 		signer := c.signer
 		if signer == nil {
@@ -3674,6 +3750,225 @@ func (s *state) derTags() {
 			}
 			return t.encode()
 		})
+	}
+}
+
+// readOrder emits the vectors that pin the order FORMAT.md's verification step 1 reads a bundle
+// in: the document as JSON, then its version, then the number profile, then every member's name,
+// type and null, then each value's rule. A version other than 0.1 is unsupported whatever else the
+// bundle carries, and a bundle with no version, or one that is not a string, is refused at parse.
+// Each fault rides beside one a later step refuses, so a verifier that read them in another order
+// reaches another verdict.
+//
+//nolint:funlen // One vector per pair of faults, listed in one place.
+func (s *state) readOrder() {
+	// withLiteral places a literal in the first claim's payload of a signed bundle, as text, since
+	// no Go value marshals to a literal outside the number profile or to one JSON does not define.
+	withLiteral := func(signed []byte, literal string) []byte {
+		out := strings.Replace(string(signed), `"path":"/api/runs"`,
+			`"path":"/api/runs","n":`+literal, 1)
+		if out == string(signed) {
+			panic("readOrder: no payload path to place a number beside")
+		}
+		return []byte(out)
+	}
+	signed := s.sign(s.v1(1, false))
+	s.add("version-missing", false, "", "parse",
+		"A bundle with no loomseal member declares no format version and is refused at parse, not "+
+			"as unsupported: a later format is announced by another string in that member, so no "+
+			"newer verifier reads this document either.",
+		mutateSigned(signed, func(m map[string]any) { delete(m, "loomseal") }))
+	s.add("version-missing-unknown-member", false, "", "parse",
+		"A bundle with no loomseal member that also carries a member the schema does not define is "+
+			"refused at parse for the missing version, which a verifier reads before any member's "+
+			"name.",
+		mutateSigned(signed, func(m map[string]any) {
+			delete(m, "loomseal")
+			m["description"] = "a document from before versions"
+		}))
+	s.add("version-not-a-string", false, "", "parse",
+		"A loomseal member holding the number 1 rather than a string declares no format version "+
+			"and is refused at parse.",
+		mutateSigned(signed, func(m map[string]any) { m["loomseal"] = 1 }))
+
+	// later declares version 0.2 and adds one fault a version 0.1 bundle is refused at parse for.
+	later := func(fault func(m map[string]any)) []byte {
+		return mutateSigned(signed, func(m map[string]any) {
+			m["loomseal"] = "0.2"
+			fault(m)
+		})
+	}
+	s.add("wrong-version-unknown-member", false, "", "unsupported",
+		"A bundle declaring a version this verifier does not implement is unsupported although it "+
+			"also carries a member the schema does not define, because the version is read first "+
+			"and a later version may define new members.",
+		later(func(m map[string]any) { m["description"] = "a member a later version defines" }))
+	s.add("wrong-version-unknown-claim-member", false, "", "unsupported",
+		"A bundle declaring a version this verifier does not implement is unsupported although a "+
+			"claim carries a member the schema does not define, because the version is read before "+
+			"any member's name.",
+		later(func(m map[string]any) { m["claims"].([]any)[0].(map[string]any)["extra"] = "x" }))
+	s.add("wrong-version-wrong-type", false, "", "unsupported",
+		"A bundle declaring a version this verifier does not implement is unsupported although its "+
+			"bundle_id is a number, because a later version may give a member another type.",
+		later(func(m map[string]any) { m["bundle_id"] = 7 }))
+	s.add("wrong-version-null-member", false, "", "unsupported",
+		"A bundle declaring a version this verifier does not implement is unsupported although its "+
+			"anchors member is null, because the version is read before any member's value.",
+		later(func(m map[string]any) { m["anchors"] = nil }))
+	s.add("wrong-version-attestation-time", false, "", "unsupported",
+		"A bundle declaring a version this verifier does not implement is unsupported although a "+
+			"head attestation carries a time in no form this format reads, because a later version "+
+			"may write times another way.",
+		later(func(m map[string]any) {
+			m["attestations"] = []any{map[string]any{"role": "witness", "at": "yesterday"}}
+		}))
+	laterSigned := mutateSigned(signed, func(m map[string]any) { m["loomseal"] = "0.2" })
+	s.add("wrong-version-non-integer-number", false, "", "unsupported",
+		"A bundle declaring a version this verifier does not implement is unsupported although it "+
+			"carries a fractional number, because a later version may widen the number profile.",
+		withLiteral(laterSigned, "1.5"))
+	s.add("wrong-version-long-integer", false, "", "unsupported",
+		"A bundle declaring a version this verifier does not implement is unsupported although it "+
+			"carries an integer of twenty digits, because a later version may widen the number "+
+			"profile.",
+		withLiteral(laterSigned, "12345678901234567890"))
+	// NaN, Infinity, -Infinity, and a digit outside ASCII are not JSON, and some JSON readers
+	// accept them. A document carrying one is refused at parse whatever version it declares,
+	// because a verifier reads the version only from a document that is JSON.
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// literal is the text placed where a value belongs.
+		literal string
+		// what names the literal in the description.
+		what string
+	}{
+		{name: "wrong-version-nan", literal: "NaN", what: "NaN"},
+		{name: "wrong-version-infinity", literal: "Infinity", what: "Infinity"},
+		{name: "wrong-version-negative-infinity", literal: "-Infinity", what: "-Infinity"},
+		{name: "wrong-version-non-ascii-digit", literal: "1\u0661",
+			what: "1 followed by the Arabic-Indic digit one"},
+	} {
+		s.add(c.name, false, "", "parse",
+			"A bundle declaring a version this verifier does not implement is refused at parse, "+
+				"not judged unsupported, when it carries "+c.what+" where a value belongs: "+
+				"that is not JSON, so no verifier reads its version.",
+			withLiteral(laterSigned, c.literal))
+	}
+	s.add("number-twenty-digits", false, "", "parse",
+		"An integer literal of twenty digits is outside the integer profile and is refused at "+
+			"parse, before any verifier converts it.",
+		withLiteral(signed, "12345678901234567890"))
+
+	// A chain profile this verifier does not implement is found by the value rules, after the
+	// number profile and every member's name and type have held.
+	m := s.v1(1, false)
+	m["chain"].(map[string]any)["profile"] = "x-chain-v9"
+	unknownProfile := s.sign(m)
+	s.add("unknown-chain-profile-non-integer-number", false, "", "parse",
+		"A version 0.1 bundle carrying a fractional number is refused at parse even beside a chain "+
+			"profile this verifier does not implement, because the number profile is fixed for the "+
+			"version and is held before the value rules that find the profile unknown.",
+		withLiteral(unknownProfile, "1.5"))
+	s.add("unknown-chain-profile-unknown-member", false, "", "parse",
+		"A version 0.1 bundle whose claim carries a member the schema does not define is refused at "+
+			"parse even beside a chain profile this verifier does not implement, because every "+
+			"member's name is held before the value rules that find the profile unknown.",
+		mutateSigned(unknownProfile, func(m map[string]any) {
+			m["claims"].([]any)[0].(map[string]any)["extra"] = "x"
+		}))
+}
+
+// unopenedProofs emits the vectors that pin how a verifier counts a carried proof of a type it
+// cannot open offline: such a proof alone, one of each such type, never one on the unverified
+// declared head, and never a proof it opened, whether that proof held or failed. A token that fails
+// is pinned at zero on the failing vectors that reach each way a token fails after it is counted as
+// carried, so a verifier calling a failed token unopenable fails them.
+func (s *state) unopenedProofs() {
+	opaque := base64.StdEncoding.EncodeToString([]byte("a commit a relying party fetches"))
+	m := s.v1(2, false)
+	head := m["chain"].(map[string]any)["head"].(map[string]any)
+	g := gitAnchor(head["seq"].(int64), head["link"].(string))
+	g["proof"] = opaque
+	m["anchors"] = []any{g}
+	s.add("anchor-proof-unopened", true, "signed, chained (full), anchored by reference", "",
+		"A git anchor carrying a proof verifies by reference, and a verifier reports that proof as "+
+			"one of a type it cannot open offline, carried and not checked.", s.sign(m))
+	s.expectUnopened("anchor-proof-unopened", 1)
+
+	// Every type a verifier matches by coordinates only carries a proof, so a verifier that counts
+	// some of those types and not the others, or counts a bundle once however many it carries,
+	// reports the wrong number.
+	m = s.v1(2, false)
+	head = m["chain"].(map[string]any)["head"].(map[string]any)
+	m["anchors"] = referenceAnchors(head["seq"].(int64), head["link"].(string))
+	s.add("anchor-proof-unopened-git-https-rekor", true,
+		"signed, chained (full), anchored by reference", "",
+		"A git, an https, and a rekor anchor over the verified head, each carrying a proof, verify "+
+			"by reference, and a verifier reports all three proofs as of a type it cannot open "+
+			"offline.", s.sign(m))
+	s.expectUnopened("anchor-proof-unopened-git-https-rekor", 3)
+
+	// The same three proofs on a declared head beyond the bundled claims are never unopened: the
+	// link they attest is tied to nothing the verifier confirmed, so they are proofs on the
+	// declared head whatever their type.
+	m = s.v1(1, false)
+	m["chain"].(map[string]any)["head"] = map[string]any{
+		"seq": int64(500), "link": strings.Repeat("ab", 32),
+	}
+	m["anchors"] = referenceAnchors(500, strings.Repeat("ab", 32))
+	s.add("anchor-declared-head-proof-git-https-rekor", true, "signed, chained (full)", "",
+		"A git, an https, and a rekor anchor over a declared head beyond the bundled claims, each "+
+			"carrying a proof, earn no anchored level, and a verifier reports their proofs as on "+
+			"the declared head and none as of a type it cannot open.", s.sign(m))
+	s.expectUnopened("anchor-declared-head-proof-git-https-rekor", 0)
+	s.expectOnDeclaredHead("anchor-declared-head-proof-git-https-rekor", 3)
+
+	m = s.v1(1, false)
+	link := m["chain"].(map[string]any)["head"].(map[string]any)["link"].(string)
+	g = gitAnchor(1, link)
+	g["proof"] = opaque
+	m["anchors"] = []any{map[string]any{
+		"type": "rfc3161", "seq": int64(1), "link": link, "at": "2026-07-27T15:01:00Z",
+		"ref": "https://tsa.example/tsr", "proof": newTokenTree(edTokenSigner(), link).encode(),
+	}, g}
+	s.add("anchor-proof-unopened-beside-verified", true,
+		"signed, chained (full), anchored (proof verified)", "",
+		"A bundle carrying a timestamp token that verifies and a git anchor's proof over the same "+
+			"link reports one proof of a type the verifier cannot open, and never counts the token "+
+			"it opened among them.", s.sign(m))
+	s.expectAttested("anchor-proof-unopened-beside-verified", vectorAttested)
+	s.expectUnopened("anchor-proof-unopened-beside-verified", 1)
+
+	// The git anchor is read first and the failing token last, so a verifier that stops at the first
+	// failed anchor and one that reads every anchor have both counted the git proof.
+	m = s.v1(1, false)
+	link = m["chain"].(map[string]any)["head"].(map[string]any)["link"].(string)
+	g = gitAnchor(1, link)
+	g["proof"] = opaque
+	failed := newTokenTree(edTokenSigner(), link)
+	failed.rewriteSignature = func(sig []byte) []byte {
+		sig = slices.Clone(sig)
+		sig[0] ^= 0x01
+		return sig
+	}
+	m["anchors"] = []any{g, map[string]any{
+		"type": "rfc3161", "seq": int64(1), "link": link, "at": "2026-07-27T15:01:00Z",
+		"ref": "https://tsa.example/tsr", "proof": failed.encode(),
+	}}
+	s.add("anchor-proof-unopened-before-failed", false, "", "anchor",
+		"A bundle carrying a git anchor's proof and then a timestamp token whose signature has one "+
+			"bit changed fails the anchor check, and a verifier reports one proof of a type it "+
+			"cannot open, the git anchor's, and never counts the token it opened and saw fail.",
+		s.sign(m))
+	s.expectUnopened("anchor-proof-unopened-before-failed", 1)
+	// A token opened and failed is never unopenable: one whose signature does not verify, one that
+	// does not open as a timestamp token, and one that verifies but predates the entry it covers.
+	for _, name := range []string{
+		"anchor-signature-invalid", "anchor-corrupt-token", "anchor-gen-time-fraction-outside-skew",
+	} {
+		s.expectUnopened(name, 0)
 	}
 }
 
@@ -4873,6 +5168,22 @@ func gitAnchor(seq int64, link string) map[string]any {
 	}
 }
 
+// referenceAnchors builds a git, an https, and a rekor anchor at the given coordinates, one of each
+// type a verifier matches by coordinates only, and gives each an opaque proof of its own.
+func referenceAnchors(seq int64, link string) []any {
+	g := gitAnchor(seq, link)
+	g["proof"] = base64.StdEncoding.EncodeToString([]byte("a commit a relying party fetches"))
+	return []any{g, map[string]any{
+		"type": "https", "seq": seq, "link": link, "at": "2026-07-01T00:00:00Z",
+		"ref":   "https://producer.example/loomseal/head.json",
+		"proof": base64.StdEncoding.EncodeToString([]byte("a published head a relying party fetches")),
+	}, map[string]any{
+		"type": "rekor", "seq": seq, "link": link, "at": "2026-07-01T00:00:00Z",
+		"ref":   "https://rekor.example/api/v1/log/entries/0001",
+		"proof": base64.StdEncoding.EncodeToString([]byte("a log entry a relying party fetches")),
+	}}
+}
+
 // sign marshals and signs a bundle map, returning the signed document bytes.
 func (s *state) sign(m map[string]any) []byte {
 	raw, err := json.Marshal(m)
@@ -4971,6 +5282,30 @@ func (s *state) expectAttested(name string, lines ...string) {
 	panic("expectAttested: no vector named " + name)
 }
 
+// expectUnopened records how many carried proofs a verifier must report as of a type it cannot open
+// offline in a vector, zero included, so the count is held whether or not the bundle verifies.
+func (s *state) expectUnopened(name string, n int) {
+	for i := range s.man.Vectors {
+		if s.man.Vectors[i].Name == name {
+			s.man.Vectors[i].AnchorProofsUnopened = &n
+			return
+		}
+	}
+	panic("expectUnopened: no vector named " + name)
+}
+
+// expectOnDeclaredHead records how many proofs a verifier must report on anchors that match only
+// the unverified declared head in a vector, zero included.
+func (s *state) expectOnDeclaredHead(name string, n int) {
+	for i := range s.man.Vectors {
+		if s.man.Vectors[i].Name == name {
+			s.man.Vectors[i].AnchorProofsOnDeclaredHead = &n
+			return
+		}
+	}
+	panic("expectOnDeclaredHead: no vector named " + name)
+}
+
 // write emits the manifest, with vectors sorted by name for a stable diff.
 func (s *state) write() error {
 	sort.Slice(s.man.Vectors, func(i, j int) bool {
@@ -5000,26 +5335,26 @@ func (s *state) presentations() {
 	// The expectations every case but the mismatched and empty ones requires.
 	aud, chal := supplied("acme-verifier"), supplied("chal-1")
 	vf := s.writePresentationFile("present-valid", valid)
-	s.addPresentation("present-valid", vf, aud, chal, true,
+	s.addPresentation("present-valid", vf, aud, chal, "",
 		"A presentation bound to the verifier and nonce it declares verifies under those pins.")
-	s.addPresentation("present-no-pins", vf, nil, nil, true,
+	s.addPresentation("present-no-pins", vf, nil, nil, "",
 		"The same presentation with no pins verifies: the pins are the caller's to require.")
-	s.addPresentation("present-wrong-audience", vf, supplied("someone-else"), chal, false,
+	s.addPresentation("present-wrong-audience", vf, supplied("someone-else"), chal, "audience",
 		"The same presentation fails when the verifier requires a different audience, which is what "+
 			"stops it being replayed to another verifier.")
-	s.addPresentation("present-stale-nonce", vf, aud, supplied("old-nonce"), false,
+	s.addPresentation("present-stale-nonce", vf, aud, supplied("old-nonce"), "nonce",
 		"The same presentation fails against a stale challenge, which is what stops a replay.")
-	s.addPresentation("present-empty-audience", vf, supplied(""), chal, false,
+	s.addPresentation("present-empty-audience", vf, supplied(""), chal, "expectation",
 		"An expected audience supplied empty is refused before anything is verified, by every entry "+
 			"point that can tell it from an absent one, rather than read as no expectation.")
-	s.addPresentation("present-empty-nonce", vf, aud, supplied(""), false,
+	s.addPresentation("present-empty-nonce", vf, aud, supplied(""), "expectation",
 		"An expected nonce supplied empty is refused before anything is verified, by every entry "+
 			"point that can tell it from an absent one, rather than read as no expectation and the "+
 			"replay defense skipped.")
 
 	tampered := []byte(strings.Replace(string(valid), "/api/runs", "/api/evil", 1))
 	tf := s.writePresentationFile("present-tampered-bundle", tampered)
-	s.addPresentation("present-tampered-bundle", tf, aud, chal, false,
+	s.addPresentation("present-tampered-bundle", tf, aud, chal, "bundle",
 		"A presentation whose embedded bundle was changed fails: the bundle no longer verifies and its "+
 			"digest no longer matches the holder signature.")
 
@@ -5038,7 +5373,7 @@ func (s *state) presentations() {
 		panic(err)
 	}
 	bf := s.writePresentationFile("present-bad-holder-sig", badSig)
-	s.addPresentation("present-bad-holder-sig", bf, aud, chal, false,
+	s.addPresentation("present-bad-holder-sig", bf, aud, chal, "presentation",
 		"A presentation whose holder signature was altered does not verify.")
 
 	// A presentation counts its own level above the bundle it carries, so a bundle at the nesting
@@ -5052,18 +5387,29 @@ func (s *state) presentations() {
 		panic(err)
 	}
 	df := s.writePresentationFile("present-past-bound", deepPres)
-	s.addPresentation("present-past-bound", df, aud, chal, false,
+	s.addBundleRouted("present-past-bound", df,
 		"A presentation nested one level past the bound is refused at parse, although the bundle "+
-			"it carries is within the bound and verifies alone.")
+			"it carries is within the bound and verifies alone. No verifier reads it far enough "+
+			"to find its version, so one taking either kind of document reads it as a bundle.")
 
 	// An integer beyond 2^53 inside the presented bundle has no canonical form, so the bundle the
 	// holder signature covers cannot be computed and the presentation is refused at parse.
 	big := []byte(strings.Replace(string(valid), `"path":"/api/runs"`,
 		`"path":"/api/runs","big":9007199254740993`, 1))
 	gf := s.writePresentationFile("present-number-exceeds-2p53", big)
-	s.addPresentation("present-number-exceeds-2p53", gf, aud, chal, false,
+	s.addPresentation("present-number-exceeds-2p53", gf, aud, chal, "parse",
 		"A presentation whose bundle carries an integer beyond 2^53 is refused at parse, with a "+
 			"verdict and never a crash.")
+
+	// A fractional number inside the presented bundle. A verifier recognizes a presentation by its
+	// version member before it holds any number to the profile, so this one is routed to the
+	// presentation checks like any other and refused there.
+	frac := []byte(strings.Replace(string(valid), `"path":"/api/runs"`,
+		`"path":"/api/runs","ratio":1.5`, 1))
+	nf := s.writePresentationFile("present-non-integer-number", frac)
+	s.addPresentation("present-non-integer-number", nf, aud, chal, "parse",
+		"A presentation whose bundle carries a fractional number is recognized as a presentation "+
+			"by every verifier and refused by the presentation checks.")
 
 	// A holder key and a holder signature broken across lines. Each is otherwise genuine, so only
 	// the base64 rule refuses them.
@@ -5077,7 +5423,8 @@ func (s *state) presentations() {
 		if err != nil {
 			panic(err)
 		}
-		s.addPresentation(name, s.writePresentationFile(name, out), aud, chal, false, why)
+		s.addPresentation(name, s.writePresentationFile(name, out), aud, chal, "presentation",
+			why)
 	}
 	lineBroken("present-holder-key-line-break", func(p map[string]any) {
 		holder := p["holder"].(map[string]any)
@@ -5121,8 +5468,8 @@ func (s *state) presentations() {
 		if err != nil {
 			panic(err)
 		}
-		s.addPresentation(c.name, s.writePresentationFile(c.name, pres), aud, chal, false,
-			c.why)
+		s.addPresentation(c.name, s.writePresentationFile(c.name, pres), aud, chal,
+			"presentation", c.why)
 	}
 
 	// A member whose name differs from a presentation member only in case is refused, never folded
@@ -5140,7 +5487,7 @@ func (s *state) presentations() {
 		panic(err)
 	}
 	ff := s.writePresentationFile("present-casefold-audience", folded)
-	s.addPresentation("present-casefold-audience", ff, aud, chal, false,
+	s.addPresentation("present-casefold-audience", ff, aud, chal, "parse",
 		"A presentation carrying Audience beside audience is refused at parse: member names are "+
 			"matched exactly, so the variant is not read as the audience a reader sees.")
 	var kf map[string]any
@@ -5155,9 +5502,134 @@ func (s *state) presentations() {
 		panic(err)
 	}
 	kff := s.writePresentationFile("present-casefold-holder-key-id", folded)
-	s.addPresentation("present-casefold-holder-key-id", kff, aud, chal, false,
+	s.addPresentation("present-casefold-holder-key-id", kff, aud, chal, "parse",
 		"A holder carrying the signed key id under a name that folds onto key_id is refused at parse, "+
 			"rather than checked in place of the key_id the document shows.")
+	s.presentationReadOrder(inner, valid)
+}
+
+// presentationReadOrder emits the vectors that pin the order FORMAT.md's "Presentations" section
+// reads a presentation in, the order a bundle is read in: the document as JSON, then its version,
+// then the number profile, then every member's name and type. A version other than 0.1 is
+// unsupported whatever else the presentation carries, and a document that is not JSON, or that
+// carries no string version, is refused at parse, read as a bundle by an entry point taking
+// either kind of document. It also pins a presentation whose bundle alone fails.
+//
+//nolint:funlen // One vector per case, listed in one place.
+func (s *state) presentationReadOrder(inner, valid []byte) {
+	aud, chal := supplied("acme-verifier"), supplied("chal-1")
+	// edit rewrites one member of the valid presentation. The holder signature does not cover the
+	// version member, so only the change it makes is at fault.
+	edit := func(fn func(p map[string]any)) []byte {
+		var p map[string]any
+		if err := json.Unmarshal(valid, &p); err != nil {
+			panic(err)
+		}
+		fn(p)
+		out, err := json.Marshal(p)
+		if err != nil {
+			panic(err)
+		}
+		return out
+	}
+	// inPayload places a literal in the presented bundle's first claim payload, as text, since no
+	// Go value marshals to a literal outside the number profile or to one JSON does not define.
+	inPayload := func(doc []byte, literal string) []byte {
+		out := strings.Replace(string(doc), `"path":"/api/runs"`,
+			`"path":"/api/runs","n":`+literal, 1)
+		if out == string(doc) {
+			panic("presentationReadOrder: no payload path to place a literal beside")
+		}
+		return []byte(out)
+	}
+	later := edit(func(p map[string]any) { p["loomseal_presentation"] = "0.2" })
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// doc is the presentation document.
+		doc []byte
+		// failing is the check it fails first.
+		failing string
+		// why is the vector's description in the manifest.
+		why string
+	}{{
+		name: "present-version-later", doc: later, failing: "unsupported",
+		why: "A presentation declaring a version this verifier does not implement is " +
+			"unsupported, not judged, as a bundle under another version is.",
+	}, {
+		name: "present-version-empty", failing: "unsupported",
+		doc: edit(func(p map[string]any) { p["loomseal_presentation"] = "" }),
+		why: "A presentation whose version is the empty string declares a version other than " +
+			"0.1, so it is routed to the presentation checks like any other and is unsupported.",
+	}, {
+		name: "present-version-later-unknown-member", failing: "unsupported",
+		doc: edit(func(p map[string]any) {
+			p["loomseal_presentation"] = "0.2"
+			p["context"] = "a member a later version defines"
+		}),
+		why: "A presentation declaring a version this verifier does not implement is " +
+			"unsupported although it carries a member the presentation format does not name, " +
+			"because the version is read before any member's name.",
+	}, {
+		name: "present-version-later-non-integer-number", failing: "unsupported",
+		doc: inPayload(later, "1.5"),
+		why: "A presentation declaring a version this verifier does not implement is " +
+			"unsupported although its bundle carries a fractional number, because the version " +
+			"is read before the number profile is held.",
+	}, {
+		name: "present-no-bundle", failing: "parse",
+		doc: edit(func(p map[string]any) { delete(p, "bundle") }),
+		why: "A presentation that carries no bundle member presents nothing and is refused at " +
+			"parse.",
+	}} {
+		s.addPresentation(c.name, s.writePresentationFile(c.name, c.doc), aud, chal, c.failing,
+			c.why)
+	}
+
+	// A bundle that fails alone, presented under a holder signature that holds, so only the
+	// embedded bundle's own verdict fails the presentation.
+	broken := []byte(strings.Replace(string(inner), "/api/runs", "/api/evil", 1))
+	hpriv, _ := holderKey()
+	brokenPres, err := seal.Present(broken, hpriv, "acme-verifier", "chal-1", at)
+	if err != nil {
+		panic(err)
+	}
+	s.addPresentation("present-bundle-fails",
+		s.writePresentationFile("present-bundle-fails", brokenPres), aud, chal, "bundle",
+		"A presentation whose holder signature verifies over a bundle that does not verify fails "+
+			"on the bundle, which is checked on its own terms before the holder signature.")
+
+	// Documents that carry no string version, or are not JSON, are read as bundles by an entry
+	// point taking either kind of document, and refused at parse either way.
+	for _, c := range []struct {
+		// name is the vector's name and the stem of its file.
+		name string
+		// doc is the document.
+		doc []byte
+		// why is the vector's description in the manifest.
+		why string
+	}{{
+		name: "present-version-missing",
+		doc:  edit(func(p map[string]any) { delete(p, "loomseal_presentation") }),
+		why: "A presentation with no loomseal_presentation member declares no version and is " +
+			"refused at parse, by the presentation checks and as a bundle alike.",
+	}, {
+		name: "present-version-not-a-string",
+		doc:  edit(func(p map[string]any) { p["loomseal_presentation"] = 1 }),
+		why: "A loomseal_presentation member holding the number 1 declares no version, so the " +
+			"document is refused at parse, by the presentation checks and as a bundle alike.",
+	}, {
+		name: "present-bundle-nan", doc: inPayload(valid, "NaN"),
+		why: "A presentation whose bundle carries NaN is not JSON, so no verifier finds its " +
+			"version: it is read as a bundle and refused at parse, by the presentation checks " +
+			"too.",
+	}, {
+		name: "present-version-later-nan", doc: inPayload(later, "NaN"),
+		why: "A presentation declaring a version this verifier does not implement and carrying " +
+			"NaN is not JSON, so it is refused at parse rather than judged unsupported.",
+	}} {
+		s.addBundleRouted(c.name, s.writePresentationFile(c.name, c.doc), c.why)
+	}
 }
 
 // supplied returns an expectation the verifier is told to require, an empty one included.
@@ -5175,11 +5647,21 @@ func (s *state) writePresentationFile(name string, data []byte) string {
 }
 
 // addPresentation records one presentation conformance case, referencing an already-written file.
-func (s *state) addPresentation(name, file string, audience, nonce *string, mustVerify bool, why string) {
+// A case with no failing check must verify, and every other one names the check it fails first.
+func (s *state) addPresentation(name, file string, audience, nonce *string, failing, why string) {
 	s.presMan.Vectors = append(s.presMan.Vectors, presentationVector{
 		Name: name, File: file, ExpectAudience: audience, ExpectNonce: nonce,
-		MustVerify: mustVerify, Why: why,
+		MustVerify: failing == "", FailingCheck: failing, Why: why,
 	})
+}
+
+// addBundleRouted records a presentation case whose document is not a JSON object carrying a
+// string presentation version, so an entry point taking either kind of document reads it as a
+// bundle. Read either way it is refused at parse.
+func (s *state) addBundleRouted(name, file string, why string) {
+	aud, chal := supplied("acme-verifier"), supplied("chal-1")
+	s.addPresentation(name, file, aud, chal, "parse", why)
+	s.presMan.Vectors[len(s.presMan.Vectors)-1].RoutesAsBundle = true
 }
 
 // writePresentations emits the presentation manifest, vectors sorted by name for a stable diff.

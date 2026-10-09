@@ -144,6 +144,11 @@ type Report struct {
 	// beyond the bundled claims. Such a proof attests a link tied to nothing this verifier confirmed,
 	// so it is reported but never verified or counted toward the anchored conformance word.
 	AnchorProofsOnDeclaredHead int `json:"anchor_proofs_on_declared_head,omitempty"`
+	// AnchorProofsUnopened is how many carried proofs are of a type this verifier cannot open
+	// offline, such as a proof on a git or https anchor. Each is counted in AnchorProofsCarried and
+	// was never checked. A proof this verifier opened is not one of them, whether it held or not:
+	// one that failed is a problem.
+	AnchorProofsUnopened int `json:"anchor_proofs_unopened,omitempty"`
 	// AnchorProofsValidated reports whether every carried proof was checked and held.
 	AnchorProofsValidated bool `json:"anchor_proofs_validated"`
 	// AnchorProofsVerified is how many embedded proofs were cryptographically checked against the
@@ -589,6 +594,7 @@ func (r *Report) checkAnchors(b *bundle.Bundle) {
 		// timestamp was reported at the same strength as one holding a URL. The format has always
 		// said an rfc3161 proof is checkable offline; this is where that becomes true.
 		if a.Type != "rfc3161" {
+			r.AnchorProofsUnopened++
 			continue
 		}
 		token, derr := bundle.DecodeBase64(a.Proof)

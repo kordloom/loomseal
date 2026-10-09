@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -250,20 +249,36 @@ var (
 	anchorTypes = map[string]bool{"rfc3161": true, "git": true, "https": true, "rekor": true}
 )
 
-// Parse decodes raw strictly, rejecting nesting past MaxDepth, unknown fields, and trailing data,
-// then validates the structural rules the schema fixes.
+// Parse reads raw in the order FORMAT.md's verification step 1 fixes, so every verifier reaches
+// the same verdict on a document with more than one fault. It reads the document as JSON, nested
+// no deeper than MaxDepth, with valid strings, no repeated key, and nothing after the one value,
+// which must be an object. It then reads the version, and a version other than 0.1 is unsupported
+// whatever else the document carries, because a later version may change its members, their
+// types, and its number profile. Only then does it hold every number to the integer profile and
+// every member to the schema: the exact names, the JSON types, no null, and each value's rule.
 func Parse(raw []byte) (*Bundle, error) {
 	if err := CheckDepth(raw, MaxDepth); err != nil {
 		return nil, err
+	}
+	tree, err := jcs.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrParse, err)
+	}
+	root, ok := tree.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: bundle is not a JSON object", ErrParse)
+	}
+	if err := checkVersion(root); err != nil {
+		return nil, err
+	}
+	if err := jcs.CheckNumbers(tree); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrParse, err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var b Bundle
 	if err := dec.Decode(&b); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrParse, err)
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("%w: trailing data after bundle", ErrParse)
 	}
 	// Reject a case variant of any known member, exactly as the schema's additionalProperties: false
 	// states and as the Python reference verifier does. encoding/json matches a JSON member to a
@@ -272,7 +287,7 @@ func Parse(raw []byte) (*Bundle, error) {
 	// reference verifier see the exact member, so a folded sibling let a value feed a verdict that no
 	// reader saw and made the two verifiers disagree. Every member a verdict reads is checked exactly
 	// here, over the parsed canonical tree.
-	if err := checkExactMembers(raw); err != nil {
+	if err := checkExactMembers(root); err != nil {
 		return nil, err
 	}
 	if err := b.validate(); err != nil {
@@ -281,11 +296,31 @@ func Parse(raw []byte) (*Bundle, error) {
 	return &b, nil
 }
 
-// validate enforces the schema's structural rules.
-func (b *Bundle) validate() error {
-	if b.Version != Version {
-		return fmt.Errorf("%w: loomseal version %q, this verifier implements %q", ErrUnsupported, b.Version, Version)
+// checkVersion reads the loomseal member of a parsed bundle. A document without it, or with a value
+// that is not a string, declares no format version and is refused at parse: a later format is
+// announced by another string in this member, so such a document is no bundle of any version, and
+// calling it unsupported would send its reader after a newer verifier that does not exist. A
+// string other than Version is unsupported.
+func checkVersion(root map[string]any) error {
+	v, present := root["loomseal"]
+	if !present {
+		return fmt.Errorf("%w: bundle carries no loomseal member, so it declares no format version",
+			ErrParse)
 	}
+	version, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("%w: bundle loomseal is not a string", ErrParse)
+	}
+	if version != Version {
+		return fmt.Errorf("%w: loomseal version %q, this verifier implements %q", ErrUnsupported,
+			version, Version)
+	}
+	return nil
+}
+
+// validate enforces the schema's structural rules. The version was read before the document was
+// decoded, by checkVersion.
+func (b *Bundle) validate() error {
 	if b.BundleID == "" {
 		return fmt.Errorf("%w: bundle_id is empty", ErrSchema)
 	}

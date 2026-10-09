@@ -70,6 +70,18 @@ check("unknown claim type present", true,
 check("unknown claim type absent", false, renderToHTML(base({})),
   "unknown claim type");
 
+// unopened proof note: named from the report's own count of proofs of a type the verifier cannot
+// open, so a proof it opened that failed is never also called unopenable.
+const unopenedNote = "carried proof(s) are of a type this verifier cannot open offline";
+check("unopened proof note present", true,
+  renderToHTML(base({ anchors_matched: 1, anchor_proofs_carried: 1, anchor_proofs_unopened: 1 })),
+  "note       1 " + unopenedNote);
+check("unopened proof note absent for a failed proof", false,
+  renderToHTML(base({ ok: false, anchors_matched: 1, anchor_proofs_carried: 1,
+    anchor_proofs_verified: 0,
+    problems: ["anchor 0 proof does not verify: not a timestamp token"] })),
+  unopenedNote);
+
 // install binding line.
 check("install binding present", true,
   renderToHTML(base({ install_binding: "minted from the producer key" })),
@@ -96,6 +108,34 @@ check("unchecked qualifier present", true, renderToHTML(unchecked),
 check("unchecked member named", true, renderToHTML(unchecked),
   "unchecked  claim 1 outcome_body: the entry committed it under an older digest form");
 check("unchecked qualifier absent", false, renderToHTML(base({})), "disclosed record(s) unchecked");
+
+// Line order: the rows come in the command line's order, so a page and a terminal showing one
+// report list the same lines in the same places. A member's state rows sit among the disclosed
+// rows, redacted before unchecked, ahead of the counter-signatures and the evidence row, and a
+// wrapped bundle's verdict line is its last line, as it is on the command line.
+const ordered = base({
+  disclosed_unchecked: 1, attestations_present: true, attestations_verified: 1,
+  attestors: ["auditor sha256:cc"], attestors_pinned: true,
+  disclosed: [
+    { claim: 1, member: "decision_body", state: "checked", detail: "" },
+    { claim: 1, member: "reason_redacted", state: "redacted", detail: "personal_data, withheld" },
+    { claim: 2, member: "outcome_body", state: "unchecked", detail: "an older digest form" },
+  ],
+});
+const orderedRows = [
+  "disclosed  1 checked, 1 unchecked, 1 redacted",
+  "checked    decision_body 1",
+  "redacted   claim 1 reason_redacted: personal_data, withheld",
+  "unchecked  claim 2 outcome_body: an older digest form",
+  "attested   1 counter-signature(s) verified",
+  "vouched    auditor sha256:cc",
+  "evidence   0 verified, 0 missing, 0 referenced only",
+].join("\n");
+check("disclosed rows in order", true, renderToHTML(ordered), orderedRows);
+check("wrapped bundle verdict line is last", true,
+  renderToHTML({ ok: true, presentation_ok: true, holder_key_id: "sha256:dd", audience: "acme",
+    nonce: "chal-1", audience_match: true, nonce_match: true, bundle: ordered }),
+  orderedRows + "\nVERIFIED, 1 disclosed record(s) unchecked   signed, chained (full)</code>");
 
 // Records: the counts and a body under the legacy unkeyed form, named because its digest confirms a
 // guess.
@@ -171,10 +211,24 @@ check("failed presentation line", true, failedPresHTML, "presented  FAILED");
 check("failed presentation problem", true, failedPresHTML,
   "problem    holder signature does not verify over the presented bundle");
 
+// An unsupported presentation was never judged: its banner is the command line's final line, and
+// it shows its problem and nothing that reads as a judgment of it.
+const unsupportedPresHTML = renderToHTML({ ok: false, presentation_ok: false, unsupported: true,
+  problems: ["unsupported presentation: loomseal_presentation version \"0.2\", this verifier " +
+    "implements \"0.1\""] });
+check("unsupported presentation banner", true, unsupportedPresHTML,
+  '<div class="verdict no">PRESENTATION UNSUPPORTED  this verifier does not implement what the ' +
+  "presentation declares; not judged</div>");
+check("unsupported presentation problem", true, unsupportedPresHTML,
+  "<pre><code>problem    unsupported presentation: loomseal_presentation version");
+check("unsupported presentation carries no presented line", false, unsupportedPresHTML,
+  "presented ");
+
 if (bad === 0) {
-  console.log("ALL NOTICES RENDERED  pin NONE, ALTERED, declared head, unknown claim type, install, " +
-    "attestors, unchecked members, records, legacy, withheld reasons, verdict banners, " +
-    "presentations");
+  console.log("ALL NOTICES RENDERED  pin NONE, ALTERED, declared head, unknown claim type, " +
+    "unopened proofs, install, " +
+    "attestors, unchecked members, line order, records, legacy, withheld reasons, " +
+    "verdict banners, presentations, unsupported presentations");
   process.exit(0);
 }
 console.log(`${bad} NOTICE MISMATCH`);

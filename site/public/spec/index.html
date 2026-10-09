@@ -684,7 +684,11 @@
     more than five minutes before the entry it covers. A token that holds earns the anchored
     (proof verified) level, and one that does not fails the anchor check. An
     <code>rfc3161</code> anchor without a proof reports as anchored by reference, and the relying
-    party confirms the ref out of band. Anchoring cadence bounds the window in which a
+    party confirms the ref out of band. A proof on an anchor of another type that matched a
+    coordinate the verifier confirmed is reported as one of a type the verifier cannot open, and
+    an <code>rfc3161</code> proof it opened never is, whether it held or failed. A proof on an
+    anchor that matches only the unverified declared head is reported among the proofs on the
+    declared head instead, whatever its type. Anchoring cadence bounds the window in which a
     compromised producer key could rewrite unanchored history; anchor often.</p>
     <p>A token is read as DER, by position, and by no general ASN.1, X.509, or PKCS #7 parser,
     because each one's tolerances differ from the next. DER's identifier and length rules apply to
@@ -702,26 +706,37 @@
     TRUE, <code>0xFF</code>, the RSA parameters are a NULL with no content, the key BIT STRING has
     no unused bits, and the signer certificate's validity times are each a UTCTime
     <code>YYMMDDhhmmssZ</code> or a GeneralizedTime <code>YYYYMMDDhhmmssZ</code>. In a member no
-    verifier interprets they are not checked, so a token still verifies when such a member holds a
-    constructed string, an INTEGER, OBJECT IDENTIFIER, BOOLEAN, NULL, or time that DER would
-    encode otherwise, nonzero BIT STRING padding bits, an encoded default value, a SET OF out of
-    order, or a name string outside its character set. The signer certificate is version 3,
+    verifier interprets these value rules are not checked, so a token still verifies when such a
+    member holds a constructed string, an INTEGER, OBJECT IDENTIFIER, BOOLEAN, NULL, or time that
+    DER would encode otherwise, nonzero BIT STRING padding bits, an encoded default value, a SET OF
+    out of order, or a name string outside its character set. The TSTInfo serial number has at most
+    21 octets, the length DER gives a 160-bit value, because RFC 3161 has a verifier accept a
+    serial of up to 160 bits and the ETSI EN 319 422 profile adds no rule of its own on the serial.
+    The signer certificate is version 3,
     marked for timestamping, and holds an Ed25519 key, an ECDSA key on a NIST curve as an
     uncompressed point, or an RSA key of 1024 to 16384 bits holding only its modulus and exponent,
     and the signature algorithm must match that key. FORMAT.md states every rule, and the vectors
-    whose names begin with <code>anchor-der-</code> and <code>anchor-cert-</code> pin them, each
-    failing the anchor check, the <code>anchor-der-tag-</code> family among them, so every
-    member a verifier requires has a vector for its identifier.</p>
+    whose names begin with <code>anchor-der-</code> and <code>anchor-cert-</code> pin them, the
+    <code>anchor-der-tag-</code> family among them, so every member a verifier requires has a
+    vector for its identifier. Each fails the anchor check except
+    <code>anchor-der-oid-arc-31-bits</code>, a policy subidentifier of exactly 2^31-1, and
+    <code>anchor-der-serial-21-octets</code>, a serial of 2^160-1, which verify.</p>
     <p>A verifier names the signer from the signer certificate's subject alone, never from a parse
     of the whole certificate, and every verifier writes the same name. A subject made of relative
-    distinguished names is written in the RFC 4514 form, last to first, with the short names
-    <code>CN</code>, <code>L</code>, <code>ST</code>, <code>O</code>, <code>OU</code>,
-    <code>C</code>, <code>STREET</code>, <code>DC</code>, and <code>UID</code>, any other type in
-    dotted form, and a value as escaped text when it is a UTF8String, PrintableString, or
-    IA5String that reads as text, or otherwise as <code>#</code> and the hexadecimal of its
-    encoding. Control characters are written as hexadecimal escapes, so a name cannot act on a
-    terminal. Any other subject is <code>#</code> and the hexadecimal of its whole encoding. The
-    vectors whose names begin with <code>anchor-signer-name-</code> pin the rule.</p>
+    distinguished names is written in the RFC 4514 form, last to first. The nine types RFC 4514
+    names are written by their short names, <code>CN</code>, <code>L</code>, <code>ST</code>,
+    <code>O</code>, <code>OU</code>, <code>C</code>, <code>STREET</code>, <code>DC</code>, and
+    <code>UID</code>, and a value of one of those nine is escaped text when it is a UTF8String,
+    PrintableString, or IA5String that reads as text, and otherwise <code>#</code> and the
+    hexadecimal of its encoding. Any other type is written in dotted form, and every value of a
+    dotted type is <code>#</code> and the hexadecimal of its encoding, whatever string it holds.
+    Control characters are written as hexadecimal escapes, so a name cannot act on a terminal, and
+    so are the bidirectional embeddings, overrides, isolates, and marks and the line and paragraph
+    separators, so a subject cannot use them to reorder or break the line naming its signer. A
+    right-to-left letter is text and is written as it is, so it still reorders the digits and
+    punctuation beside it when the line is displayed, as any right-to-left text does. Any other
+    subject is <code>#</code> and the hexadecimal of its whole encoding. The vectors whose names
+    begin with <code>anchor-signer-name-</code> pin the rule.</p>
 
     <h2 id="loomspan">Population attestation: LoomSpan</h2>
     <p>A chain proves its entries were not edited. It does not prove entries were written. A
@@ -831,8 +846,16 @@
     <h2>Verification</h2>
     <p>The verifier performs these steps in order and fails closed:</p>
     <ol>
-      <li>Parse the document, require <code>loomseal</code> version <code>0.1</code>,
-      validate against the schema.</li>
+      <li>Read the document as JSON, then its version, then the schema, in that order. A
+      document outside JSON's grammar, one carrying <code>NaN</code>, <code>Infinity</code>, or a
+      digit from another script included, is refused at parse whatever version it would declare. A
+      <code>loomseal</code> string other than <code>0.1</code> is unsupported whatever else the
+      document carries, because a later version may change its members, their types, and its
+      numbers. A document with no <code>loomseal</code> string declares no version and is refused
+      at parse. Every number is then held to the integer profile, every member to its exact name
+      and type, and each value to its rule, where an unknown chain profile or signature
+      <code>alg</code> is unsupported. FORMAT.md states the order in full, and the vectors whose
+      names begin with <code>version-</code> or <code>wrong-version</code> pin it.</li>
       <li>Reconstruct the canonical form with <code>signatures</code> emptied and verify at
       least one signature against <code>producer.public_key</code>. If the caller pinned a
       fingerprint, require <code>key_id</code> match.</li>

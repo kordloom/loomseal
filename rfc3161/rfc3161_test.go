@@ -54,8 +54,8 @@ func TestVerifyRealToken(t *testing.T) {
 	if !strings.Contains(res.Signer, "freetsa.org") {
 		t.Errorf("signer = %q, want the authority that issued the fixture", res.Signer)
 	}
-	if res.Policy == "" || res.SerialNumber == "" {
-		t.Errorf("policy = %q serial = %q, want both reported so a reader can look the token up",
+	if res.Policy == "" || res.SerialNumber == nil || res.SerialNumber.Sign() <= 0 {
+		t.Errorf("policy = %q serial = %v, want both reported so a reader can look the token up",
 			res.Policy, res.SerialNumber)
 	}
 }
@@ -406,28 +406,39 @@ func TestOnly(t *testing.T) {
 	}
 }
 
-// TestDERInteger pins INTEGER content to at least one octet in its shortest form, and versions to
-// 64 bits.
+// TestDERInteger pins INTEGER content to at least one octet in its shortest form, versions to 64
+// bits, and a TSTInfo serial number to 21 octets, the length of a positive 160-bit value, refused
+// past it in the words the Python reference writes.
 func TestDERInteger(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		WantVersion error
-		Want        error
-		In          []byte
+		WantSerialText string
+		WantVersion    error
+		WantSerial     error
+		Want           error
+		In             []byte
 	}{{ // Test 0: One octet reads.
 		In: []byte{0x01},
 	}, { // Test 1: A leading zero before a high bit reads.
 		In: []byte{0x00, 0x80},
 	}, { // Test 2: An empty INTEGER is refused.
-		In: []byte{}, Want: ErrParse, WantVersion: ErrParse,
+		In: []byte{}, Want: ErrParse, WantVersion: ErrParse, WantSerial: ErrParse,
 	}, { // Test 3: A redundant leading zero is refused.
-		In: []byte{0x00, 0x01}, Want: ErrParse, WantVersion: ErrParse,
+		In: []byte{0x00, 0x01}, Want: ErrParse, WantVersion: ErrParse, WantSerial: ErrParse,
 	}, { // Test 4: A redundant leading 0xFF is refused.
-		In: []byte{0xFF, 0x80}, Want: ErrParse, WantVersion: ErrParse,
-	}, { // Test 5: Nine octets are an INTEGER but not a version.
+		In: []byte{0xFF, 0x80}, Want: ErrParse, WantVersion: ErrParse, WantSerial: ErrParse,
+	}, { // Test 5: Nine octets are an INTEGER and a serial but not a version.
 		In: []byte{0x01, 0, 0, 0, 0, 0, 0, 0, 0}, WantVersion: ErrParse,
 	}, { // Test 6: Eight octets are a version.
 		In: []byte{0x7F, 0, 0, 0, 0, 0, 0, 0},
+	}, { // Test 7: 2^160-1 in 21 octets is a serial.
+		In: append([]byte{0x00}, bytes.Repeat([]byte{0xFF}, 20)...), WantVersion: ErrParse,
+	}, { // Test 8: A negative serial of 21 octets is a serial.
+		In: append([]byte{0x80}, make([]byte, 20)...), WantVersion: ErrParse,
+	}, { // Test 9: 2^168-1 in 22 octets is an INTEGER but not a serial.
+		In: append([]byte{0x00}, bytes.Repeat([]byte{0xFF}, 21)...), WantVersion: ErrParse,
+		WantSerial:     ErrParse,
+		WantSerialText: "TSTInfo serialNumber: INTEGER longer than 21 octets",
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
@@ -438,6 +449,14 @@ func TestDERInteger(t *testing.T) {
 			}
 			if err := derVersion(e, "version"); !errors.Is(err, test.WantVersion) {
 				t.Errorf("derVersion error mismatch: got %v, want %v", err, test.WantVersion)
+			}
+			err := derSerial(e, "TSTInfo serialNumber")
+			if !errors.Is(err, test.WantSerial) {
+				t.Errorf("derSerial error mismatch: got %v, want %v", err, test.WantSerial)
+			}
+			if test.WantSerialText != "" && (err == nil ||
+				!strings.HasSuffix(err.Error(), test.WantSerialText)) {
+				t.Errorf("derSerial error = %v, want it to end %q", err, test.WantSerialText)
 			}
 		})
 	}
@@ -627,6 +646,18 @@ func TestSubjectName(t *testing.T) {
 		In: name(rdn(attr(derTLV(tagOID, []byte{0x55, 0x04, 0x88, 0x80, 0x80, 0x80, 0x00}),
 			utf8s("A")))),
 		WantName: "#3010310e300c0607550488808080000c0141",
+	}, { // Test 20: Each bidirectional embedding and override is hexadecimal, and U+202F is not.
+		In:       cn(utf8s("a\u202ab\u202bc\u202cd\u202de\u202ef\u202fg")),
+		WantName: `CN=a\e2\80\aab\e2\80\abc\e2\80\acd\e2\80\ade\e2\80\aef` + "\u202f" + "g",
+	}, { // Test 21: Each bidirectional isolate is hexadecimal, and U+2065 and U+206A are not.
+		In:       cn(utf8s("\u2065a\u2066b\u2067c\u2068d\u2069e\u206a")),
+		WantName: "CN=\u2065" + `a\e2\81\a6b\e2\81\a7c\e2\81\a8d\e2\81\a9e` + "\u206a",
+	}, { // Test 22: Each bidirectional mark is hexadecimal, and its neighbors are not.
+		In:       cn(utf8s("\u200da\u200eb\u200fc\u2010d\u061be\u061cf\u061d")),
+		WantName: "CN=\u200d" + `a\e2\80\8eb\e2\80\8fc` + "\u2010d\u061b" + `e\d8\9cf` + "\u061d",
+	}, { // Test 23: The line and paragraph separators are hexadecimal, and U+2027 is not.
+		In:       cn(utf8s("a\u2027b\u2028c\u2029d")),
+		WantName: "CN=a\u2027" + `b\e2\80\a8c\e2\80\a9d`,
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {

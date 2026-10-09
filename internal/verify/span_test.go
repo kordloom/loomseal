@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/internal/chain"
 	"github.com/kordloom/loomseal/jcs"
 	"github.com/kordloom/loomseal/merkle"
@@ -426,9 +427,11 @@ func TestSpanBoundaryValues(t *testing.T) {
 	}
 }
 
-// TestSpanCadenceOutOfRange pins that a cadence past the format's range is refused before any
-// arithmetic runs on it, even in a bundle whose signature and canonical form already failed. A
-// cadence of 2^55 seconds wraps to zero nanoseconds and one of 2^58 seconds wraps to zero
+// TestSpanCadenceOutOfRange pins that a cadence past the format's range never reaches arithmetic.
+// Every cadence here is past 2^53, so a verifier refuses the bundle at parse under the number
+// profile before any check runs. The span check refuses each one too, before it measures, when it
+// is handed the decoded bundle directly, so nothing that reaches it can divide by a wrapped value.
+// A cadence of 2^55 seconds wraps to zero nanoseconds and one of 2^58 seconds wraps to zero
 // microseconds, and measuring either would divide by zero.
 func TestSpanCadenceOutOfRange(t *testing.T) {
 	t.Parallel()
@@ -437,15 +440,20 @@ func TestSpanCadenceOutOfRange(t *testing.T) {
 	signed := string(spanTestBundle(t, gapped, true))
 	tests := []struct {
 		Cadence     string
+		WantParse   string
 		WantProblem string
 	}{{ // Test 0: A cadence whose nanosecond product wraps to zero is refused.
-		Cadence: "36028797018963968", WantProblem: "want an integer from 1 to 31622400",
+		Cadence: "36028797018963968", WantParse: "exceeds 2^53",
+		WantProblem: "want an integer from 1 to 31622400",
 	}, { // Test 1: The largest int64 cadence is refused.
-		Cadence: "9223372036854775807", WantProblem: "want an integer from 1 to 31622400",
+		Cadence: "9223372036854775807", WantParse: "exceeds 2^53",
+		WantProblem: "want an integer from 1 to 31622400",
 	}, { // Test 2: A cadence past int64 is refused.
-		Cadence: "18446744073709551616", WantProblem: "want an integer from 1 to 31622400",
+		Cadence: "18446744073709551616", WantParse: "does not fit 64 bits",
+		WantProblem: "want an integer from 1 to 31622400",
 	}, { // Test 3: A cadence whose microsecond product wraps to zero is refused.
-		Cadence: "288230376151711744", WantProblem: "want an integer from 1 to 31622400",
+		Cadence: "288230376151711744", WantParse: "exceeds 2^53",
+		WantProblem: "want an integer from 1 to 31622400",
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
@@ -460,11 +468,20 @@ func TestSpanCadenceOutOfRange(t *testing.T) {
 				t.Fatal("bundle carries no cadence to replace")
 			}
 			got := Run([]byte(doc), Options{})
-			if got.OK || got.SpanOK {
-				t.Errorf("ok %t span ok %t, want both false", got.OK, got.SpanOK)
+			if got.OK || got.SignatureOK || !problemContains(got, "parse: ") ||
+				!problemContains(got, test.WantParse) {
+				t.Errorf("ok %t signature ok %t problems %v, want a refusal at parse naming %q",
+					got.OK, got.SignatureOK, got.Problems, test.WantParse)
 			}
-			if !problemContains(got, test.WantProblem) {
-				t.Errorf("problems %v do not mention %q", got.Problems, test.WantProblem)
+			var b bundle.Bundle
+			if err := json.Unmarshal([]byte(doc), &b); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			span := &Report{}
+			span.checkSpan(&b, memberStates{})
+			if span.SpanOK || !problemContains(span, test.WantProblem) {
+				t.Errorf("span ok %t problems %v, want a refusal naming %q", span.SpanOK,
+					span.Problems, test.WantProblem)
 			}
 		})
 	}

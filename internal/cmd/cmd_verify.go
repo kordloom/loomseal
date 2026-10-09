@@ -6,9 +6,7 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/kordloom/loomseal/internal/jsonutil"
 	"github.com/kordloom/loomseal/internal/verify"
@@ -109,6 +107,9 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		if pr.OK {
 			return CodeOK
 		}
+		if pr.Unsupported {
+			return CodeUnsupported
+		}
 		return CodeFailed
 	}
 	report := verify.Run(raw, bundleOpts)
@@ -134,6 +135,16 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 // renderPresentation writes the human-readable report for a holder presentation, then the embedded
 // bundle's own report beneath it.
 func renderPresentation(w io.Writer, r *verify.PresentationReport) {
+	// An unsupported presentation was never judged, so, as for an unsupported bundle, no line may
+	// read as a judgment of it.
+	if r.Unsupported {
+		for _, p := range r.Problems {
+			fmt.Fprintf(w, "problem    %s\n", p)
+		}
+		fmt.Fprintln(w, "PRESENTATION UNSUPPORTED  this verifier does not implement what the "+
+			"presentation declares; not judged")
+		return
+	}
 	if r.PresentationOK {
 		fmt.Fprintf(w, "presented  by holder %s to %q\n", r.HolderKeyID, r.Audience)
 	} else {
@@ -264,9 +275,11 @@ func renderReport(w io.Writer, r *verify.Report) {
 	// A proof on a matched anchor whose type this verifier cannot open. The level already says
 	// "by reference" rather than "proof verified", and the counts already differ, so a reader is
 	// not misled. They are left to guess why, though, while the two cases above say why plainly.
-	if unopened := r.AnchorProofsCarried - r.AnchorProofsVerified - r.AnchorProofsOnDeclaredHead; unopened > 0 {
+	// The count is the report's own, so an rfc3161 proof that was opened and failed, which is a
+	// problem line of its own, is never also called a type this verifier cannot open.
+	if r.AnchorProofsUnopened > 0 {
 		fmt.Fprintf(w, "note       %d carried proof(s) are of a type this verifier cannot open offline, "+
-			"so they were counted and not checked\n", unopened)
+			"so they were counted and not checked\n", r.AnchorProofsUnopened)
 	}
 	// An anchor pins history only up to the position it names. What it leaves uncovered is the
 	// part a compromised producer key could still rewrite, so the reader is told the size of it
@@ -348,8 +361,8 @@ func renderReport(w io.Writer, r *verify.Report) {
 	}
 	// Every member a switchtender-audit-v1 link does not commit, in one of three states. What was
 	// checked is summarized by member, and a redacted one is named, since a reader should know the
-	// holder withheld a reason and what it claims about that. The unchecked ones follow the verdict,
-	// which counts them.
+	// holder withheld a reason and what it claims about that. Each unchecked one is named after the
+	// redacted ones, where the browser page names it too, and the verdict line stays the last line.
 	if r.OK && len(r.Disclosed) > 0 {
 		checked, unchecked, redacted := disclosedCounts(r.Disclosed)
 		fmt.Fprintf(w, "disclosed  %d checked, %d unchecked, %d redacted\n", checked, unchecked,
@@ -357,10 +370,12 @@ func renderReport(w io.Writer, r *verify.Report) {
 		if line := checkedLine(r.Disclosed); line != "" {
 			fmt.Fprintf(w, "checked    %s\n", line)
 		}
-		for _, m := range r.Disclosed {
-			if m.State == "redacted" && m.With == "" {
-				fmt.Fprintf(w, "redacted   claim %d %s: %s\n", m.Claim, printable(m.Member),
-					printable(m.Detail))
+		for _, state := range []string{"redacted", "unchecked"} {
+			for _, m := range r.Disclosed {
+				if m.State == state && m.With == "" {
+					fmt.Fprintf(w, "%-11sclaim %d %s: %s\n", state, m.Claim, verify.Printable(m.Member),
+						verify.Printable(m.Detail))
+				}
 			}
 		}
 	}
@@ -406,15 +421,10 @@ func renderReport(w io.Writer, r *verify.Report) {
 		fmt.Fprintln(w, "NOT VERIFIED")
 	case r.DisclosedUnchecked > 0:
 		// The plain word is kept for a bundle with nothing disclosed beside its commitments left
-		// unchecked. Anything else says how much was not checked, and names it.
+		// unchecked. Anything else says how much was not checked, and the disclosed rows above
+		// name each one.
 		fmt.Fprintf(w, "VERIFIED, %d disclosed record(s) unchecked   %s\n", r.DisclosedUnchecked,
 			r.Level)
-		for _, m := range r.Disclosed {
-			if m.State == "unchecked" && m.With == "" {
-				fmt.Fprintf(w, "unchecked  claim %d %s: %s\n", m.Claim, printable(m.Member),
-					printable(m.Detail))
-			}
-		}
 	default:
 		fmt.Fprintf(w, "VERIFIED   %s\n", r.Level)
 	}
@@ -454,21 +464,9 @@ func checkedLine(members []verify.DisclosedMember) string {
 	sort.Strings(names)
 	parts := make([]string, 0, len(names))
 	for _, name := range names {
-		parts = append(parts, fmt.Sprintf("%s %d", printable(name), counts[name]))
+		parts = append(parts, fmt.Sprintf("%s %d", verify.Printable(name), counts[name]))
 	}
 	return strings.Join(parts, ", ")
-}
-
-// printable returns s as it can be written to a terminal: unchanged when every character prints,
-// and quoted otherwise. A member name or a claim type is written by whoever produced the bundle,
-// and one carrying control characters must not act on the terminal reading it.
-func printable(s string) string {
-	for _, c := range s {
-		if !unicode.IsPrint(c) {
-			return strconv.Quote(s)
-		}
-	}
-	return s
 }
 
 // reasonsLine words what the disclosed reasons came to: how many opened their commitment, how many

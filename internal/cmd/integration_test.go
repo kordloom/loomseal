@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,6 +154,17 @@ func TestVerifyEndToEnd(t *testing.T) {
 		Corrupt:  func([]byte) []byte { return []byte("not json at all") },
 		WantExit: 1,
 		WantOut:  []string{"NOT VERIFIED"},
+	}, { // Test 15: An unknown presentation version is refused as unsupported, not judged.
+		Name:            "unknown presentation version fails closed",
+		PresentAudience: "acme", PresentNonce: "chal-1",
+		Corrupt: func(raw []byte) []byte {
+			return bytes.Replace(raw, []byte(`"loomseal_presentation":"0.1"`),
+				[]byte(`"loomseal_presentation":"0.2"`), 1)
+		},
+		WantExit: 3,
+		WantOut: []string{"problem    unsupported presentation: loomseal_presentation version",
+			"PRESENTATION UNSUPPORTED  this verifier does not implement what the presentation"},
+		WantAbsent: []string{"presented  ", "\n---\n", "NOT VERIFIED"},
 	}}
 
 	for testNum, test := range tests {
@@ -203,6 +215,64 @@ func TestVerifyEndToEnd(t *testing.T) {
 				if strings.Contains(out, absent) {
 					t.Errorf("test %d: output must not contain %q\n%s", testNum, absent, out)
 				}
+			}
+		})
+	}
+}
+
+// TestVerifyUnopenedProofNote pins the note that a carried proof is of a type this verifier cannot
+// open offline to the proofs it names: a proof on an anchor type the verifier does not open, and
+// never an rfc3161 proof it opened, whether that proof held or failed. A failed proof is a problem
+// line of its own, and calling it unopenable as well tells the reader the wrong reason.
+func TestVerifyUnopenedProofNote(t *testing.T) {
+	t.Parallel()
+	const note = "carried proof(s) are of a type this verifier cannot open offline"
+	tests := []struct {
+		Vector   string
+		WantNote string
+		WantExit int
+	}{{ // Test 0: A proof on a git anchor is one this verifier cannot open.
+		Vector: "anchor-proof-unopened", WantNote: "note       1 " + note, WantExit: CodeOK,
+	}, { // Test 1: Beside a token that verified, only the git anchor's proof is named.
+		Vector:   "anchor-proof-unopened-beside-verified",
+		WantNote: "note       1 " + note, WantExit: CodeOK,
+	}, { // Test 2: A token that opens and verifies is not named.
+		Vector: "anchor-ec-p256", WantExit: CodeOK,
+	}, { // Test 3: A token that opens and fails its signature is not named.
+		Vector: "anchor-signature-invalid", WantExit: 1,
+	}, { // Test 4: A proof that does not open as a token fails the anchor check and is not named.
+		Vector: "anchor-corrupt-token", WantExit: 1,
+	}, { // Test 5: A token that verifies but predates the entry it covers is not named.
+		Vector: "anchor-gen-time-fraction-outside-skew", WantExit: 1,
+	}, { // Test 6: Before a token that fails, only the git anchor's proof is named.
+		Vector:   "anchor-proof-unopened-before-failed",
+		WantNote: "note       1 " + note, WantExit: 1,
+	}, { // Test 7: Proofs on a git, an https, and a rekor anchor are all counted in the note.
+		Vector:   "anchor-proof-unopened-git-https-rekor",
+		WantNote: "note       3 " + note, WantExit: CodeOK,
+	}, { // Test 8: The same proofs on the unverified declared head are not counted in the note.
+		Vector: "anchor-declared-head-proof-git-https-rekor", WantExit: CodeOK,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join("..", "..", "testdata", "vectors", test.Vector+".loomseal.json")
+			var stdout, stderr bytes.Buffer
+			code := Execute([]string{"verify", path}, &stdout, &stderr)
+			out := stdout.String() + stderr.String()
+			if code != test.WantExit {
+				t.Errorf("test %d: exit = %d, want %d\n%s", testNum, code, test.WantExit, out)
+			}
+			wantCount := 0
+			if test.WantNote != "" {
+				wantCount = 1
+			}
+			if got := strings.Count(out, note); got != wantCount {
+				t.Errorf("test %d: note printed %d times, want %d\n%s", testNum, got, wantCount,
+					out)
+			}
+			if test.WantNote != "" && !strings.Contains(out, test.WantNote) {
+				t.Errorf("test %d: output lacks %q\n%s", testNum, test.WantNote, out)
 			}
 		})
 	}

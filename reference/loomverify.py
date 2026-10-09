@@ -81,10 +81,15 @@ def _hex4(text, i):
 
 def _scan_text(text):
     """Walk the document once before it is decoded: reject a \\u escape that is not four hex
-    digits or that spells a lone surrogate, and reject nesting past MAX_DEPTH. Raw invalid UTF-8
-    is already caught by the bytes.decode('utf-8') that runs before this. The walk is a loop,
-    never a recursion, so a document built to exhaust a stack is refused before any decoder reads
-    it."""
+    digits or that spells a lone surrogate, a character outside a string that is not ASCII, and
+    nesting past MAX_DEPTH. Raw invalid UTF-8 is already caught by the bytes.decode('utf-8') that
+    runs before this. The walk is a loop, never a recursion, so a document built to exhaust a
+    stack is refused before any decoder reads it.
+
+    JSON's grammar outside strings is ASCII alone. The standard library's Python scanner in some
+    releases, 3.11 among them, matches a number's later digits with \\d, which takes any Unicode
+    digit, so it would read 1 followed by an Arabic-Indic digit as a number literal that no other
+    JSON reader accepts."""
     i, n, in_str, depth = 0, len(text), False, 0
     while i < n:
         c = text[i]
@@ -97,6 +102,8 @@ def _scan_text(text):
                     raise VError("parse", f"nesting exceeds {MAX_DEPTH} levels")
             elif c in "]}":
                 depth -= 1
+            elif c > "\x7f":
+                raise VError("parse", f"invalid JSON: U+{ord(c):04X} outside a string")
             i += 1
             continue
         if c == '"':
@@ -134,27 +141,36 @@ def _no_dup_keys(pairs):
     return seen
 
 
-# _RE_INT is a JSON integer literal in ASCII digits. Seventeen digits or more exceed 2^53, and the
-# literal is refused before int() converts it, since converting a long enough literal raises.
+# _RE_INT is a JSON integer literal in ASCII digits. Seventeen digits or more exceed 2^53, and such
+# a literal is never handed to int(), since converting a long enough literal raises.
 _RE_INT = re.compile(r"-?(?:0|[1-9][0-9]{0,15})")
 
 
+class _Literal:
+    """A number literal outside the integer profile, kept as written. The profile is held after
+    the version is read, because a later version may widen it, so reading a document never refuses
+    a number on its own."""
+
+    def __init__(self, text):
+        self.text = text
+
+
 def _parse_int(literal):
-    """Convert an integer literal, refusing one too long to be at most 2^53."""
-    if not _RE_INT.fullmatch(literal):
-        raise VError("parse",
-                     f"integer literal {literal[:20]!r} is not a plain integer within 2^53")
-    return int(literal)
+    """Convert an integer literal of at most sixteen digits, and keep a longer one as written."""
+    return int(literal) if _RE_INT.fullmatch(literal) else _Literal(literal)
 
 
-def _parse_float(_):
-    """Refuse a number literal with a fraction or an exponent."""
-    raise VError("parse", "non-integer number literal")
+def _not_json(name):
+    """Refuse NaN, Infinity and -Infinity, which the standard library reads by default and JSON
+    does not define, so the document is refused at parse as every other JSON reader refuses it."""
+    raise VError("parse", f"invalid JSON: {name} is not a JSON value")
 
 
-def parse_strict(raw_bytes):
-    """Parse bundle bytes with the strictness canonicalization needs: valid UTF-8, no lone
-    surrogates, no duplicate keys, integer number literals only, nesting within MAX_DEPTH.
+def _read_json(raw_bytes):
+    """Read document bytes as JSON with the strictness canonicalization needs: valid UTF-8, no lone
+    surrogates, no duplicate keys, nesting within MAX_DEPTH, JSON's grammar alone, and nothing after
+    the one value. A number with a fraction or an exponent, or an integer literal too long for the
+    profile, is kept as a _Literal for _check_numbers to refuse.
 
     The document is decoded by the standard library's pure Python scanner rather than its C one.
     On Python 3.12 and 3.13 the C scanner's nesting is capped by a C recursion limit fixed when
@@ -166,8 +182,8 @@ def parse_strict(raw_bytes):
     except UnicodeDecodeError:
         raise VError("parse", "input is not valid UTF-8")
     _scan_text(text)
-    decoder = json.JSONDecoder(object_pairs_hook=_no_dup_keys, parse_float=_parse_float,
-                               parse_int=_parse_int)
+    decoder = json.JSONDecoder(object_pairs_hook=_no_dup_keys, parse_float=_Literal,
+                               parse_int=_parse_int, parse_constant=_not_json)
     decoder.scan_once = json.scanner.py_make_scanner(decoder)
     try:
         return decoder.decode(text)
@@ -175,6 +191,31 @@ def parse_strict(raw_bytes):
         raise
     except json.JSONDecodeError as e:
         raise VError("parse", f"invalid JSON: {e}")
+
+
+def _check_numbers(value):
+    """Refuse the first number in a parsed document outside the integer profile: a literal with a
+    fraction or an exponent, or an integer of magnitude above 2^53. The walk keeps its own stack
+    rather than recursing. Mirrors the Go jcs.CheckNumbers."""
+    stack = [value]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, _Literal):
+            raise VError("parse", f"number literal {v.text[:20]!r} is not a plain integer within "
+                                  "2^53")
+        if isinstance(v, dict):
+            stack.extend(v.values())
+        elif isinstance(v, list):
+            stack.extend(v)
+        elif _is_int(v) and abs(v) > MAX_SAFE:
+            raise VError("parse", f"integer {v} exceeds 2^53")
+
+
+def parse_strict(raw_bytes):
+    """Parse document bytes as _read_json does and hold every number to the integer profile."""
+    value = _read_json(raw_bytes)
+    _check_numbers(value)
+    return value
 
 
 def canon(value):
@@ -447,6 +488,21 @@ def _der_version(e, what):
         raise _TokenError(f"{what}: INTEGER exceeds 64 bits")
 
 
+# MAX_SERIAL_OCTETS is the most content octets a TSTInfo serial number may have. RFC 3161 has a
+# verifier accept a serial of up to 160 bits and sets no larger bound, and DER writes a positive
+# 160-bit value in 21 octets, a zero octet ahead of its 20 so the top bit does not read as the sign.
+# Without a bound a serial can be as long as the token. Mirrors the Go maxSerialOctets.
+MAX_SERIAL_OCTETS = 21
+
+
+def _der_serial(e, what):
+    """Check a TSTInfo serial number: a DER INTEGER of at most MAX_SERIAL_OCTETS octets. Mirrors the
+    Go derSerial."""
+    _der_integer(e, what)
+    if len(e.content) > MAX_SERIAL_OCTETS:
+        raise _TokenError(f"{what}: INTEGER longer than {MAX_SERIAL_OCTETS} octets")
+
+
 # MAX_SUBIDENTIFIER is the largest subidentifier an OBJECT IDENTIFIER a verifier reads may hold,
 # 2^31-1, the bound Go's encoding/asn1 holds one to. Without a bound, one subidentifier can be as
 # long as the token, and writing it out in decimal either takes time that grows with the square of
@@ -583,7 +639,7 @@ def _read_tst_info(e):
     ir = _Reader(r.read(T_SEQUENCE, "messageImprint").content)
     imprint_alg = _read_algorithm(ir, "messageImprint hashAlgorithm")
     imprint = ir.read(T_OCTET_STRING, "messageImprint hashedMessage").content
-    _der_integer(r.read(T_INTEGER, "TSTInfo serialNumber"), "TSTInfo serialNumber")
+    _der_serial(r.read(T_INTEGER, "TSTInfo serialNumber"), "TSTInfo serialNumber")
     return {"imprint_alg": imprint_alg, "imprint": imprint, "gen_time": r.next("genTime")}
 
 
@@ -1014,18 +1070,27 @@ def _string_value(v):
     return None
 
 
+def _hex_escaped(ch):
+    """Report whether a signer name writes ch in hexadecimal rather than as itself: a control below
+    U+0020 or from U+007F to U+009F, which could act on the terminal that prints the name, or a
+    bidirectional embedding or override from U+202A to U+202E, an isolate from U+2066 to U+2069, a
+    mark U+200E, U+200F or U+061C, or a separator U+2028 or U+2029, which could reorder or break how
+    the line naming the signer displays. Mirrors the Go hexEscaped."""
+    return (ch < "\x20" or "\x7f" <= ch <= "\x9f" or "\u202a" <= ch <= "\u202e"
+            or "\u2066" <= ch <= "\u2069" or ch in "\u200e\u200f\u061c\u2028\u2029")
+
+
 def _escape_rdn_value(text):
     """Escape an attribute's text as RFC 4514 requires: a backslash before each of the characters
     " + , ; < > and backslash, before a # or a space that starts the text, and before a space that
-    ends it. Every character below U+0020 or from U+007F to U+009F is written as a backslash and
-    two lower case hexadecimal digits for each octet of its UTF-8 encoding. Mirrors the Go
-    escapeRDNValue."""
+    ends it. Every character _hex_escaped names is written as a backslash and two lower case
+    hexadecimal digits for each octet of its UTF-8 encoding. Mirrors the Go escapeRDNValue."""
     out = []
     last = len(text) - 1
     for i, ch in enumerate(text):
         if ch in '"+,;<>\\' or (ch == "#" and i == 0) or (ch == " " and i in (0, last)):
             out.append("\\" + ch)
-        elif ch < "\x20" or "\x7f" <= ch <= "\x9f":
+        elif _hex_escaped(ch):
             out.append("".join(f"\\{o:02x}" for o in ch.encode("utf-8")))
         else:
             out.append(ch)
@@ -1188,6 +1253,7 @@ def _verify(raw_bytes, evidence_dir):
               "signature_ok": False, "chain_present": False, "chain_ok": False,
               "chain_mode": "", "head_matched": False, "anchors_matched": 0,
               "anchor_proofs_carried": 0, "anchor_proofs_verified": 0,
+              "anchor_proofs_unopened": 0,
               "anchor_proofs_validated": False, "anchor_attestations": [],
               "anchors_to_declared_head": 0, "unknown_types": [], "unknown_subject_type": "",
               "span_present": False, "span_ok": False, "span_beats": 0,
@@ -1202,7 +1268,12 @@ def _verify(raw_bytes, evidence_dir):
               "specs_unchecked": 0, "outcomes_verified": 0, "outcomes_unchecked": 0,
               "legacy_records": [], "disclosed": [], "disclosed_unchecked": 0, "_states": {}}
     try:
-        b = parse_strict(raw_bytes)
+        # The order is FORMAT.md's verification step 1: the document as JSON, then the version,
+        # then the number profile and the schema, so a version this verifier does not implement is
+        # unsupported whatever else a later version may have changed.
+        b = _read_json(raw_bytes)
+        _check_version(b)
+        _check_numbers(b)
         _schema_check(b)
         _check_signature(raw_bytes, b, report)
         if b["subject"].get("type") not in KNOWN_SUBJECTS:
@@ -1447,18 +1518,28 @@ def _attestation_times(b):
             _check_time(f"head attestation {j} at", a["at"])
 
 
-def _schema_check(b):
-    """Validate a parsed bundle against the schema: the version, then every member's name and JSON
-    type, then each value's rule. The value rules run in the order the Go verifier's validate holds
-    them, and a missing member reads as that verifier's zero value, so a document with more than
-    one fault reaches the same failing check in both."""
+def _check_version(b):
+    """Read a parsed document's loomseal member. A document that is not an object, has no such
+    member, or holds a value there that is not a string declares no format version and is refused
+    at parse: a later format is announced by another string in this member, so such a document is
+    no bundle of any version. A string other than 0.1 is unsupported, and nothing else in the
+    document is judged. Mirrors the Go checkVersion."""
     if not isinstance(b, dict):
         raise VError("parse", "bundle is not an object")
-    version = b.get("loomseal")
-    if "loomseal" in b and not isinstance(version, str):
+    if "loomseal" not in b:
+        raise VError("parse", "bundle carries no loomseal member, so it declares no format version")
+    version = b["loomseal"]
+    if not isinstance(version, str):
         raise VError("parse", "bundle loomseal is not a string")
     if version != "0.1":
         raise VError("unsupported", f"loomseal version {version!r}, this verifier implements 0.1")
+
+
+def _schema_check(b):
+    """Validate a parsed bundle, whose version _check_version read, against the schema: every
+    member's name and JSON type, then each value's rule. The value rules run in the order the Go
+    verifier's validate holds them, and a missing member reads as that verifier's zero value, so a
+    document with more than one fault reaches the same failing check in both."""
     _check_object(b, "bundle", "")
     _attestation_times(b)
     if not b.get("bundle_id"):
@@ -2656,8 +2737,10 @@ def _check_anchors(b, report):
         report["anchor_proofs_carried"] += 1
         # A carried proof used to be counted and never opened, so a bundle holding a real signed
         # timestamp was reported at the same strength as one holding a URL. The format has always
-        # said an rfc3161 proof is checkable offline; this is where that becomes true.
+        # said an rfc3161 proof is checkable offline; this is where that becomes true. A proof of
+        # any other type is counted as one this verifier cannot open, as the Go verifier counts it.
         if a["type"] != "rfc3161":
+            report["anchor_proofs_unopened"] += 1
             continue
         try:
             token = _b64(a["proof"])
@@ -2993,6 +3076,24 @@ def _faulted(r):
     return any(p.startswith("verifier:") for p in r["problems"])
 
 
+def exit_code(report):
+    """Return the exit code the command line gives a bundle or presentation report, as the Go
+    command line gives it: 0 verified, 3 unsupported, and 1 for any other failure."""
+    if report["ok"]:
+        return 0
+    return 3 if report.get("unsupported") else 1
+
+
+def _want_exit(v):
+    """Return the exit code a vector's verdict calls for: 3 for a bundle whose pinned level is
+    unsupported or a presentation whose failing check is, 0 for one that must verify, and 1
+    otherwise."""
+    if v["must_verify"]:
+        return 0
+    unsupported = v.get("level") == "unsupported" or v.get("failing_check") == "unsupported"
+    return 3 if unsupported else 1
+
+
 def run_vectors(dirpath):
     """Run every vector in a manifest and report agreement with its declared expectations."""
     man = json.load(open(os.path.join(dirpath, "manifest.json")))
@@ -3047,10 +3148,23 @@ def run_vectors(dirpath):
             if r["anchor_attestations"] != want:
                 status = "!! "
                 detail += f"  anchor_attestations got {r['anchor_attestations']!r} want {want!r}"
+        # A proof is counted as one this verifier cannot open by its type alone, so a token it
+        # opened is never counted there, whether it held or failed, and a proof on an anchor
+        # matching only the unverified declared head is counted on that head whatever its type.
+        # Each count is held on every vector that pins it, and at zero on a vector that must verify
+        # and pins none.
+        for key in ("anchor_proofs_unopened", "anchor_proofs_on_declared_head"):
+            if key in v or v["must_verify"]:
+                want, got = v.get(key, 0), r.get(key, 0)
+                if got != want:
+                    status = "!! "
+                    detail += f"  {key} got {got} want {want}"
         if status == "OK " and not v["must_verify"] and v.get("failing_check"):
             why = failing_check_error(v["failing_check"], r)
             if why:
                 status, detail = "!! ", f"  {why}"
+        if status == "OK " and exit_code(r) != _want_exit(v):
+            status, detail = "!! ", f"  exit code {exit_code(r)} want {_want_exit(v)}"
         if _faulted(r):
             status, detail = "!! ", f"  verifier fault: {r['problems']}"
         if status == "!! ":
@@ -3062,20 +3176,23 @@ def run_vectors(dirpath):
 
 def _is_presentation(raw_bytes):
     """Report whether raw is a holder presentation rather than a bundle, by the presence of the
-    presentation version member under its exact name. Mirrors the Go LooksLikePresentation. It
-    reads the document on the stack verify runs on, so a deeply nested presentation is still
-    recognized as one."""
+    presentation version member under its exact name with a string value. Mirrors the Go
+    LooksLikePresentation. It reads the document on the stack verify runs on, so a deeply nested
+    presentation is still recognized as one."""
     return _on_deep_stack(_looks_like_presentation, raw_bytes)
 
 
 def _looks_like_presentation(raw_bytes):
-    """Report whether raw parses to an object carrying a presentation version member."""
+    """Report whether raw reads as JSON to an object whose loomseal_presentation member is a string,
+    an empty one included, so every document routed to the presentation checks is one they read a
+    version from. The number profile is not held here, as the Go LooksLikePresentation does not
+    hold it, so a presentation carrying a number outside it is still routed to the presentation
+    checks, which refuse it."""
     try:
-        d = parse_strict(raw_bytes)
+        d = _read_json(raw_bytes)
     except (VError, RecursionError, ValueError):
         return False
-    version = d.get("loomseal_presentation") if isinstance(d, dict) else None
-    return isinstance(version, str) and version != ""
+    return isinstance(d, dict) and isinstance(d.get("loomseal_presentation"), str)
 
 
 # _PRESENTATION_MEMBERS and _HOLDER_MEMBERS are the members a presentation and its holder carry,
@@ -3086,11 +3203,28 @@ _PRESENTATION_MEMBERS = {"audience", "bundle", "created_at", "holder", "loomseal
 _HOLDER_MEMBERS = {"alg", "key_id", "public_key"}
 
 
+def _check_presentation_version(p):
+    """Read a parsed presentation's loomseal_presentation member, as _check_version reads a bundle's
+    loomseal member. A document that is not an object, has no such member, or holds a value there
+    that is not a string declares no presentation version and is refused at parse. A string other
+    than 0.1 is unsupported, and nothing else in the document is judged. Mirrors the Go
+    checkPresentationVersion."""
+    if not isinstance(p, dict):
+        raise VError("parse", "a presentation is a JSON object")
+    if "loomseal_presentation" not in p:
+        raise VError("parse", "presentation carries no loomseal_presentation member, so it "
+                              "declares no format version")
+    version = p["loomseal_presentation"]
+    if not isinstance(version, str):
+        raise VError("parse", "presentation member loomseal_presentation is not a string")
+    if version != "0.1":
+        raise VError("unsupported", f"loomseal_presentation version {version!r}, this verifier "
+                                    "implements 0.1")
+
+
 def _presentation_problem(p):
     """Say why a parsed presentation's members are not the exact set, or the strings, the format
-    defines, or return None. Mirrors the Go parsePresentation."""
-    if not isinstance(p, dict):
-        return "a presentation is a JSON object"
+    defines, or return None. Mirrors the Go readPresentation."""
     extra = sorted(set(p) - _PRESENTATION_MEMBERS)
     if extra:
         return f"presentation carries an unknown member {json.dumps(extra[0], ensure_ascii=False)}"
@@ -3106,6 +3240,8 @@ def _presentation_problem(p):
         for name in names:
             if name in obj and not isinstance(obj[name], str):
                 return f"presentation member {name} is not a string"
+    if "bundle" not in p:
+        return "presentation carries no bundle member"
     return None
 
 
@@ -3123,7 +3259,8 @@ def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None)
 def _verify_presentation(raw_bytes, audience, nonce, evidence_dir):
     """Run the presentation checks and build the report, on the stack verify runs on. A fault in
     this verifier itself lands in the report as a problem, never as a traceback."""
-    report = {"ok": False, "presentation_ok": False, "problems": [], "bundle": None}
+    report = {"ok": False, "presentation_ok": False, "unsupported": False, "problems": [],
+              "bundle": None}
     for member, expected in (("audience", audience), ("nonce", nonce)):
         if expected == "":
             report["problems"].append(f"{member}: {EMPTY_EXPECTATION}")
@@ -3137,22 +3274,25 @@ def _verify_presentation(raw_bytes, audience, nonce, evidence_dir):
 
 
 def _presentation_checks(raw_bytes, audience, nonce, evidence_dir, report):
-    """Fill report with the presentation checks and return it."""
+    """Fill report with the presentation checks and return it. The presentation is read in the
+    order FORMAT.md's "Presentations" section gives, the order a bundle is read in: as JSON, then
+    its version, then the number profile, then every member by its exact name and type. The
+    embedded bundle is verified next, then the holder signature, then each expectation supplied.
+    Mirrors the Go RunPresentation."""
     try:
-        p = parse_strict(raw_bytes)
+        p = _read_json(raw_bytes)
+        _check_presentation_version(p)
+        _check_numbers(p)
+        why = _presentation_problem(p)
+        if why:
+            raise VError("parse", why)
     except VError as e:
-        report["problems"].append(f"parse: {e.msg}")
-        return report
-    why = _presentation_problem(p)
-    if why:
-        report["problems"].append(f"parse: {why}")
-        return report
-    if p.get("loomseal_presentation") != "0.1":
-        report["problems"].append("parse: not a loomseal presentation 0.1")
+        report["problems"].append(f"{e.check}: {e.msg}")
+        report["unsupported"] = e.check == "unsupported"
         return report
     report["audience"], report["nonce"] = p.get("audience"), p.get("nonce")
     report["created_at"] = p.get("created_at")
-    bundle_obj = p.get("bundle")
+    bundle_obj = p["bundle"]
     try:
         bundle_bytes = canon(bundle_obj)
     except VError as e:
@@ -3211,6 +3351,43 @@ def _check_presentation_sig(p, bundle_obj, report):
     report["holder_key_id"] = _key_id(pub)
 
 
+def presentation_check_error(check, v, r):
+    """Return why presentation report r does not fail first at the check the manifest names, or
+    None if it does. The checks run in the order FORMAT.md's "Presentations" section gives: an
+    expectation supplied empty is refused before anything, then the presentation is read, the
+    embedded bundle is verified, and the holder signature, the audience, and the nonce follow.
+    Each problem is named by its check, as the Go verifier names it."""
+    first = r["problems"][0] if r["problems"] else ""
+    read = r["bundle"] is None and not r["presentation_ok"]
+    bundle_ok = r["bundle"] is not None and r["bundle"]["ok"]
+    if check == "expectation":
+        members = [m for m in ("audience", "nonce") if v.get("expect_" + m) == ""]
+        if not members or r["problems"] != [f"{members[0]}: {EMPTY_EXPECTATION}"]:
+            return f"empty expectation was not refused by name: {r['problems']}"
+    elif check == "parse":
+        if not read or r["unsupported"] or not first.startswith("parse: "):
+            return f"parse case was not refused as it was read: {r['problems']}"
+    elif check == "unsupported":
+        if not read or not r["unsupported"] or not first.startswith("unsupported"):
+            return f"unsupported case was not judged unsupported as it was read: {r['problems']}"
+    elif check == "bundle":
+        if r["unsupported"] or r["bundle"] is None or r["bundle"]["ok"]:
+            return f"bundle case did not fail the embedded bundle: {r['problems']}"
+    elif check == "presentation":
+        if not bundle_ok or r["presentation_ok"] or not first.startswith("presentation: "):
+            return f"presentation case did not fail first on the holder: {r['problems']}"
+    elif check == "audience":
+        if not bundle_ok or not r["presentation_ok"] or r.get("audience_match") is not False:
+            return f"audience case did not fail first on the audience: {r['problems']}"
+    elif check == "nonce":
+        if (not bundle_ok or not r["presentation_ok"] or r.get("audience_match") is False
+                or r.get("nonce_match") is not False):
+            return f"nonce case did not fail first on the nonce: {r['problems']}"
+    else:
+        return f"manifest names an unknown presentation failing_check {check!r}"
+    return None
+
+
 def run_presentations(dirpath):
     """Run every presentation vector in a manifest and report agreement with its expectations."""
     man = json.load(open(os.path.join(dirpath, "presentations.json")))
@@ -3223,16 +3400,27 @@ def run_presentations(dirpath):
         ok = r["ok"]
         status = "OK " if ok == v["must_verify"] else "!! "
         detail = ""
+        if status == "OK " and not v["must_verify"]:
+            why = presentation_check_error(v.get("failing_check"), v, r)
+            if why:
+                status, detail = "!! ", f"  {why}"
+        # An expectation supplied empty is refused before any report exists, and the Go command
+        # line exits 2 for it, so such a case has no report whose exit code to compare.
+        if (status == "OK " and v.get("failing_check") != "expectation"
+                and exit_code(r) != _want_exit(v)):
+            status, detail = "!! ", f"  exit code {exit_code(r)} want {_want_exit(v)}"
+        # The command line routes a document by _is_presentation, and the manifest pins which way
+        # each one goes. A document read as a bundle is refused at parse there.
+        routed = not _is_presentation(raw)
+        if routed != v.get("routes_as_bundle", False):
+            status, detail = "!! ", f"  routed as a bundle {routed}"
+        elif routed:
+            rb = verify(raw)
+            why = failing_check_error("parse", rb)
+            if rb["ok"] or rb["level"] != "not verified" or why:
+                status, detail = "!! ", f"  read as a bundle: {why or rb['problems']}"
         if _faulted(r) or (r["bundle"] is not None and _faulted(r["bundle"])):
             status, detail = "!! ", "  verifier fault"
-        # An expectation supplied empty is refused by name before anything is verified, so a case
-        # that carries one fails for that reason and no other.
-        for member in ("audience", "nonce"):
-            if v.get("expect_" + member) == "":
-                if r["problems"] != [f"{member}: {EMPTY_EXPECTATION}"]:
-                    status = "!! "
-                    detail = f"  empty {member} was not refused: {r['problems']}"
-                break
         if status == "!! ":
             bad += 1
         print(f"{status}{v['name']:<28} ok={ok} expect={v['must_verify']}{detail}")
@@ -3249,15 +3437,13 @@ def main(argv):
         raw = open(argv[1], "rb").read()
         report = verify_presentation(raw, evidence_dir=argv[2] if len(argv) > 2 else None)
         print(json.dumps(report, indent=2))
-        return 0 if report["ok"] else 1
+        return exit_code(report)
     if len(argv) < 2:
         print("usage: loomverify.py <bundle.json> [evidence_dir] | --vectors <dir>")
         return 2
     report = verify(open(argv[1], "rb").read(), argv[2] if len(argv) > 2 else None)
     print(json.dumps(report, indent=2))
-    if report["ok"]:
-        return 0
-    return 3 if report.get("unsupported") else 1
+    return exit_code(report)
 
 
 if __name__ == "__main__":

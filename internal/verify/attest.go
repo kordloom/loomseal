@@ -2,8 +2,6 @@ package verify
 
 import (
 	"crypto/ed25519"
-	"encoding/base64"
-	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/jcs"
@@ -38,7 +36,7 @@ func (r *Report) checkHeadAttestations(b *bundle.Bundle, expected map[string]boo
 			r.problem("head attestation %d alg %q, want ed25519", j, a.Alg)
 			continue
 		}
-		pub, err := base64.StdEncoding.DecodeString(a.PublicKey)
+		pub, err := bundle.DecodeBase64(a.PublicKey)
 		if err != nil || len(pub) != ed25519.PublicKeySize {
 			r.problem("head attestation %d public_key is not a 32 byte ed25519 key", j)
 			continue
@@ -51,7 +49,7 @@ func (r *Report) checkHeadAttestations(b *bundle.Bundle, expected map[string]boo
 			r.problem("head attestation %d role is empty", j)
 			continue
 		}
-		sig, err := base64.StdEncoding.DecodeString(a.Sig)
+		sig, err := bundle.DecodeBase64(a.Sig)
 		if err != nil {
 			r.problem("head attestation %d sig is not base64", j)
 			continue
@@ -59,7 +57,7 @@ func (r *Report) checkHeadAttestations(b *bundle.Bundle, expected map[string]boo
 		obj := map[string]any{"loomseal": "head-attestation/1", "link": b.Chain.Head.Link,
 			"seq": b.Chain.Head.Seq, "role": a.Role}
 		if a.At != "" {
-			if _, err := time.Parse(time.RFC3339, a.At); err != nil {
+			if _, err := bundle.ParseTime(a.At); err != nil {
 				r.problem("head attestation %d at: %v", j, err)
 				continue
 			}
@@ -108,7 +106,7 @@ func (r *Report) checkAttestations(b *bundle.Bundle, expected map[string]bool) {
 				r.problem("claim %d attestation %d alg %q, want ed25519", i, j, a.Alg)
 				continue
 			}
-			pub, err := base64.StdEncoding.DecodeString(a.PublicKey)
+			pub, err := bundle.DecodeBase64(a.PublicKey)
 			if err != nil || len(pub) != ed25519.PublicKeySize {
 				r.problem("claim %d attestation %d public_key is not a 32 byte ed25519 key", i, j)
 				continue
@@ -121,7 +119,7 @@ func (r *Report) checkAttestations(b *bundle.Bundle, expected map[string]bool) {
 				r.problem("claim %d attestation %d role is empty", i, j)
 				continue
 			}
-			sig, err := base64.StdEncoding.DecodeString(a.Sig)
+			sig, err := bundle.DecodeBase64(a.Sig)
 			if err != nil {
 				r.problem("claim %d attestation %d sig is not base64", i, j)
 				continue
@@ -131,7 +129,7 @@ func (r *Report) checkAttestations(b *bundle.Bundle, expected map[string]bool) {
 			// inside the signed bytes, so a sign-off time cannot be edited after the fact.
 			obj := map[string]any{"loomseal": "attestation/1", "link": c.Chain.Link, "role": a.Role}
 			if a.At != "" {
-				if _, err := time.Parse(time.RFC3339, a.At); err != nil {
+				if _, err := bundle.ParseTime(a.At); err != nil {
 					r.problem("claim %d attestation %d at: %v", i, j, err)
 					continue
 				}

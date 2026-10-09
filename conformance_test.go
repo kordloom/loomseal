@@ -53,6 +53,13 @@ type conformanceVector struct {
 	// Legacy lists the record bodies a verifier must report verified under the legacy unkeyed
 	// digest form.
 	Legacy []string `json:"legacy"`
+	// SpanCoverage is the coverage line a verifier must report, empty when the bundle carries no
+	// span claims.
+	SpanCoverage string `json:"span_coverage"`
+	// SpanLongestGap is the longest gap a verifier must report, empty when there is none.
+	SpanLongestGap string `json:"span_longest_gap"`
+	// SpanGaps lists, in order, the gap lines a verifier must report.
+	SpanGaps []string `json:"span_gaps"`
 }
 
 // TestConformanceVectors drives the verifier from the manifest so the shipped verifier and the
@@ -115,6 +122,18 @@ func TestConformanceVectors(t *testing.T) {
 				if report.UnknownSubjectType != v.UnknownSubjectType {
 					t.Errorf("unknown subject type %q, want %q", report.UnknownSubjectType,
 						v.UnknownSubjectType)
+				}
+				// A gap is measured one way, so the coverage line, the longest gap, and each gap's
+				// wording are part of the verdict a spanned vector pins.
+				if diff := cmp.Diff(v.SpanCoverage, report.SpanCoverage); diff != "" {
+					t.Errorf("span coverage (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(v.SpanLongestGap, report.SpanLongestGap); diff != "" {
+					t.Errorf("span longest gap (-want +got):\n%s", diff)
+				}
+				gaps := cmp.Diff(v.SpanGaps, report.SpanGaps, cmpopts.EquateEmpty())
+				if gaps != "" {
+					t.Errorf("span gaps (-want +got):\n%s", gaps)
 				}
 				return
 			}
@@ -199,10 +218,14 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 	t.Helper()
 	switch check {
 	case "parse":
-		// Malformed input, a bad version, or an uncanonicalizable document fails before or at
-		// the signature step, so no producer signature verifies.
+		// Malformed input or an uncanonicalizable document fails before or at the signature step,
+		// so no producer signature verifies. It is not verified, which is a different verdict from
+		// unsupported, so a malformed value read as an unknown profile or algorithm fails here.
 		if r.SignatureOK {
 			t.Errorf("parse case verified its signature: %v", r.Problems)
+		}
+		if r.Unsupported {
+			t.Errorf("parse case was judged unsupported: %v", r.Problems)
 		}
 	case "signature":
 		if r.SignatureOK {

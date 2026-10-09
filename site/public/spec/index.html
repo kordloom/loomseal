@@ -512,6 +512,43 @@
     written as plain integer literals with absolute value at most 2^53; fractions, exponents,
     and larger magnitudes are invalid, because RFC 8785 serializes numbers as IEEE doubles and
     those forms do not round-trip.</p>
+    <p>Every member this format defines holds the JSON type the schema gives it, and a value of
+    another type, such as a number where a string belongs or a boolean where an integer belongs,
+    is rejected at parse rather than read as that type. No member this format defines takes
+    <code>null</code>, and no array it defines holds one. A
+    verifier rejects a null at parse rather than reading it as an empty, false, or absent value,
+    because a null <code>prev</code> read as the empty string would recompute as genesis. The
+    exceptions are a disclosure's <code>value</code>, which is the revealed field itself and may
+    be any JSON, and the members of a claim payload, which belong to the producer. Every base64
+    value, from <code>producer.public_key</code> and each <code>sig</code> to an anchor's
+    <code>proof</code> and an attestation's key, is RFC 4648 standard encoding with its padding
+    and nothing else. A line break, whitespace, or any other byte outside the alphabet is
+    rejected rather than skipped, because a decoder that skips such bytes gives one key or
+    signature many spellings. Every time, from <code>created_at</code> and each claim's
+    <code>at</code> to an anchor's and an attestation's <code>at</code> and a presentation's
+    <code>created_at</code>, is the RFC 3339 <code>date-time</code> production exactly: a
+    two-digit hour, a period before any fractional second, and <code>Z</code> or a numeric
+    offset whose hour is below 24 and whose minute is below 60. A one-digit hour, a comma before
+    the fraction, and an offset of 24 hours or 60 minutes are rejected, although general date
+    parsers read them, because two verifiers that each read a different superset of RFC 3339
+    reach different verdicts on one bundle. A bundle or presentation nests no deeper than 3200
+    levels, where an array or an object is one level and the outermost object is the first. The
+    bound is set by the shipped verifier with the least stack, the browser build, so every
+    verifier reads a document within it to a verdict, and a deeper document is rejected at parse
+    before any recursive reader sees it. A string that holds JSON text, such as an outcome
+    record, is text to this bound, so a verifier that reads such text bounds its depth without
+    recursion before any recursive reader sees it. These rules refuse only inputs the schema or
+    RFC 3339 already forbids. Vectors pin each of them: the type refusals in every vector whose
+    name begins with <code>type-</code> and in <code>params-number</code>, the null refusals in
+    <code>prev-null</code>, <code>attestation-null</code>, <code>disclosure-null</code>, and
+    <code>params-null</code>, the base64 refusals in
+    every vector whose name ends in <code>line-break</code>, the time refusals in
+    <code>created-at-one-digit-hour</code>, <code>created-at-comma-fraction</code>,
+    <code>created-at-offset-hour-24</code>, <code>created-at-offset-minute-60</code>, and the
+    attestation and presentation vectors whose names end in <code>one-digit-hour</code> or
+    <code>comma-fraction</code>, and the bound in <code>nesting-past-bound</code> and
+    <code>present-past-bound</code>, which are refused, and <code>nesting-3000-deep</code>,
+    <code>nesting-at-bound</code>, and <code>switchtender-outcome-deep</code>, which verify.</p>
 
     <h2>Producer and signatures</h2>
     <p><code>producer.public_key</code> is the producer's raw 32-byte ed25519 public key,
@@ -564,7 +601,9 @@
     compact JSON array, no insignificant whitespace, of six strings: its sequence as a decimal
     string, the time, actor, method, path, and previous link. Sequence starts at 1; the genesis
     previous link is the empty string. This profile is unkeyed: any verifier recomputes every
-    link from the claim payloads alone. The time is the claim's <code>at</code> in UTC, RFC 3339
+    link from the claim payloads alone. A bundle declaring <code>chain.keyed</code> true under it
+    fails the chain check rather than being verified structurally, as
+    <code>switchtender-keyed</code> and <code>switchtender-keyed-altered</code> pin. The time is the claim's <code>at</code> in UTC, RFC 3339
     with nanosecond precision, trailing zeros in the fractional part trimmed and the fractional
     part and its dot omitted entirely when the fraction is zero, so an <code>at</code> of
     <code>2026-07-27T15:00:00Z</code> serializes back to <code>2026-07-27T15:00:00Z</code>. That
@@ -631,11 +670,18 @@
   "chain": { "seq": 18227, "prev": "...", "link": "..." }
 }</code></pre>
     <p>The claim's <code>at</code> is the beat time. <code>cadence_s</code> is the interval, in
-    whole seconds, the producer commits to. <code>beat</code> starts at 1 and increases by
+    whole seconds, the producer commits to, an integer from 1 to 31622400, the seconds in a
+    366-day year. A span claim declaring any other cadence fails the span check: a heartbeat
+    slower than once a year attests nothing a reader can use, and the bound keeps every quantity
+    the gap measurement forms inside a signed 64-bit count of microseconds, so no verifier can
+    wrap or divide by a wrapped value. <code>beat</code> starts at 1 and increases by
     exactly 1 per span claim on the chain. <code>count</code> is the number of entries appended
     since the previous span claim. For beat 1, <code>count</code> covers every entry that
     precedes it, so a chain adopting the profile mid-life attests its entire prior population
-    once, at adoption.</p>
+    once, at adoption. <code>cadence_s</code>, <code>beat</code>, and <code>count</code> are
+    each a JSON number with an integer value. A JSON <code>true</code> or <code>false</code>, a
+    string, or any other type in their place fails the span check, and a verifier whose language
+    counts a boolean as an integer refuses it all the same.</p>
     <p>Because a span claim sits in the chain it attests, its own <code>chain.prev</code> is
     the head it commits to, and <code>count</code> is redundant with the sequence numbers: the
     entries between two span claims number exactly the difference of their <code>seq</code>
@@ -650,15 +696,45 @@
     never as a badge. Attested every 60s with a longest unattested window of 74s is worth more
     than a completeness stamp, and it is the only phrasing that survives a skeptical
     reader.</p>
+    <p>A gap is measured one way, so that every verifier reports the same one. Beat times are
+    read to the microsecond, with any finer digits dropped, and the interval between consecutive
+    beats is the difference of the two, compared against the cadence the earlier beat declares.
+    The arithmetic is exact. A beat time carries a four-digit year, so every interval and every
+    window count fits a signed 64-bit count of microseconds, and no verifier clamps, saturates,
+    or wraps one. A beat is written when a timer fires, and a timer fires a little late as a
+    matter of course, so every interval is allowed a scheduling slack of one hundredth of the
+    cadence and never less than one second: an interval of at most the cadence plus the slack is
+    on time, and one wider than that is a gap. A gap is reported as <code>unattested window of
+    &lt;duration&gt; between beat &lt;n&gt; (&lt;time&gt;) and beat &lt;m&gt;
+    (&lt;time&gt;)</code>, with the duration as the interval rounded to the nearest whole
+    second, halves rounding up, written as <code>150s</code>, and each beat time in RFC 3339 UTC
+    to the whole second, its fraction dropped rather than rounded. The longest gap is the widest
+    such interval, written the same way. Coverage is reported as
+    <code>&lt;beats&gt;/&lt;windows&gt; windows attested</code>, where the beats are the span
+    claims the bundle carries and the windows add, for every gap, the interval divided by the
+    cadence and rounded to the nearest whole number, halves rounding up, less one for the window
+    the arriving beat attests. So at a 60s cadence a beat 61s after its predecessor is on time,
+    one 62s after it is a gap of <code>62s</code> that missed no whole window, and one 150s
+    after it is a gap of <code>150s</code> that missed two, read as <code>2/4 windows
+    attested</code> over two beats. A beat 62.5s after its predecessor at 15:01:00 is a gap of
+    <code>63s</code>, and the gap line names that beat <code>15:02:02Z</code>. One 62.4999995s
+    after it is read as 62.499999s and is a gap of <code>62s</code>.</p>
     <p>One limit carries the architecture. A chain that stops emitting beats and stops
     anchoring simply ends, and a bundle cannot distinguish ending from having nothing more to
     say. Silence is only detectable where an outside party expects the next beat and can see it
     missing. Publish beat heads on the declared cadence through the <code>git</code> or
     <code>https</code> anchor types, to a feed where a missing entry is visible to anyone. The
     feed, not the bundle, is where going dark becomes loud.</p>
-    <p>Five conformance vectors cover the profile: a valid spanned bundle, a false count, a
-    missing beat, a gap reported rather than failed, and a mid-life adoption. All three shipped
-    verifiers, Go, Python, and the browser build, agree on every one.</p>
+    <p>Twenty-two conformance vectors cover the profile: a valid spanned bundle, a false count, a
+    missing beat, a cadence, a beat, and a count each written as a JSON boolean, a gap reported
+    rather than failed, a mid-life adoption, a beat on the slack edge and one just past it at
+    each of two cadences, a beat half a second late, a beat a tenth of a microsecond past the
+    slack edge, a gap of two and a half cadences, gaps of 62.5s and 62.4999995s on either side
+    of the rounding boundary, beats centuries apart at a one minute cadence and at the widest
+    cadence allowed, a cadence one second wider than that, one too wide for a nanosecond
+    duration, and one past the integer range. All three shipped verifiers, Go, Python, and the
+    browser build, reach the same verdict on every one, and on each that verifies they agree
+    down to the coverage line, the longest gap, and the wording of each gap.</p>
 
     <h2>Conformance levels</h2>
     <div class="table-wrap">
@@ -691,8 +767,9 @@
       report the anchor set with times and refs.</li>
       <li>If span claims are present: require beat contiguity, recompute every count from the
       sequence numbers, compare beat times against the declared cadence, and report coverage:
-      beats present, gaps with bounds, longest gap. A false count or a missing beat fails the
-      bundle; a gap is reported, never hidden.</li>
+      beats present, gaps with bounds, longest gap, each measured and worded as the LoomSpan
+      section states. A false count or a missing beat fails the bundle; a gap is reported,
+      never hidden.</li>
       <li>For each evidence artifact supplied to the verifier: recompute its digest and
       compare. Evidence not supplied is reported as referenced, not checked, never as
       verified.</li>

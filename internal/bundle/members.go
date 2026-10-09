@@ -67,6 +67,9 @@ func checkExactMembers(raw []byte) error {
 		if err := exactMembers(chain, chainMembers, "chain"); err != nil {
 			return err
 		}
+		if err := stringParams(chain); err != nil {
+			return err
+		}
 		if err := exactChild(chain, "consistency", consistencyMembers, "chain.consistency"); err != nil {
 			return err
 		}
@@ -92,6 +95,9 @@ func checkExactMembers(raw []byte) error {
 
 // exactClaims checks every claim object and the sub-objects a claim carries.
 func exactClaims(root map[string]any) error {
+	if err := nullElements(root, "claims", "claim"); err != nil {
+		return err
+	}
 	claims, ok := root["claims"].([]any)
 	if !ok {
 		return nil
@@ -127,17 +133,46 @@ func exactClaims(root map[string]any) error {
 	return nil
 }
 
-// exactChild checks an optional child object against its member set.
+// stringParams refuses a chain.params value that is not a string. The bag is open by name, but the
+// schema types every value as a string, and the struct decoder reads a null there as the empty
+// string, which would let a null install_id read as an absent one.
+func stringParams(chain map[string]any) error {
+	params, ok := chain["params"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	var bad []string
+	for k, v := range params {
+		if _, ok := v.(string); !ok {
+			bad = append(bad, k)
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.Strings(bad)
+	return fmt.Errorf("%w: chain params member %q is not a string", ErrSchema, bad[0])
+}
+
+// exactChild checks an optional child object against its member set and, when the child is a proof
+// carrying a path, refuses a null element in that path.
 func exactChild(parent map[string]any, key string, allowed map[string]bool, where string) error {
 	child, ok := parent[key].(map[string]any)
 	if !ok {
 		return nil
 	}
-	return exactMembers(child, allowed, where)
+	if err := exactMembers(child, allowed, where); err != nil {
+		return err
+	}
+	return nullElements(child, "path", where+" path")
 }
 
-// exactArray checks every object in an optional array member against its member set.
+// exactArray checks every object in an optional array member against its member set and refuses
+// a null element.
 func exactArray(parent map[string]any, key string, allowed map[string]bool, where string) error {
+	if err := nullElements(parent, key, where); err != nil {
+		return err
+	}
 	arr, ok := parent[key].([]any)
 	if !ok {
 		return nil
@@ -154,18 +189,47 @@ func exactArray(parent map[string]any, key string, allowed map[string]bool, wher
 	return nil
 }
 
-// exactMembers refuses the first object member outside the allowed set, naming it. The lowest name
-// is reported so the message is stable across runs regardless of map iteration order.
+// exactMembers refuses the first object member outside the allowed set, naming it, and then the
+// first allowed member whose value is null. The lowest name is reported so the message is stable
+// across runs regardless of map iteration order.
+//
+// No member the schema defines takes null: each is a string, a number, a boolean, an object, or an
+// array. The struct decoder reads null as the zero value, so without this a null prev would read
+// as the empty string and recompute as genesis, and a null keyed would read as false. The one
+// exception is a disclosure's value, which the schema leaves as any JSON because it is the
+// revealed field itself.
 func exactMembers(obj map[string]any, allowed map[string]bool, where string) error {
-	var extra []string
-	for k := range obj {
-		if !allowed[k] {
+	var extra, nulls []string
+	for k, v := range obj {
+		switch {
+		case !allowed[k]:
 			extra = append(extra, k)
+		case v == nil && k != "value":
+			nulls = append(nulls, k)
 		}
 	}
-	if len(extra) == 0 {
+	if len(extra) > 0 {
+		sort.Strings(extra)
+		return fmt.Errorf("%w: %s carries an unknown member %q", ErrSchema, where, extra[0])
+	}
+	if len(nulls) > 0 {
+		sort.Strings(nulls)
+		return fmt.Errorf("%w: %s member %q is null", ErrSchema, where, nulls[0])
+	}
+	return nil
+}
+
+// nullElements refuses a null element in an optional array member. No array the schema defines
+// holds null, and the struct decoder would read one as a zero-value entry.
+func nullElements(parent map[string]any, key, where string) error {
+	arr, ok := parent[key].([]any)
+	if !ok {
 		return nil
 	}
-	sort.Strings(extra)
-	return fmt.Errorf("%w: %s carries an unknown member %q", ErrSchema, where, extra[0])
+	for j, e := range arr {
+		if e == nil {
+			return fmt.Errorf("%w: %s %d is null", ErrSchema, where, j)
+		}
+	}
+	return nil
 }

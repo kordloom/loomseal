@@ -60,6 +60,10 @@ for (const v of manifest.vectors) {
   if (r.ok !== v.must_verify) {
     problems.push(`ok=${r.ok} expect=${v.must_verify}`);
   }
+  // A malformed document is not verified, which is a different verdict from unsupported.
+  if (!v.must_verify && v.failing_check === "parse" && r.unsupported) {
+    problems.push("parse case judged unsupported");
+  }
   // The level is pinned on every vector: the wording achieved when the bundle verifies, and "not
   // verified" or "unsupported" when it does not. The browser cannot read evidence off disk, so a
   // vector whose level names verified evidence would land one step lower here; none does.
@@ -91,6 +95,16 @@ for (const v of manifest.vectors) {
     if (unknown !== wantUnknown) {
       problems.push(`unknown_subject_type got[${unknown}] want[${wantUnknown}]`);
     }
+    // A gap is measured one way, so the coverage line, the longest gap, and each gap's wording
+    // are part of the verdict a spanned vector pins, here as on the command line.
+    for (const key of ["span_coverage", "span_longest_gap"]) {
+      const got = r[key] || "";
+      const want = v[key] || "";
+      if (got !== want) problems.push(`${key} got[${got}] want[${want}]`);
+    }
+    const gaps = (r.span_gaps || []).join("|");
+    const wantGaps = (v.span_gaps || []).join("|");
+    if (gaps !== wantGaps) problems.push(`span_gaps got[${gaps}] want[${wantGaps}]`);
   }
   if (problems.length) {
     bad++;
@@ -123,7 +137,9 @@ refusesPin("explicit empty pin", JSON.parse(loomsealVerify(readBytes(example), "
 // The page verifies holder presentations through the same dispatcher, held to the presentation
 // vectors as the command line is, including the audience and nonce pins each vector declares.
 // Every report must come from the presentation entry point, or a vector that must not verify
-// would pass for the wrong reason.
+// would pass for the wrong reason. The one exception is a document nested past the depth bound:
+// nothing reads it far enough to find the presentation member, so the command line and the
+// reference refuse it at parse on the bundle path too, and the page must do the same.
 const pres = JSON.parse(
   fs.readFileSync(path.join(root, "testdata/vectors/presentations.json"), "utf8"),
 );
@@ -142,7 +158,9 @@ for (const v of pres.vectors) {
     audience: v.expect_audience || "", nonce: v.expect_nonce || "",
   });
   const problems = [];
-  if (!Object.prototype.hasOwnProperty.call(r, "presentation_ok")) {
+  const pastBound = (r.problems || []).length === 1 &&
+    /^parse: .*nesting exceeds \d+ levels$/.test(r.problems[0]);
+  if (!Object.prototype.hasOwnProperty.call(r, "presentation_ok") && !pastBound) {
     problems.push("routed to the bundle entry point");
   }
   if (r.ok !== v.must_verify) {

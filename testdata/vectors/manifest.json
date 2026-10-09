@@ -2,6 +2,14 @@
   "description": "LoomSeal v0.1 conformance vectors. Each entry declares whether the bundle must verify, and when it must not, which check fails and why. A verifier is conformant when it agrees with every entry.",
   "vectors": [
     {
+      "name": "anchor-bad-at",
+      "file": "anchor-bad-at.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An anchor time that is not RFC 3339 is refused at parse."
+    },
+    {
       "name": "anchor-corrupt-token",
       "file": "anchor-corrupt-token.loomseal.json",
       "must_verify": false,
@@ -15,6 +23,14 @@
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "An rfc3161 proof on a declared head beyond the bundled claims is not opened and earns no anchored level, because the link it attests is tied to nothing the verifier confirmed."
+    },
+    {
+      "name": "anchor-empty-ref",
+      "file": "anchor-empty-ref.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An anchor with an empty ref locates nothing and is refused at parse."
     },
     {
       "name": "anchor-matches-nothing",
@@ -32,12 +48,60 @@
       "why": "An anchor matching only a head beyond the claims is reported but not counted as anchored."
     },
     {
+      "name": "anchor-proof-line-break",
+      "file": "anchor-proof-line-break.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An anchor proof whose base64 carries a line break is refused at parse rather than decoded by skipping the break."
+    },
+    {
+      "name": "anchor-proof-not-base64",
+      "file": "anchor-proof-not-base64.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An anchor proof that is not base64 is refused at parse, never reported as anchored by reference."
+    },
+    {
+      "name": "anchor-unknown-type",
+      "file": "anchor-unknown-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An anchor type outside the vocabulary the format defines is refused at parse, never reported as anchored by reference."
+    },
+    {
+      "name": "attestation-at-one-digit-hour",
+      "file": "attestation-at-one-digit-hour.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "attestation",
+      "why": "An attestation whose signed at has a one-digit hour is refused, because the time is not RFC 3339."
+    },
+    {
+      "name": "attestation-key-line-break",
+      "file": "attestation-key-line-break.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "attestation",
+      "why": "A counterparty attestation whose public_key carries a line break inside its base64 is refused rather than decoded by skipping the break."
+    },
+    {
       "name": "attestation-keyid-mismatch",
       "file": "attestation-keyid-mismatch.loomseal.json",
       "must_verify": false,
       "level": "not verified",
       "failing_check": "attestation",
       "why": "A counterparty attestation whose key_id is not the digest of its public key is refused, so it cannot misname its signer."
+    },
+    {
+      "name": "attestation-null",
+      "file": "attestation-null.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A null entry in a claim's attestations is refused at parse rather than read as an empty attestation."
     },
     {
       "name": "attestation-role-swapped",
@@ -48,6 +112,14 @@
       "why": "A counterparty attestation whose role was changed after signing no longer verifies, because the counter-signature binds the role as well as the link."
     },
     {
+      "name": "attestation-sig-line-break",
+      "file": "attestation-sig-line-break.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "attestation",
+      "why": "A counterparty attestation whose sig carries a line break inside its base64 is refused rather than decoded by skipping the break."
+    },
+    {
       "name": "attestation-with-time",
       "file": "attestation-with-time.loomseal.json",
       "must_verify": true,
@@ -55,11 +127,27 @@
       "why": "An attestation whose at member is set carries the signing time inside the signed bytes; altering the time after the fact breaks the counter-signature."
     },
     {
+      "name": "attestations-string",
+      "file": "attestations-string.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A head attestations member that is not an array is refused at parse, with a verdict and never a crash."
+    },
+    {
       "name": "attested-claim",
       "file": "attested-claim.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "A loomseal-chain-v1 claim carrying a counterparty attestation over its link verifies; the counter-signature is checked against the signer's own key and reported as vouched."
+    },
+    {
+      "name": "bundle-id-empty",
+      "file": "bundle-id-empty.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An empty bundle_id is refused at parse."
     },
     {
       "name": "casefold-coords-seq",
@@ -213,12 +301,108 @@
       "why": "An evidence entry's present and location are packaging details outside the committed content, so a chain-v1 link recomputes whatever way this copy packages its evidence."
     },
     {
+      "name": "claim-number",
+      "file": "claim-number.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim that is not an object is refused at parse, with a verdict and never a crash."
+    },
+    {
+      "name": "claim-without-at",
+      "file": "claim-without-at.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim with no at is refused at parse."
+    },
+    {
+      "name": "claim-without-type",
+      "file": "claim-without-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim with no type is refused at parse."
+    },
+    {
+      "name": "consistency-under-linear",
+      "file": "consistency-under-linear.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A consistency proof under a linear profile is refused at parse rather than ignored."
+    },
+    {
+      "name": "coords-without-chain",
+      "file": "coords-without-chain.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "Chain coordinates on a claim of a bundle that declares no chain are refused at parse, because unchained claims are unproved by construction."
+    },
+    {
+      "name": "created-at-comma-fraction",
+      "file": "created-at-comma-fraction.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A created_at with a comma before its fractional second is not RFC 3339 and is refused at parse."
+    },
+    {
+      "name": "created-at-malformed",
+      "file": "created-at-malformed.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A created_at that is not RFC 3339 is refused at parse."
+    },
+    {
+      "name": "created-at-offset-hour-24",
+      "file": "created-at-offset-hour-24.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A created_at whose offset hour is 24 is not RFC 3339 and is refused at parse."
+    },
+    {
+      "name": "created-at-offset-minute-60",
+      "file": "created-at-offset-minute-60.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A created_at whose offset minute is 60 is not RFC 3339 and is refused at parse."
+    },
+    {
+      "name": "created-at-one-digit-hour",
+      "file": "created-at-one-digit-hour.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A created_at with a one-digit hour is not RFC 3339 and is refused at parse, although a general date parser reads it."
+    },
+    {
+      "name": "disclosure-null",
+      "file": "disclosure-null.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A null entry in a claim's disclosures is refused at parse rather than read as an empty disclosure."
+    },
+    {
       "name": "duplicate-top-level-key",
       "file": "duplicate-top-level-key.loomseal.json",
       "must_verify": false,
       "level": "not verified",
       "failing_check": "parse",
       "why": "A repeated object key has no canonical form and is rejected."
+    },
+    {
+      "name": "escape-invalid-hex",
+      "file": "escape-invalid-hex.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A \\u escape whose digits are not hex is refused at parse, with a verdict and never a crash."
     },
     {
       "name": "evidence-altered-record",
@@ -228,6 +412,22 @@
       "failing_check": "evidence",
       "why": "An artifact at its declared location whose bytes no longer hash to the sealed digest fails the bundle, which then reports no level and no disclosed member, though every check before the evidence check passed.",
       "evidence": true
+    },
+    {
+      "name": "evidence-empty-role",
+      "file": "evidence-empty-role.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An evidence entry with an empty role is refused at parse."
+    },
+    {
+      "name": "evidence-present-string",
+      "file": "evidence-present-string.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An evidence present flag that is not a boolean is refused at parse."
     },
     {
       "name": "evidence-referenced",
@@ -245,12 +445,36 @@
       "why": "A loomseal-chain-v1 chain whose params.install_id is not the producer's is refused, which is what stops one install from restating another's producer block over its links."
     },
     {
+      "name": "head-attestation-at-one-digit-hour",
+      "file": "head-attestation-at-one-digit-hour.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "attestation",
+      "why": "A head attestation whose signed at has a one-digit hour is refused, because the time is not RFC 3339."
+    },
+    {
+      "name": "head-attestation-key-line-break",
+      "file": "head-attestation-key-line-break.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "attestation",
+      "why": "A head attestation whose public_key carries a line break inside its base64 is refused rather than decoded by skipping the break."
+    },
+    {
       "name": "head-attestation-role-swapped",
       "file": "head-attestation-role-swapped.loomseal.json",
       "must_verify": false,
       "level": "not verified",
       "failing_check": "attestation",
       "why": "A head attestation whose role is rewritten after signing fails, because the role sits inside the signed preimage."
+    },
+    {
+      "name": "head-attestation-sig-line-break",
+      "file": "head-attestation-sig-line-break.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "attestation",
+      "why": "A head attestation whose sig carries a line break inside its base64 is refused rather than decoded by skipping the break."
     },
     {
       "name": "head-attested",
@@ -276,6 +500,14 @@
       "why": "A head at the newest sequence must carry that claim's link."
     },
     {
+      "name": "inclusion-under-linear",
+      "file": "inclusion-under-linear.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An inclusion proof on a claim under a linear profile is refused at parse rather than ignored, because a reader who sees a proof assumes some verifier checked it."
+    },
+    {
       "name": "keyed-anchored-structural",
       "file": "keyed-anchored-structural.loomseal.json",
       "must_verify": true,
@@ -283,11 +515,27 @@
       "why": "A keyed chain verifies structurally only, so an anchor over its head is matched and reported but earns no anchored wording: the verifier never recomputed the link to tie it to the claim content."
     },
     {
+      "name": "keyed-string",
+      "file": "keyed-string.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A chain keyed flag written as a string is refused at parse, never read as true."
+    },
+    {
       "name": "keyed-structural",
       "file": "keyed-structural.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (structural)",
       "why": "A keyed chain verifies as structural: continuity holds, links are not recomputed."
+    },
+    {
+      "name": "keyed-zero",
+      "file": "keyed-zero.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A chain keyed flag written as a number is refused at parse, never read as false."
     },
     {
       "name": "lone-high-surrogate",
@@ -396,6 +644,14 @@
       "why": "A log of one leaf verifies with an empty audit path, which is the correct and only path at that size."
     },
     {
+      "name": "merkle-span-claim",
+      "file": "merkle-span-claim.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "span",
+      "why": "A span claim in a tree bundle is refused rather than checked, because a tree has no per-entry predecessor and no contiguous beats for the coverage check to run over."
+    },
+    {
       "name": "merkle-sparse",
       "file": "merkle-sparse.loomseal.json",
       "must_verify": true,
@@ -409,6 +665,28 @@
       "level": "not verified",
       "failing_check": "chain",
       "why": "A claim moved to another position does not prove membership at that position."
+    },
+    {
+      "name": "nesting-3000-deep",
+      "file": "nesting-3000-deep.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A payload nested 3000 levels deep verifies, because it is within the nesting bound and a verifier must reach a verdict rather than exhaust its stack."
+    },
+    {
+      "name": "nesting-at-bound",
+      "file": "nesting-at-bound.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A document nested exactly 3200 levels deep verifies: the bound is inclusive, and a verifier holds it whatever its own stack."
+    },
+    {
+      "name": "nesting-past-bound",
+      "file": "nesting-past-bound.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A document nested 3201 levels deep is refused at parse, one level past the bound, before any recursive reader sees it."
     },
     {
       "name": "non-integer-number",
@@ -427,6 +705,14 @@
       "why": "Claims must be contiguous in sequence; a gap is a broken chain."
     },
     {
+      "name": "number-5000-digits",
+      "file": "number-5000-digits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An integer literal of 5000 digits is refused as beyond 2^53, with a verdict and never a crash."
+    },
+    {
       "name": "number-exceeds-2p53",
       "file": "number-exceeds-2p53.loomseal.json",
       "must_verify": false,
@@ -435,12 +721,68 @@
       "why": "An integer beyond 2^53 does not round-trip through an IEEE double and is rejected."
     },
     {
+      "name": "params-null",
+      "file": "params-null.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A chain params member written as null is refused at parse rather than read as the empty string."
+    },
+    {
+      "name": "params-number",
+      "file": "params-number.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A chain params member that is not a string is refused at parse, because the schema types every params value as a string."
+    },
+    {
+      "name": "payload-array",
+      "file": "payload-array.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim payload written as an array is refused at parse."
+    },
+    {
+      "name": "payload-string",
+      "file": "payload-string.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim payload that is not a JSON object is refused at parse."
+    },
+    {
+      "name": "prev-null",
+      "file": "prev-null.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A prev written as null is refused at parse rather than read as the empty string and recomputed as genesis."
+    },
+    {
+      "name": "producer-empty-product",
+      "file": "producer-empty-product.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An empty producer product is refused at parse."
+    },
+    {
       "name": "producer-keyid-mismatch",
       "file": "producer-keyid-mismatch.loomseal.json",
       "must_verify": false,
       "level": "not verified",
       "failing_check": "signature",
       "why": "The producer key_id must be the digest of the embedded public key."
+    },
+    {
+      "name": "public-key-line-break",
+      "file": "public-key-line-break.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A producer public_key whose base64 carries a line break is refused at parse, because a decoder that skips line breaks would give one key many spellings."
     },
     {
       "name": "raw-invalid-utf8",
@@ -459,6 +801,22 @@
       "unchecked": [
         "claim 0 reason_text"
       ]
+    },
+    {
+      "name": "seq-true",
+      "file": "seq-true.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A sequence number written as a boolean is refused at parse, never hashed as a number."
+    },
+    {
+      "name": "seq-zero",
+      "file": "seq-zero.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A sequence number below one is refused at parse."
     },
     {
       "name": "signature-alg-rewritten",
@@ -482,6 +840,14 @@
       "level": "not verified",
       "failing_check": "signature",
       "why": "A signatures entry naming a key the producer block does not hold fails the bundle. The array sits outside the signed bytes, so a foreign entry is a rider nothing vouches for, and it must not travel inside a green verdict."
+    },
+    {
+      "name": "signature-line-break",
+      "file": "signature-line-break.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A signature whose base64 carries a line break is refused at parse."
     },
     {
       "name": "signature-no-entry-verifies",
@@ -528,6 +894,78 @@
       "why": "A bundle with no chain reaches the signed level and no further."
     },
     {
+      "name": "span-beat-bool",
+      "file": "span-beat-bool.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "span",
+      "why": "A beat of true is not an integer and fails the span check, never read as beat 1."
+    },
+    {
+      "name": "span-cadence-bool",
+      "file": "span-cadence-bool.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "span",
+      "why": "A cadence of true is not an integer and fails the span check, never read as 1."
+    },
+    {
+      "name": "span-cadence-huge",
+      "file": "span-cadence-huge.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "span",
+      "why": "A cadence of ten billion seconds is inside the integer range but outside the cadence range, so it fails the span check rather than overflowing a verifier's arithmetic."
+    },
+    {
+      "name": "span-cadence-max",
+      "file": "span-cadence-max.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A cadence of 31622400 seconds, a 366-day year, is the widest a span claim may declare, and a gap of centuries at it is measured exactly.",
+      "span_coverage": "2/374 windows attested",
+      "span_longest_gap": "11784301140s",
+      "span_gaps": [
+        "unattested window of 11784301140s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2400-01-01T00:00:00Z)"
+      ]
+    },
+    {
+      "name": "span-cadence-past-max",
+      "file": "span-cadence-past-max.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "span",
+      "why": "A cadence one second wider than a 366-day year is outside the range the format allows and fails the span check."
+    },
+    {
+      "name": "span-cadence-wraps",
+      "file": "span-cadence-wraps.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A cadence of 2^58 seconds is outside the integer profile and is rejected, and no verifier may crash measuring it, though it wraps to zero in microseconds."
+    },
+    {
+      "name": "span-centuries",
+      "file": "span-centuries.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "Beats centuries apart are a gap measured exactly, with every missed window counted, never clamped to a largest duration.",
+      "span_coverage": "2/196405020 windows attested",
+      "span_longest_gap": "11784301140s",
+      "span_gaps": [
+        "unattested window of 11784301140s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2400-01-01T00:00:00Z)"
+      ]
+    },
+    {
+      "name": "span-count-bool",
+      "file": "span-count-bool.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "span",
+      "why": "A count of false is not an integer and fails the span check, never read as 0."
+    },
+    {
       "name": "span-false-count",
       "file": "span-false-count.loomseal.json",
       "must_verify": false,
@@ -540,14 +978,40 @@
       "file": "span-gap.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full), anchored by reference, spanned",
-      "why": "Beats further apart than the declared cadence are a reported gap, never a hidden one and never a failure."
+      "why": "Beats further apart than the declared cadence are a reported gap, never a hidden one and never a failure.",
+      "span_coverage": "2/4 windows attested",
+      "span_longest_gap": "180s",
+      "span_gaps": [
+        "unattested window of 180s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2026-07-27T15:04:00Z)"
+      ]
+    },
+    {
+      "name": "span-half-window",
+      "file": "span-half-window.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A gap of two and a half cadences counts three windows, because halves round up, so two windows were missed and the duration is written in whole seconds.",
+      "span_coverage": "2/4 windows attested",
+      "span_longest_gap": "150s",
+      "span_gaps": [
+        "unattested window of 150s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2026-07-27T15:03:30Z)"
+      ]
+    },
+    {
+      "name": "span-jitter",
+      "file": "span-jitter.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A beat half a second late at a one minute cadence is a timer firing late, inside the slack, and not a gap. Beat times are read to the microsecond.",
+      "span_coverage": "2/2 windows attested"
     },
     {
       "name": "span-mid-adoption",
       "file": "span-mid-adoption.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full), anchored by reference, spanned",
-      "why": "A chain adopting the profile mid-life attests its entire prior population at beat 1."
+      "why": "A chain adopting the profile mid-life attests its entire prior population at beat 1.",
+      "span_coverage": "1/1 windows attested"
     },
     {
       "name": "span-missing-beat",
@@ -558,11 +1022,92 @@
       "why": "A beat number that skips is a deleted window and fails."
     },
     {
+      "name": "span-round-below-half",
+      "file": "span-round-below-half.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A gap of 62.4999995s reads 62s: the beat time is read to the microsecond first, which leaves 62.499999s, and that rounds down.",
+      "span_coverage": "2/2 windows attested",
+      "span_longest_gap": "62s",
+      "span_gaps": [
+        "unattested window of 62s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2026-07-27T15:02:02Z)"
+      ]
+    },
+    {
+      "name": "span-round-half-up",
+      "file": "span-round-half-up.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A gap of 62.5s reads 63s, because a duration rounds to the nearest whole second with halves up, while the beat time beside it drops its fraction and reads 15:02:02.",
+      "span_coverage": "2/2 windows attested",
+      "span_longest_gap": "63s",
+      "span_gaps": [
+        "unattested window of 63s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2026-07-27T15:02:02Z)"
+      ]
+    },
+    {
+      "name": "span-slack-edge",
+      "file": "span-slack-edge.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A beat landing exactly one scheduling slack past its cadence is on time: the slack is a hundredth of the cadence and never under a second, and the edge is inclusive.",
+      "span_coverage": "2/2 windows attested"
+    },
+    {
+      "name": "span-slack-past",
+      "file": "span-slack-past.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A beat landing one second past the scheduling slack is a reported gap even though no whole window was missed, so the gap list and the window count answer different questions.",
+      "span_coverage": "2/2 windows attested",
+      "span_longest_gap": "62s",
+      "span_gaps": [
+        "unattested window of 62s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2026-07-27T15:02:02Z)"
+      ]
+    },
+    {
+      "name": "span-slack-proportional",
+      "file": "span-slack-proportional.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "At a ten minute cadence the scheduling slack is six seconds, a hundredth of the cadence, so a beat six seconds late is on time.",
+      "span_coverage": "2/2 windows attested"
+    },
+    {
+      "name": "span-slack-proportional-past",
+      "file": "span-slack-proportional-past.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "At a ten minute cadence a beat seven seconds late is one second past the slack and is a reported gap.",
+      "span_coverage": "2/2 windows attested",
+      "span_longest_gap": "607s",
+      "span_gaps": [
+        "unattested window of 607s between beat 1 (2026-07-27T15:01:00Z) and beat 2 (2026-07-27T15:11:07Z)"
+      ]
+    },
+    {
+      "name": "span-sub-microsecond",
+      "file": "span-sub-microsecond.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored by reference, spanned",
+      "why": "A beat a tenth of a microsecond past the slack edge is on time, because beat times are read to the microsecond with finer digits dropped.",
+      "span_coverage": "2/2 windows attested"
+    },
+    {
       "name": "span-valid",
       "file": "span-valid.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full), anchored by reference, spanned",
-      "why": "Two beats whose counts recompute from the sequence numbers earn the spanned level."
+      "why": "Two beats whose counts recompute from the sequence numbers earn the spanned level.",
+      "span_coverage": "2/2 windows attested"
+    },
+    {
+      "name": "subject-empty-id",
+      "file": "subject-empty-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An empty subject id is refused at parse."
     },
     {
       "name": "subject-known-agent",
@@ -612,6 +1157,14 @@
       "must_verify": true,
       "level": "signed, chained (full)",
       "why": "The subject type url is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
+      "name": "subject-string",
+      "file": "subject-string.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A subject that is not an object is refused at parse, with a verdict and never a crash."
     },
     {
       "name": "subject-unknown-type",
@@ -736,6 +1289,33 @@
       "file": "switchtender-install-minted-from-producer-key.loomseal.json",
       "must_verify": true,
       "why": "A switchtender-audit-v1 install id minted from the producer's own key verifies unpinned."
+    },
+    {
+      "name": "switchtender-keyed",
+      "file": "switchtender-keyed.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "chain",
+      "why": "A switchtender-audit-v1 chain declared keyed fails the chain check, because the profile is unkeyed and every link must be recomputed."
+    },
+    {
+      "name": "switchtender-keyed-altered",
+      "file": "switchtender-keyed-altered.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "chain",
+      "why": "A switchtender-audit-v1 claim altered after its link was computed fails, although the chain declares itself keyed to avoid the recompute."
+    },
+    {
+      "name": "switchtender-outcome-deep",
+      "file": "switchtender-outcome-deep.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Outcome records nested 20000 and 5000 levels deep reproduce their entries' digests and verify. Each is past the depth an outcome record is read to, so neither names a spec digest, and the spec beside each is unchecked rather than a reason for a verifier to stop without a verdict.",
+      "unchecked": [
+        "claim 1 spec_body",
+        "claim 2 spec_body"
+      ]
     },
     {
       "name": "switchtender-outcome-exact",
@@ -1476,6 +2056,438 @@
       "level": "not verified",
       "failing_check": "signature",
       "why": "A byte changed after signing fails the producer signature."
+    },
+    {
+      "name": "type-anchor-at",
+      "file": "type-anchor-at.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "anchors[0].at holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-anchor-link",
+      "file": "type-anchor-link.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "anchors[0].link holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-anchor-proof",
+      "file": "type-anchor-proof.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "anchors[0].proof holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-anchor-ref",
+      "file": "type-anchor-ref.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "anchors[0].ref holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-anchor-seq",
+      "file": "type-anchor-seq.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "anchors[0].seq holds a JSON boolean, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-anchor-type",
+      "file": "type-anchor-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "anchors[0].type holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-attestation-alg",
+      "file": "type-attestation-alg.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].attestations[0].alg holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-attestation-at",
+      "file": "type-attestation-at.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].attestations[0].at holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-attestation-key-id",
+      "file": "type-attestation-key-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].attestations[0].key_id holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-attestation-public-key",
+      "file": "type-attestation-public-key.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].attestations[0].public_key holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-attestation-role",
+      "file": "type-attestation-role.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].attestations[0].role holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-attestation-sig",
+      "file": "type-attestation-sig.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].attestations[0].sig holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-bundle-id",
+      "file": "type-bundle-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "bundle_id holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-chain-profile",
+      "file": "type-chain-profile.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "chain.profile holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-claim-at",
+      "file": "type-claim-at.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].at holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-claim-link",
+      "file": "type-claim-link.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].chain.link holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-claim-prev",
+      "file": "type-claim-prev.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].chain.prev holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-claim-seq",
+      "file": "type-claim-seq.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].chain.seq holds a JSON boolean, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-claim-type",
+      "file": "type-claim-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].type holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-consistency-from-root",
+      "file": "type-consistency-from-root.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "chain.consistency.from_root holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-consistency-from-size",
+      "file": "type-consistency-from-size.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "chain.consistency.from_size holds a JSON boolean, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-consistency-path",
+      "file": "type-consistency-path.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "chain.consistency.path holds a JSON array holding a number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-created-at",
+      "file": "type-created-at.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "created_at holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-disclosure-name",
+      "file": "type-disclosure-name.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].disclosures[0].name holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-disclosure-salt",
+      "file": "type-disclosure-salt.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].disclosures[0].salt holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-evidence-digest",
+      "file": "type-evidence-digest.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].evidence[0].digest holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-evidence-location",
+      "file": "type-evidence-location.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].evidence[0].location holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-evidence-media-type",
+      "file": "type-evidence-media-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].evidence[0].media_type holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-evidence-role",
+      "file": "type-evidence-role.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].evidence[0].role holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-attestation-alg",
+      "file": "type-head-attestation-alg.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "attestations[0].alg holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-attestation-at",
+      "file": "type-head-attestation-at.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "attestations[0].at holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-attestation-key-id",
+      "file": "type-head-attestation-key-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "attestations[0].key_id holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-attestation-public-key",
+      "file": "type-head-attestation-public-key.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "attestations[0].public_key holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-attestation-role",
+      "file": "type-head-attestation-role.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "attestations[0].role holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-attestation-sig",
+      "file": "type-head-attestation-sig.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "attestations[0].sig holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-link",
+      "file": "type-head-link.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "chain.head.link holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-head-prev",
+      "file": "type-head-prev.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "chain.head.prev holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-inclusion-path",
+      "file": "type-inclusion-path.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].inclusion.path holds a JSON array holding a number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-loomseal",
+      "file": "type-loomseal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "loomseal holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-producer-install-id",
+      "file": "type-producer-install-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "producer.install_id holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-producer-key-id",
+      "file": "type-producer-key-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "producer.key_id holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-producer-product",
+      "file": "type-producer-product.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "producer.product holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-producer-product-version",
+      "file": "type-producer-product-version.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "producer.product_version holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-producer-public-key",
+      "file": "type-producer-public-key.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "producer.public_key holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-signature-alg",
+      "file": "type-signature-alg.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "signatures[0].alg holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-signature-key-id",
+      "file": "type-signature-key-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "signatures[0].key_id holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-signature-sig",
+      "file": "type-signature-sig.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "signatures[0].sig holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-subject-id",
+      "file": "type-subject-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "subject.id holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-subject-type",
+      "file": "type-subject-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "subject.type holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-verdict-decision",
+      "file": "type-verdict-decision.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].verdict.decision holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-verdict-detail",
+      "file": "type-verdict-detail.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].verdict.detail holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-verdict-inputs-digest",
+      "file": "type-verdict-inputs-digest.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].verdict.inputs_digest holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-verdict-policy",
+      "file": "type-verdict-policy.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].verdict.policy holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
+    },
+    {
+      "name": "type-verdict-policy-digest",
+      "file": "type-verdict-policy-digest.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "claims[0].verdict.policy_digest holds a JSON number, a type the schema does not allow there, so it is refused at parse rather than read as another type."
     },
     {
       "name": "unknown-chain-profile",

@@ -45,6 +45,10 @@ func wrap(t *testing.T, profile string, keyed bool, params map[string]any,
 	claims []any, head map[string]any) ([]byte, *bundle.Bundle) {
 	t.Helper()
 	keyID := "sha256:" + strings.Repeat("ab", 32)
+	decl := map[string]any{"profile": profile, "keyed": keyed, "head": head}
+	if params != nil {
+		decl["params"] = params
+	}
 	m := map[string]any{
 		"loomseal":   "0.1",
 		"bundle_id":  "lsb_test",
@@ -57,10 +61,8 @@ func wrap(t *testing.T, profile string, keyed bool, params map[string]any,
 			"key_id":          keyID,
 		},
 		"subject": map[string]any{"type": "url", "id": "https://example.com"},
-		"chain": map[string]any{
-			"profile": profile, "keyed": keyed, "params": params, "head": head,
-		},
-		"claims": claims,
+		"chain":   decl,
+		"claims":  claims,
 		"signatures": []any{map[string]any{
 			"key_id": keyID, "alg": "ed25519",
 			"sig": base64.StdEncoding.EncodeToString(make([]byte, 64)),

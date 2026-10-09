@@ -26,6 +26,22 @@
       "why": "A holder carrying the signed key id under a name that folds onto key_id is refused at parse, rather than checked in place of the key_id the document shows."
     },
     {
+      "name": "present-created-at-comma-fraction",
+      "file": "present-created-at-comma-fraction.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose created_at has a comma before its fractional second is refused, because the time is not RFC 3339."
+    },
+    {
+      "name": "present-created-at-one-digit-hour",
+      "file": "present-created-at-one-digit-hour.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose created_at has a one-digit hour is refused, because the time is not RFC 3339."
+    },
+    {
       "name": "present-empty-audience",
       "file": "present-valid.loomseal-presentation.json",
       "expect_audience": "",
@@ -42,10 +58,42 @@
       "why": "An expected nonce supplied empty is refused before anything is verified, by every entry point that can tell it from an absent one, rather than read as no expectation and the replay defense skipped."
     },
     {
+      "name": "present-holder-key-line-break",
+      "file": "present-holder-key-line-break.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose holder public_key carries a line break inside its base64 is refused rather than decoded by skipping the break."
+    },
+    {
       "name": "present-no-pins",
       "file": "present-valid.loomseal-presentation.json",
       "must_verify": true,
       "why": "The same presentation with no pins verifies: the pins are the caller's to require."
+    },
+    {
+      "name": "present-number-exceeds-2p53",
+      "file": "present-number-exceeds-2p53.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose bundle carries an integer beyond 2^53 is refused at parse, with a verdict and never a crash."
+    },
+    {
+      "name": "present-past-bound",
+      "file": "present-past-bound.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation nested one level past the bound is refused at parse, although the bundle it carries is within the bound and verifies alone."
+    },
+    {
+      "name": "present-sig-line-break",
+      "file": "present-sig-line-break.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose holder signature carries a line break inside its base64 is refused rather than decoded by skipping the break."
     },
     {
       "name": "present-stale-nonce",

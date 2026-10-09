@@ -2,12 +2,10 @@ package verify
 
 import (
 	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/kordloom/loomseal/internal/bundle"
 	"github.com/kordloom/loomseal/jcs"
@@ -115,6 +113,9 @@ var (
 // of the presentation version member under its exact name. It lets one command accept either
 // document.
 func LooksLikePresentation(raw []byte) bool {
+	if bundle.CheckDepth(raw, bundle.MaxDepth) != nil {
+		return false
+	}
 	tree, err := jcs.Parse(raw)
 	if err != nil {
 		return false
@@ -128,6 +129,9 @@ func LooksLikePresentation(raw []byte) bool {
 // name. The presented bundle is carried forward as its canonical bytes, which are what the holder
 // signature covers and what the bundle's own signature is checked over.
 func parsePresentation(raw []byte) (Presentation, error) {
+	if err := bundle.CheckDepth(raw, bundle.MaxDepth); err != nil {
+		return Presentation{}, err
+	}
 	tree, err := jcs.Parse(raw)
 	if err != nil {
 		return Presentation{}, err
@@ -249,7 +253,7 @@ func (r *PresentationReport) checkHolderSignature(p Presentation, bundleCanon []
 	if p.Holder.Alg != "ed25519" {
 		return fmt.Errorf("holder alg %q, want ed25519", p.Holder.Alg)
 	}
-	pub, err := base64.StdEncoding.DecodeString(p.Holder.PublicKey)
+	pub, err := bundle.DecodeBase64(p.Holder.PublicKey)
 	if err != nil || len(pub) != ed25519.PublicKeySize {
 		return fmt.Errorf("holder public_key is not a 32 byte ed25519 key")
 	}
@@ -257,10 +261,10 @@ func (r *PresentationReport) checkHolderSignature(p Presentation, bundleCanon []
 	if r.HolderKeyID != p.Holder.KeyID {
 		return fmt.Errorf("holder key_id does not match the embedded public key")
 	}
-	if _, err := time.Parse(time.RFC3339, p.CreatedAt); err != nil {
+	if _, err := bundle.ParseTime(p.CreatedAt); err != nil {
 		return fmt.Errorf("presentation created_at: %v", err)
 	}
-	sig, err := base64.StdEncoding.DecodeString(p.Sig)
+	sig, err := bundle.DecodeBase64(p.Sig)
 	if err != nil {
 		return fmt.Errorf("holder signature is not base64: %v", err)
 	}

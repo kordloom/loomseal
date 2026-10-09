@@ -415,6 +415,11 @@
         <tr><td><code>signatures</code></td><td>yes</td><td>At least one producer signature over the bundle</td></tr>
       </table>
     </div>
+    <p>The subject vocabulary this format knows is <code>url</code>, <code>fleet</code>,
+    <code>repo</code>, <code>agent</code>, <code>host</code>, <code>run</code>, and
+    <code>org</code>. A verifier reports a subject type outside it by name and continues. Every
+    shipped verifier holds this same list, and a conformance vector per known type pins that they
+    do.</p>
     <p>Example, a bundle at level 3 on the generic profile (digests are illustrative):</p>
     <pre><code>{
   "loomseal": "0.1",
@@ -519,6 +524,16 @@
     signature. A bundle carries at least one signature whose <code>key_id</code> matches
     <code>producer.key_id</code>. Verifiers compare <code>key_id</code> against a pinned
     fingerprint when the caller provides one.</p>
+    <p>A pin is <code>sha256:</code> and 64 lowercase hex digits. A verifier refuses a pin its
+    caller supplied in any other form, an empty one included, before it verifies anything: a caller
+    who supplied a pin meant to pin, and an empty value read as no pin would verify a bundle from any
+    key with the outcome of a matched one. This binds every entry point that can tell a supplied pin
+    from an absent one, such as a command-line flag or a function argument. A library option whose
+    empty value means no pin is the unpinned run by construction, and a malformed pin given there
+    fails the bundle as a mismatch. A bundle that verifies with no pin reads the same
+    <code>VERIFIED</code> as a pinned one, beside a line saying no signer was pinned and with
+    <code>producer_pinned</code> false in the report. The qualification is that line, never a
+    different word, so every shipped surface prints one verdict for one report.</p>
     <p>SwitchTender's existing signed audit export uses hex-encoded keys; its LoomSeal
     emitter re-encodes the same key as base64. Same key, same trust, one envelope.</p>
     <p>Signature entries carry an <code>alg</code> field so the format can adopt new
@@ -682,7 +697,11 @@
       compare. Evidence not supplied is reported as referenced, not checked, never as
       verified.</li>
       <li>Report the conformance level achieved and an overall verdict. Any failed check
-      fails the bundle.</li>
+      fails the bundle, and a failed bundle achieved no level: its report words the level as
+      <code>not verified</code>, whatever the earlier steps held, and a bundle the verifier does
+      not implement words it as <code>unsupported</code>. The level names what the verdict
+      established, never the step a failed bundle reached, so a reader keying on it is not told
+      that a bundle with a corrupt anchor proof is anchored.</li>
     </ol>
     <p>Who can verify what:</p>
     <div class="table-wrap">

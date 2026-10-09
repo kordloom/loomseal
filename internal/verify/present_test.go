@@ -5,6 +5,8 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/kordloom/loomseal/seal"
@@ -102,5 +104,30 @@ func TestPresentationHolderKeyGuards(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("problems %v do not mention the key size", got.Problems)
+	}
+}
+
+// TestCheckExpectation pins that an expected audience or nonce supplied empty is refused. Empty
+// is what a shell sends for an unset variable, and read as no expectation it would skip the
+// comparison.
+func TestCheckExpectation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		In   string
+		Want error
+	}{{ // Test 0: Empty compares against nothing.
+		In: "", Want: ErrExpectation,
+	}, { // Test 1: Any value is an expectation to compare against.
+		In: "chal-1", Want: nil,
+	}, { // Test 2: Whitespace is a value the presentation can carry, so it is compared, not refused.
+		In: " ", Want: nil,
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			if got := CheckExpectation(test.In); !errors.Is(got, test.Want) {
+				t.Errorf("CheckExpectation(%q) = %v, want %v", test.In, got, test.Want)
+			}
+		})
 	}
 }

@@ -119,9 +119,62 @@ check("withheld reason singular", true,
   "reasons    1 withheld by the holder, category claimed and not committed: trade_secret");
 check("withheld reasons never vouched", false, renderToHTML(withheld), "unopenable by design");
 
+// The verdict banner is the command line's final line. A verified bundle names its level beside the
+// word, a failed one names no level at all, since it achieved none, and an unsupported one carries
+// the sentence that says it was never judged.
+check("verified banner names the level", true, renderToHTML(base({})),
+  '<div class="verdict ok">VERIFIED   signed, chained (full)</div>');
+const failed = base({ ok: false, level: "signed, chained (full)",
+  problems: ["anchor 0 proof does not verify: not a timestamp token"] });
+check("failed banner is bare", true, renderToHTML(failed), '<div class="verdict no">NOT VERIFIED</div>');
+check("failed banner carries no level", false, renderToHTML(failed), "NOT VERIFIED   ");
+check("unsupported banner", true,
+  renderToHTML({ ok: false, unsupported: true, level: "unsupported",
+    problems: ["unsupported bundle: loomseal version \"9.0\""] }),
+  '<div class="verdict no">UNSUPPORTED  this verifier does not implement what the bundle declares; ' +
+  "not judged</div>");
+
+// An unpinned pass reads VERIFIED with the pin NONE notice beneath it, the one word the command line
+// prints for the same report, so the two surfaces never show a reader two verdicts for one file.
+const unpinned = renderToHTML(base({ producer_pinned: false }));
+check("unpinned pass verdict word", true, unpinned,
+  '<div class="verdict ok">VERIFIED   signed, chained (full)</div>');
+check("unpinned pass carries pin NONE", true, unpinned, "pin        NONE");
+
+// A presentation renders its own verdict and lines, then the wrapped bundle's lines and verdict
+// line, as the command line prints them. A pin that was not compared is said to be unchecked.
+const presentation = {
+  ok: true, presentation_ok: true, holder_key_id: "sha256:dd", audience: "acme", nonce: "chal-1",
+  created_at: "2026-07-27T12:00:00Z", audience_match: true, nonce_match: true, bundle: base({}),
+};
+const presHTML = renderToHTML(presentation);
+check("presentation banner", true, presHTML, '<div class="verdict ok">PRESENTATION VERIFIED</div>');
+check("presented line", true, presHTML, "presented  by holder sha256:dd to &quot;acme&quot;");
+check("audience match line", true, presHTML, "audience   match true");
+check("nonce match line", true, presHTML, "nonce      match true");
+check("wrapped bundle follows a separator", true, presHTML, "\n---\nbundle     lsb from p 1");
+check("wrapped bundle verdict line", true, presHTML, "\nVERIFIED   signed, chained (full)</code>");
+check("NOT CHECKED absent when both pins compared", false, presHTML, "NOT CHECKED");
+const unchallenged = Object.assign({}, presentation, { audience_match: undefined, nonce_match: null });
+const unchallengedHTML = renderToHTML(unchallenged);
+check("nonce NOT CHECKED present", true, unchallengedHTML,
+  "nonce      &quot;chal-1&quot;, NOT CHECKED, so a presentation made for an older\n" +
+  "           challenge replays freely: pass --nonce with the one you issued");
+check("audience NOT CHECKED present", true, unchallengedHTML,
+  "audience   NOT CHECKED: pass --audience with the identifier you expect");
+const failedPresentation = { ok: false, presentation_ok: false,
+  problems: ["holder signature does not verify over the presented bundle"], bundle: base({}) };
+const failedPresHTML = renderToHTML(failedPresentation);
+check("failed presentation banner", true, failedPresHTML,
+  '<div class="verdict no">PRESENTATION NOT VERIFIED</div>');
+check("failed presentation line", true, failedPresHTML, "presented  FAILED");
+check("failed presentation problem", true, failedPresHTML,
+  "problem    holder signature does not verify over the presented bundle");
+
 if (bad === 0) {
   console.log("ALL NOTICES RENDERED  pin NONE, ALTERED, declared head, unknown claim type, install, " +
-    "attestors, unchecked members, records, legacy, withheld reasons");
+    "attestors, unchecked members, records, legacy, withheld reasons, verdict banners, " +
+    "presentations");
   process.exit(0);
 }
 console.log(`${bad} NOTICE MISMATCH`);

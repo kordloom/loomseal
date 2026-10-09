@@ -134,7 +134,8 @@
       <a class="home" href="/">loomseal.com</a>
     </header>
 
-    <div id="drop" tabindex="0" role="button" aria-label="Choose or drop a LoomSeal bundle">
+    <div id="drop" tabindex="0" role="button"
+         aria-label="Choose or drop a LoomSeal bundle or presentation">
       <p class="drop-main" id="drop-main">Loading the verifier&hellip;</p>
       <p class="drop-sub" id="drop-sub">The same verifier the command line runs.</p>
     </div>
@@ -147,13 +148,23 @@
       <label for="fp">Pin the producer key (optional)</label>
       <input type="text" id="fp" placeholder="sha256:&hellip;" spellcheck="false" autocomplete="off">
     </div>
+    <div class="pin">
+      <label for="aud">For a presentation, the audience you expect (optional)</label>
+      <input type="text" id="aud" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="pin">
+      <label for="nonce">For a presentation, the nonce you issued (optional)</label>
+      <input type="text" id="nonce" spellcheck="false" autocomplete="off">
+    </div>
 
     <div id="out" aria-live="polite"></div>
 
     <p class="note">Evidence artifacts stay on your machine, so their digests are reported as
     referenced rather than verified. To check artifacts too, run
-    <code>loomseal verify</code> with <code>--evidence</code>. What a verdict does and does not
-    prove is set out in the <a href="/spec">spec</a>.</p>
+    <code>loomseal verify</code> with <code>--evidence</code>. A holder presentation is accepted
+    here as it is on the command line, and checked against the audience and nonce you enter the
+    way <code>--audience</code> and <code>--nonce</code> check them. What a verdict does and does
+    not prove is set out in the <a href="/spec">spec</a>.</p>
   </div>
 
 <script src="/verify/render.js"></script>
@@ -166,6 +177,8 @@
   var sub = document.getElementById("drop-sub");
   var file = document.getElementById("file");
   var fp = document.getElementById("fp");
+  var aud = document.getElementById("aud");
+  var nonce = document.getElementById("nonce");
   var out = document.getElementById("out");
   var ready = false;
 
@@ -181,10 +194,13 @@
     var reader = new FileReader();
     reader.onload = function () {
       var bytes = new Uint8Array(reader.result);
-      var pin = fp.value.trim();
-      var raw = pin ? loomsealVerify(bytes, pin) : loomsealVerify(bytes);
+      // The file is routed the way loomseal verify routes it: a presentation to the presentation
+      // entry point, under the audience and nonce entered above, and a bundle to the bundle one.
+      // The routing lives in render.js so the module's self-test exercises this same path.
       try {
-        render(JSON.parse(raw), f.name);
+        render(LoomSeal.verifyBytes(bytes, {
+          pin: fp.value.trim(), audience: aud.value.trim(), nonce: nonce.value.trim(),
+        }), f.name);
       } catch (e) {
         out.innerHTML = '<div class="verdict no">NOT VERIFIED   report could not be read</div>';
       }

@@ -513,6 +513,17 @@ func TestRecordsHoldWhatTheirEntriesCommitted(t *testing.T) {
 				t.Errorf("problems %v do not mention %q", r.Problems, test.WantProblem)
 			}
 			if !test.WantOK {
+				// A failed bundle achieved no level and lists no disclosed state, which is what the
+				// reference reports for the same bytes; cross_verify_records.py holds it to the same.
+				if r.Level != "not verified" {
+					t.Errorf("level %q on a failed bundle, want %q", r.Level, "not verified")
+				}
+				if diff := cmp.Diff([]DisclosedMember(nil), r.Disclosed, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("a failed bundle lists disclosed members (-want +got):\n%s", diff)
+				}
+				if r.DisclosedUnchecked != 0 {
+					t.Errorf("a failed bundle counts %d unchecked records, want 0", r.DisclosedUnchecked)
+				}
 				return
 			}
 			got := recordCounts{Decisions: r.DecisionRecords, Corrections: r.CorrectionRecords,

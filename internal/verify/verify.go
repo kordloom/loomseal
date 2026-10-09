@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,19 @@ var knownClaimTypes = map[string]bool{
 	"loomseal.span/1":         true,
 	"loomseal.agentrun/1":     true,
 	"whodar.knowledge-risk/1": true,
+}
+
+// reFingerprint is the one form a producer key fingerprint takes.
+var reFingerprint = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// CheckFingerprint refuses a pin that is not sha256: and 64 lowercase hex digits. An empty pin is
+// refused too, because a caller who passed the flag meant to pin, and an empty value read as no
+// pin at all would verify a bundle from any key with the exit code of a matched one.
+func CheckFingerprint(pin string) error {
+	if !reFingerprint.MatchString(pin) {
+		return fmt.Errorf("%w: %q", ErrFingerprint, pin)
+	}
+	return nil
 }
 
 // Options carries the caller's verification inputs.
@@ -65,7 +79,9 @@ type Report struct {
 	// UnknownSubjectType carries a subject type outside the known vocabulary. Informational:
 	// subject types are vocabulary, not structure, and never fail a bundle.
 	UnknownSubjectType string `json:"unknown_subject_type,omitempty"`
-	// Level is the conformance wording achieved, such as "signed, chained (structural)".
+	// Level is the conformance wording achieved, such as "signed, chained (structural)". It names
+	// what the verdict established, so a report whose OK is false reads "not verified" whatever the
+	// earlier checks held, and an unsupported bundle reads "unsupported".
 	Level string `json:"level"`
 	// BundleID echoes the bundle's identifier.
 	BundleID string `json:"bundle_id,omitempty"`
@@ -241,7 +257,8 @@ type Report struct {
 	OutcomesUnchecked int `json:"outcomes_unchecked,omitempty"`
 	// Disclosed lists every payload member a switchtender-audit-v1 link does not commit, each
 	// checked against a commitment, redacted, or unchecked, with what it was held against or why
-	// not.
+	// not. Listed only on a bundle that verified: the states qualify a verified verdict, and a
+	// failed bundle has none to qualify.
 	Disclosed []DisclosedMember `json:"disclosed,omitempty"`
 	// DisclosedUnchecked is how many disclosed records are unchecked, a member and the one it travels
 	// with counted once. A bundle with any verifies with that number beside the word, never as plain
@@ -320,7 +337,12 @@ func Run(raw []byte, opts Options) *Report {
 	r.checkAnchors(b)
 	r.checkSpan(b, states)
 	r.checkEvidence(b, opts.EvidenceDir)
-	r.classifyDisclosed(b, trees, states)
+	// The disclosed states belong to a verified verdict. On a failed bundle they would describe
+	// checks a verifier may never have reached: this verifier runs every check, the reference stops
+	// at the first failure, and the two would list different states for the same bytes.
+	if len(r.Problems) == 0 {
+		r.classifyDisclosed(b, trees, states)
+	}
 
 	r.OK = len(r.Problems) == 0
 	r.Level = r.level()
@@ -768,9 +790,12 @@ func (r *Report) chainWording() string {
 	return wording
 }
 
-// level words the conformance achieved.
+// level words the conformance achieved. A bundle that failed any check achieved none: naming the
+// step it reached before failing would tell a reader keying on the level that a bundle with a
+// corrupt anchor proof is anchored, and would disagree with the reference verifier on the same
+// bytes.
 func (r *Report) level() string {
-	if !r.SignatureOK {
+	if !r.OK || !r.SignatureOK {
 		return "not verified"
 	}
 	level := "signed"

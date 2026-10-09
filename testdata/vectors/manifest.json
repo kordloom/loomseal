@@ -5,6 +5,7 @@
       "name": "anchor-corrupt-token",
       "file": "anchor-corrupt-token.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "anchor",
       "why": "An rfc3161 proof that does not open as a timestamp token fails the anchor check: a carried proof that is garbage must never grade the same as no proof."
     },
@@ -19,6 +20,7 @@
       "name": "anchor-matches-nothing",
       "file": "anchor-matches-nothing.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "anchor",
       "why": "An anchor whose coordinates match nothing in the bundle fails."
     },
@@ -33,6 +35,7 @@
       "name": "attestation-keyid-mismatch",
       "file": "attestation-keyid-mismatch.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "attestation",
       "why": "A counterparty attestation whose key_id is not the digest of its public key is refused, so it cannot misname its signer."
     },
@@ -40,6 +43,7 @@
       "name": "attestation-role-swapped",
       "file": "attestation-role-swapped.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "attestation",
       "why": "A counterparty attestation whose role was changed after signing no longer verifies, because the counter-signature binds the role as well as the link."
     },
@@ -61,6 +65,7 @@
       "name": "casefold-coords-seq",
       "file": "casefold-coords-seq.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A case variant of a claim's chain seq is refused at parse rather than folded onto the seq coordinate."
     },
@@ -68,6 +73,7 @@
       "name": "casefold-head-attestation-key-id",
       "file": "casefold-head-attestation-key-id.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A case variant of a head attestation's key_id is refused at parse rather than folded onto the key the attestation is checked against."
     },
@@ -75,6 +81,7 @@
       "name": "casefold-head-seq",
       "file": "casefold-head-seq.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A case variant of the chain head's seq is refused at parse rather than folded onto the coordinate the head match reads."
     },
@@ -82,6 +89,7 @@
       "name": "casefold-producer-install-id",
       "file": "casefold-producer-install-id.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A case variant of producer.install_id is refused at parse rather than folded onto the install_id field."
     },
@@ -89,6 +97,7 @@
       "name": "casefold-signature-key-id",
       "file": "casefold-signature-key-id.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A case variant of a signature's key_id is refused at parse rather than folded onto the key_id field."
     },
@@ -96,6 +105,7 @@
       "name": "casefold-span-beat",
       "file": "casefold-span-beat.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "The span field beat is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
     },
@@ -103,6 +113,7 @@
       "name": "casefold-span-cadence-s",
       "file": "casefold-span-cadence-s.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "The span field cadence_s is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
     },
@@ -110,6 +121,7 @@
       "name": "casefold-span-cadence-s-chain-v1",
       "file": "casefold-span-cadence-s-chain-v1.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Under a profile whose link commits the whole claim, the span field cadence_s is still read from its exact key, so a variant that folds onto it does not stand in for it."
     },
@@ -117,6 +129,7 @@
       "name": "casefold-span-count",
       "file": "casefold-span-count.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "The span field count is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
     },
@@ -124,6 +137,7 @@
       "name": "casefold-span-stream",
       "file": "casefold-span-stream.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "The span field stream is read from the exact canonical key, so a case variant holding a value that would pass does not fold onto it and the span check sees the lie."
     },
@@ -131,6 +145,7 @@
       "name": "casefold-switchtender-actor",
       "file": "casefold-switchtender-actor.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "The bound member actor is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
     },
@@ -138,6 +153,7 @@
       "name": "casefold-switchtender-actor-type",
       "file": "casefold-switchtender-actor-type.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "The bound member actor_type is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
     },
@@ -145,6 +161,7 @@
       "name": "casefold-switchtender-content-digest",
       "file": "casefold-switchtender-content-digest.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "The bound member content_digest is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
     },
@@ -152,6 +169,7 @@
       "name": "casefold-switchtender-install-id",
       "file": "casefold-switchtender-install-id.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "The bound member install_id is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
     },
@@ -159,6 +177,7 @@
       "name": "casefold-switchtender-method",
       "file": "casefold-switchtender-method.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "The bound member method is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
     },
@@ -166,6 +185,7 @@
       "name": "casefold-switchtender-on-behalf-of",
       "file": "casefold-switchtender-on-behalf-of.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "The bound member on_behalf_of is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
     },
@@ -173,6 +193,7 @@
       "name": "casefold-switchtender-path",
       "file": "casefold-switchtender-path.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "The bound member path is read from the exact canonical key, so a case variant holding the honest value does not fold onto it and the link recomputes over the lie."
     },
@@ -180,6 +201,7 @@
       "name": "chain-broken-prev",
       "file": "chain-broken-prev.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A prev link that does not match the prior link breaks continuity."
     },
@@ -194,8 +216,18 @@
       "name": "duplicate-top-level-key",
       "file": "duplicate-top-level-key.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A repeated object key has no canonical form and is rejected."
+    },
+    {
+      "name": "evidence-altered-record",
+      "file": "evidence-altered-record.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "evidence",
+      "why": "An artifact at its declared location whose bytes no longer hash to the sealed digest fails the bundle, which then reports no level and no disclosed member, though every check before the evidence check passed.",
+      "evidence": true
     },
     {
       "name": "evidence-referenced",
@@ -208,6 +240,7 @@
       "name": "foreign-install-linear",
       "file": "foreign-install-linear.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A loomseal-chain-v1 chain whose params.install_id is not the producer's is refused, which is what stops one install from restating another's producer block over its links."
     },
@@ -215,6 +248,7 @@
       "name": "head-attestation-role-swapped",
       "file": "head-attestation-role-swapped.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "attestation",
       "why": "A head attestation whose role is rewritten after signing fails, because the role sits inside the signed preimage."
     },
@@ -229,6 +263,7 @@
       "name": "head-behind-claims",
       "file": "head-behind-claims.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A head sequence behind the newest claim is a broken chain."
     },
@@ -236,6 +271,7 @@
       "name": "head-wrong-link",
       "file": "head-wrong-link.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A head at the newest sequence must carry that claim's link."
     },
@@ -257,6 +293,7 @@
       "name": "lone-high-surrogate",
       "file": "lone-high-surrogate.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A lone high surrogate escape is invalid and is rejected, not coerced."
     },
@@ -264,6 +301,7 @@
       "name": "lone-low-surrogate",
       "file": "lone-low-surrogate.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A lone low surrogate escape is invalid and is rejected, not coerced."
     },
@@ -278,6 +316,7 @@
       "name": "merkle-bad-inclusion-path",
       "file": "merkle-bad-inclusion-path.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "An audit path with a substituted sibling does not fold to the root the head names."
     },
@@ -285,6 +324,7 @@
       "name": "merkle-claim-altered",
       "file": "merkle-claim-altered.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A claim edited after the tree was built no longer hashes to its own leaf, so the leaf does not recompute."
     },
@@ -292,6 +332,7 @@
       "name": "merkle-claim-with-prev",
       "file": "merkle-claim-with-prev.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A tree claim carrying a previous link implies a linear chain that is not being verified."
     },
@@ -313,6 +354,7 @@
       "name": "merkle-consistency-rewritten",
       "file": "merkle-consistency-rewritten.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A log that changed an entry it had already published cannot produce a consistency proof from the root the world saw before the change. Every disclosed leaf here still recomputes, so only the append-only check catches it."
     },
@@ -327,6 +369,7 @@
       "name": "merkle-foreign-install",
       "file": "merkle-foreign-install.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A tree whose leaves bind an install other than the producer's is refused, which is what stops one producer from re-signing another's log and anchor."
     },
@@ -341,6 +384,7 @@
       "name": "merkle-seq-past-tree",
       "file": "merkle-seq-past-tree.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A claim naming a position past the tree size is outside the log the head attests."
     },
@@ -362,6 +406,7 @@
       "name": "merkle-wrong-leaf-index",
       "file": "merkle-wrong-leaf-index.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A claim moved to another position does not prove membership at that position."
     },
@@ -369,6 +414,7 @@
       "name": "non-integer-number",
       "file": "non-integer-number.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A fractional number is outside the integer profile and is rejected."
     },
@@ -376,6 +422,7 @@
       "name": "noncontiguous-seq",
       "file": "noncontiguous-seq.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "Claims must be contiguous in sequence; a gap is a broken chain."
     },
@@ -383,6 +430,7 @@
       "name": "number-exceeds-2p53",
       "file": "number-exceeds-2p53.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "An integer beyond 2^53 does not round-trip through an IEEE double and is rejected."
     },
@@ -390,6 +438,7 @@
       "name": "producer-keyid-mismatch",
       "file": "producer-keyid-mismatch.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "signature",
       "why": "The producer key_id must be the digest of the embedded public key."
     },
@@ -397,6 +446,7 @@
       "name": "raw-invalid-utf8",
       "file": "raw-invalid-utf8.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "Invalid UTF-8 input is rejected, not coerced to the replacement character."
     },
@@ -414,6 +464,7 @@
       "name": "signature-alg-rewritten",
       "file": "signature-alg-rewritten.loomseal.json",
       "must_verify": false,
+      "level": "unsupported",
       "failing_check": "signature",
       "why": "alg is outside the signed bytes, so a verifier rejects a foreign value rather than dispatching on it."
     },
@@ -428,6 +479,7 @@
       "name": "signature-foreign-keyid",
       "file": "signature-foreign-keyid.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "signature",
       "why": "A signatures entry naming a key the producer block does not hold fails the bundle. The array sits outside the signed bytes, so a foreign entry is a rider nothing vouches for, and it must not travel inside a green verdict."
     },
@@ -435,6 +487,7 @@
       "name": "signature-no-entry-verifies",
       "file": "signature-no-entry-verifies.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "signature",
       "why": "A bundle carrying two producer entries, neither of which verifies, fails at the signature step: more entries earn nothing unless one of them is genuine."
     },
@@ -449,6 +502,7 @@
       "name": "signature-unknown-member",
       "file": "signature-unknown-member.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "An unknown member inside a signature object fails at parse. Signature objects sit outside the signed bytes, so member strictness is the only thing keeping unsigned data out of them."
     },
@@ -477,6 +531,7 @@
       "name": "span-false-count",
       "file": "span-false-count.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "A count that does not match the sequence numbers is a signed false statement and fails."
     },
@@ -498,6 +553,7 @@
       "name": "span-missing-beat",
       "file": "span-missing-beat.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "A beat number that skips is a deleted window and fails."
     },
@@ -509,11 +565,61 @@
       "why": "Two beats whose counts recompute from the sequence numbers earn the spanned level."
     },
     {
+      "name": "subject-known-agent",
+      "file": "subject-known-agent.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The subject type agent is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
+      "name": "subject-known-fleet",
+      "file": "subject-known-fleet.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The subject type fleet is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
+      "name": "subject-known-host",
+      "file": "subject-known-host.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The subject type host is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
+      "name": "subject-known-org",
+      "file": "subject-known-org.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The subject type org is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
+      "name": "subject-known-repo",
+      "file": "subject-known-repo.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The subject type repo is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
+      "name": "subject-known-run",
+      "file": "subject-known-run.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The subject type run is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
+      "name": "subject-known-url",
+      "file": "subject-known-url.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The subject type url is in the vocabulary FORMAT.md states, so a verifier reports no unknown subject type for it."
+    },
+    {
       "name": "subject-unknown-type",
       "file": "subject-unknown-type.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full)",
-      "why": "A subject type outside the known vocabulary is reported and never failed: subject types are informational, and a frozen verifier must not call a newer producer's subject a schema error."
+      "why": "A subject type outside the known vocabulary is reported and never failed: subject types are informational, and a frozen verifier must not call a newer producer's subject a schema error.",
+      "unknown_subject_type": "control"
     },
     {
       "name": "swatch-attested",
@@ -526,6 +632,7 @@
       "name": "swatch-foreign-disclosure",
       "file": "swatch-foreign-disclosure.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "disclosure",
       "why": "A disclosure for a field absent from the committed _sd set matches no digest and fails, so a holder cannot invent a field the producer never committed."
     },
@@ -533,6 +640,7 @@
       "name": "swatch-forged-value",
       "file": "swatch-forged-value.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "disclosure",
       "why": "A disclosed field whose value was changed after signing no longer hashes to its committed digest, so selective disclosure fails while the signature and chain still verify."
     },
@@ -554,6 +662,7 @@
       "name": "swatch-wrong-profile",
       "file": "swatch-wrong-profile.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "disclosure",
       "why": "Selective disclosure on switchtender-audit-v1 is refused, because that profile's fixed-field link does not commit the _sd set."
     },
@@ -596,6 +705,7 @@
       "name": "switchtender-foreign-install",
       "file": "switchtender-foreign-install.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A bound switchtender-audit-v1 entry whose folded install_id is not the producer's is refused, which is what stops a published receipt from being lifted into another install's bundle."
     },
@@ -603,6 +713,7 @@
       "name": "switchtender-install-legacy-from-another-key",
       "file": "switchtender-install-legacy-from-another-key.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "install",
       "why": "A switchtender-audit-v1 install id in the legacy form minted from another key is refused for the same reason."
     },
@@ -616,6 +727,7 @@
       "name": "switchtender-install-minted-from-another-key",
       "file": "switchtender-install-minted-from-another-key.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "install",
       "why": "A switchtender-audit-v1 install id minted from another key is refused: it is a key rotation or another install's history re-signed, and only the relying party can accept a rotation, by pinning the key and naming the install."
     },
@@ -636,6 +748,7 @@
       "name": "switchtender-outcome-exact-altered",
       "file": "switchtender-outcome-exact-altered.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A receipt whose exact-form outcome was changed and re-signed fails, because the bytes carried no longer reproduce the digest the entry committed and the link fixed."
     },
@@ -655,6 +768,7 @@
       "name": "switchtender-outcome-spec-altered",
       "file": "switchtender-outcome-spec-altered.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A receipt with no decision whose disclosed spec was changed and re-signed fails, because the spec no longer hashes to the spec digest the verified outcome names."
     },
@@ -662,6 +776,7 @@
       "name": "switchtender-params-disagrees",
       "file": "switchtender-params-disagrees.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A switchtender-audit-v1 chain.params.install_id that is not the producer's is refused: the param is informational and the per-claim install_id is what binds."
     },
@@ -683,6 +798,7 @@
       "name": "switchtender-record-correction-altered",
       "file": "switchtender-record-correction-altered.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A receipt whose disclosed correction text was changed and re-signed fails, because the text no longer opens the commitment the correction body carries."
     },
@@ -690,6 +806,7 @@
       "name": "switchtender-record-decision-altered",
       "file": "switchtender-record-decision-altered.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A receipt whose disclosed decision body was changed and re-signed fails, because the body no longer reproduces the content digest its entry committed and the link fixed."
     },
@@ -725,6 +842,7 @@
       "name": "switchtender-record-reason-altered",
       "file": "switchtender-record-reason-altered.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A receipt whose disclosed reason was changed and re-signed by the producer keeps its signature and every link, and still fails, because the text no longer opens the commitment the decision body carries."
     },
@@ -742,6 +860,7 @@
       "name": "switchtender-record-reason-uncommitted",
       "file": "switchtender-record-reason-uncommitted.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A reason disclosed beside a decision body that commits none fails: it is text the chain never fixed, and a reader must not be shown it as part of the record."
     },
@@ -756,6 +875,7 @@
       "name": "switchtender-record-spec-altered",
       "file": "switchtender-record-spec-altered.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A receipt whose disclosed spec was changed and re-signed fails, because it no longer hashes to the spec digest the verified decision committed."
     },
@@ -770,6 +890,7 @@
       "name": "switchtender-record-specs-disagree",
       "file": "switchtender-record-specs-disagree.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A decision that commits one spec digest beside an exact-form outcome of the same run that names another fails with no spec disclosed: a run's decision and outcome name one spec, and leaving the optional spec_body out does not hide that."
     },
@@ -794,6 +915,7 @@
       "name": "switchtender-record-unkeyed-after-keyed",
       "file": "switchtender-record-unkeyed-after-keyed.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "A decision under the unkeyed content digest after an entry under the keyed form fails: the producer was keying its digests by then, so the entry is not one from before nonces, and an unkeyed digest lets anyone holding the bundle confirm a guess of the body."
     },
@@ -937,6 +1059,7 @@
       "name": "tamper-loomseal-span-1-beat",
       "file": "tamper-loomseal-span-1-beat.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1's beat, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -944,6 +1067,7 @@
       "name": "tamper-loomseal-span-1-beat-case",
       "file": "tamper-loomseal-span-1-beat-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1 carries \"Beat\" beside beat, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -951,6 +1075,7 @@
       "name": "tamper-loomseal-span-1-cadence_s",
       "file": "tamper-loomseal-span-1-cadence_s.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1's cadence_s, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -958,6 +1083,7 @@
       "name": "tamper-loomseal-span-1-cadence_s-case",
       "file": "tamper-loomseal-span-1-cadence_s-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1 carries \"Cadence_s\" beside cadence_s, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -965,6 +1091,7 @@
       "name": "tamper-loomseal-span-1-cadence_s-fold",
       "file": "tamper-loomseal-span-1-cadence_s-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1 carries \"cadence_ſ\" beside cadence_s, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -972,6 +1099,7 @@
       "name": "tamper-loomseal-span-1-count",
       "file": "tamper-loomseal-span-1-count.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1's count, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -979,6 +1107,7 @@
       "name": "tamper-loomseal-span-1-count-case",
       "file": "tamper-loomseal-span-1-count-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1 carries \"Count\" beside count, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -986,6 +1115,7 @@
       "name": "tamper-loomseal-span-1-stream",
       "file": "tamper-loomseal-span-1-stream.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1's stream, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -993,6 +1123,7 @@
       "name": "tamper-loomseal-span-1-stream-case",
       "file": "tamper-loomseal-span-1-stream-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1 carries \"Stream\" beside stream, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1000,6 +1131,7 @@
       "name": "tamper-loomseal-span-1-stream-fold",
       "file": "tamper-loomseal-span-1-stream-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "span",
       "why": "Claim 1 carries \"ſtream\" beside stream, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1007,6 +1139,7 @@
       "name": "tamper-switchtender-audit-1-correction_body",
       "file": "tamper-switchtender-audit-1-correction_body.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 2's correction_body, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1014,6 +1147,7 @@
       "name": "tamper-switchtender-audit-1-correction_body-case",
       "file": "tamper-switchtender-audit-1-correction_body-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 2 carries \"Correction_body\" beside correction_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1021,6 +1155,7 @@
       "name": "tamper-switchtender-audit-1-correction_nonce",
       "file": "tamper-switchtender-audit-1-correction_nonce.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 2's correction_nonce, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1028,6 +1163,7 @@
       "name": "tamper-switchtender-audit-1-correction_nonce-case",
       "file": "tamper-switchtender-audit-1-correction_nonce-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 2 carries \"Correction_nonce\" beside correction_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1035,6 +1171,7 @@
       "name": "tamper-switchtender-audit-1-decision_body",
       "file": "tamper-switchtender-audit-1-decision_body.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1's decision_body, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1042,6 +1179,7 @@
       "name": "tamper-switchtender-audit-1-decision_body-case",
       "file": "tamper-switchtender-audit-1-decision_body-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"Decision_body\" beside decision_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1049,6 +1187,7 @@
       "name": "tamper-switchtender-audit-1-decision_body-fold",
       "file": "tamper-switchtender-audit-1-decision_body-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"deciſion_body\" beside decision_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1056,6 +1195,7 @@
       "name": "tamper-switchtender-audit-1-decision_nonce",
       "file": "tamper-switchtender-audit-1-decision_nonce.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1's decision_nonce, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1063,6 +1203,7 @@
       "name": "tamper-switchtender-audit-1-decision_nonce-case",
       "file": "tamper-switchtender-audit-1-decision_nonce-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"Decision_nonce\" beside decision_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1070,6 +1211,7 @@
       "name": "tamper-switchtender-audit-1-decision_nonce-fold",
       "file": "tamper-switchtender-audit-1-decision_nonce-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"deciſion_nonce\" beside decision_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1077,6 +1219,7 @@
       "name": "tamper-switchtender-audit-1-outcome_body",
       "file": "tamper-switchtender-audit-1-outcome_body.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 3's outcome_body, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1084,6 +1227,7 @@
       "name": "tamper-switchtender-audit-1-outcome_body-case",
       "file": "tamper-switchtender-audit-1-outcome_body-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 3 carries \"Outcome_body\" beside outcome_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1103,6 +1247,7 @@
       "name": "tamper-switchtender-audit-1-outcome_nonce",
       "file": "tamper-switchtender-audit-1-outcome_nonce.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 3's outcome_nonce, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1110,6 +1255,7 @@
       "name": "tamper-switchtender-audit-1-outcome_nonce-case",
       "file": "tamper-switchtender-audit-1-outcome_nonce-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 3 carries \"Outcome_nonce\" beside outcome_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1129,6 +1275,7 @@
       "name": "tamper-switchtender-audit-1-reason_random",
       "file": "tamper-switchtender-audit-1-reason_random.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1's reason_random, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1136,6 +1283,7 @@
       "name": "tamper-switchtender-audit-1-reason_random-case",
       "file": "tamper-switchtender-audit-1-reason_random-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"Reason_random\" beside reason_random, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1143,6 +1291,7 @@
       "name": "tamper-switchtender-audit-1-reason_random-fold",
       "file": "tamper-switchtender-audit-1-reason_random-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"reaſon_random\" beside reason_random, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1160,6 +1309,7 @@
       "name": "tamper-switchtender-audit-1-reason_redacted-case",
       "file": "tamper-switchtender-audit-1-reason_redacted-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"Reason_redacted\" beside reason_redacted, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1167,6 +1317,7 @@
       "name": "tamper-switchtender-audit-1-reason_redacted-fold",
       "file": "tamper-switchtender-audit-1-reason_redacted-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"reaſon_redacted\" beside reason_redacted, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1174,6 +1325,7 @@
       "name": "tamper-switchtender-audit-1-reason_text",
       "file": "tamper-switchtender-audit-1-reason_text.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1's reason_text, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1181,6 +1333,7 @@
       "name": "tamper-switchtender-audit-1-reason_text-case",
       "file": "tamper-switchtender-audit-1-reason_text-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"Reason_text\" beside reason_text, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1188,6 +1341,7 @@
       "name": "tamper-switchtender-audit-1-reason_text-fold",
       "file": "tamper-switchtender-audit-1-reason_text-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"reaſon_text\" beside reason_text, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1195,6 +1349,7 @@
       "name": "tamper-switchtender-audit-1-spec_body",
       "file": "tamper-switchtender-audit-1-spec_body.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 3's spec_body, altered and re-signed by the producer, fails the commitment it is checked against."
     },
@@ -1202,6 +1357,7 @@
       "name": "tamper-switchtender-audit-1-spec_body-case",
       "file": "tamper-switchtender-audit-1-spec_body-case.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 3 carries \"Spec_body\" beside spec_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1209,6 +1365,7 @@
       "name": "tamper-switchtender-audit-1-spec_body-fold",
       "file": "tamper-switchtender-audit-1-spec_body-fold.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "record",
       "why": "Claim 3 carries \"ſpec_body\" beside spec_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
@@ -1316,6 +1473,7 @@
       "name": "tampered-payload",
       "file": "tampered-payload.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "signature",
       "why": "A byte changed after signing fails the producer signature."
     },
@@ -1323,6 +1481,7 @@
       "name": "unknown-chain-profile",
       "file": "unknown-chain-profile.loomseal.json",
       "must_verify": false,
+      "level": "unsupported",
       "failing_check": "unsupported",
       "why": "A chain profile this verifier does not implement is refused as unsupported, a fail-closed verdict distinct from verification failure, so a legitimate newer bundle never reads as forged."
     },
@@ -1330,6 +1489,7 @@
       "name": "unknown-claim-member",
       "file": "unknown-claim-member.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A claim member the schema does not define fails at parse, before the signature is examined."
     },
@@ -1344,6 +1504,7 @@
       "name": "unknown-envelope-member",
       "file": "unknown-envelope-member.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "parse",
       "why": "A bundle member the schema does not define fails at parse. Strict rejection of the unknown is the design: nothing unspecified rides inside an accepted bundle."
     },
@@ -1358,6 +1519,7 @@
       "name": "window-open-no-prev",
       "file": "window-open-no-prev.loomseal.json",
       "must_verify": false,
+      "level": "not verified",
       "failing_check": "chain",
       "why": "A linear window opening at seq 5 with an empty prev is refused: a slice of a longer chain must link to the entry before it, or it is claiming to be unrooted at an arbitrary point."
     },
@@ -1372,6 +1534,7 @@
       "name": "wrong-version",
       "file": "wrong-version.loomseal.json",
       "must_verify": false,
+      "level": "unsupported",
       "failing_check": "unsupported",
       "why": "A loomseal version this verifier does not implement is refused as unsupported without judging the signature. Fail closed, but never worded as a verification failure."
     }

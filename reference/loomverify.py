@@ -45,6 +45,15 @@ with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "schema
 # kept here by hand had fallen behind it and called whodar.knowledge-risk/1 unknown.
 KNOWN_TYPES = set(DECLARATION["types"])
 
+# KNOWN_SUBJECTS is the subject vocabulary FORMAT.md states. A type outside it is reported and never
+# fails a bundle. The conformance vectors carry one bundle per known type, so a type missing from
+# this set or the Go verifier's fails a vector rather than drifting apart unseen.
+KNOWN_SUBJECTS = {"url", "fleet", "repo", "agent", "host", "run", "org"}
+
+# EMPTY_EXPECTATION is the refusal for an expected audience or nonce supplied as an empty string,
+# worded as the Go verify.ErrExpectation the command line and the browser module report.
+EMPTY_EXPECTATION = "expected value is empty and compares against nothing"
+
 
 class VError(Exception):
     """A verification failure carrying the name of the check that failed."""
@@ -490,8 +499,7 @@ def verify(raw_bytes, evidence_dir=None):
         b = parse_strict(raw_bytes)
         _schema_check(b)
         _check_signature(raw_bytes, b, report)
-        _KNOWN_SUBJECTS = {"url", "fleet", "repo", "agent", "host", "run"}
-        if b["subject"].get("type") not in _KNOWN_SUBJECTS:
+        if b["subject"].get("type") not in KNOWN_SUBJECTS:
             report["unknown_subject_type"] = b["subject"].get("type")
         _check_chain(b, report)
         _check_install_key(b, report)
@@ -502,7 +510,6 @@ def verify(raw_bytes, evidence_dir=None):
         _check_anchors(b, report)
         _check_span(b, report)
         _check_evidence(b, evidence_dir, report)
-        _classify_disclosed(b, report)
     except VError as e:
         report.pop("_states", None)
         report["problems"].append(f"{e.check}: {e.msg}")
@@ -512,9 +519,16 @@ def verify(raw_bytes, evidence_dir=None):
         else:
             report["level"] = "not verified"
         return report
+    # The disclosed states belong to a verified verdict, so they are listed only when every check
+    # passed, including an evidence check that records its problem without raising. The Go
+    # verifier lists them under the same condition, which is what keeps the two reports the same on
+    # a failing bundle.
+    if not report["problems"]:
+        _classify_disclosed(b, report)
     report.pop("_states", None)
     report["ok"] = len(report["problems"]) == 0
-    report["level"] = _level(report)
+    # A bundle that failed any check achieved no level, whatever the earlier checks held.
+    report["level"] = _level(report) if report["ok"] else "not verified"
     return report
 
 
@@ -1955,6 +1969,12 @@ def failing_check_error(check, r):
                                                          any("head attestation" in p for p in r["problems"])))
         if not present or not any("attestation" in p for p in r["problems"]):
             return f"attestation case did not fail on an attestation: {r['problems']}"
+    elif check == "evidence":
+        if not r["signature_ok"] or not r["chain_ok"]:
+            return "evidence case failed earlier than the evidence check"
+        mismatched = (r.get("evidence") or {}).get("mismatched", 0)
+        if not mismatched or not any(p.startswith("evidence ") for p in r["problems"]):
+            return f"evidence case did not fail on an altered artifact: {r['problems']}"
     elif check == "record":
         if not r["signature_ok"] or not r["chain_ok"]:
             return "record case failed earlier than the record check"
@@ -1981,23 +2001,40 @@ def run_vectors(dirpath):
     bad = 0
     for v in man["vectors"]:
         raw = open(os.path.join(dirpath, v["file"]), "rb").read()
-        r = verify(raw)
+        # A case that names evidence is checked with the vectors directory as its evidence directory.
+        r = verify(raw, dirpath if v.get("evidence") else None)
         ok = r["ok"]
         status = "OK " if ok == v["must_verify"] else "!! "
         detail = ""
-        if ok and v["must_verify"] and v.get("level") and r["level"] != v["level"]:
+        # The level is pinned for every vector: the wording achieved when the bundle verifies, and
+        # "not verified" or "unsupported" when it does not, so a failing report never names a level
+        # it reached partway.
+        if v.get("level") and r["level"] != v["level"]:
             status, detail = "!! ", f"  level got[{r['level']}] want[{v['level']}]"
+        # The states of the disclosed members are part of the verdict a vector pins, and a bundle
+        # that does not verify lists none.
+        for state, want in (("unchecked", v.get("unchecked") or []),
+                            ("redacted", v.get("redacted") or [])):
+            got = [f"claim {d['claim']} {d['member']}" for d in r["disclosed"]
+                   if d["state"] == state]
+            if got != want:
+                status, detail = "!! ", f"  {state} got{got} want{want}"
+        # A bundle that does not verify lists no disclosed member in any state, checked ones
+        # included, and counts none unchecked.
+        if not v["must_verify"] and (r["disclosed"] or r["disclosed_unchecked"]):
+            status = "!! "
+            detail = (f"  failed bundle lists {len(r['disclosed'])} disclosed members and "
+                      f"{r['disclosed_unchecked']} unchecked records")
         if status == "OK " and ok and v["must_verify"]:
-            # The states of the disclosed members are part of the verdict a vector pins.
-            for state, want in (("unchecked", v.get("unchecked") or []),
-                                ("redacted", v.get("redacted") or [])):
-                got = [f"claim {d['claim']} {d['member']}" for d in r["disclosed"]
-                       if d["state"] == state]
-                if got != want:
-                    status, detail = "!! ", f"  {state} got{got} want{want}"
             if r["legacy_records"] != (v.get("legacy") or []):
                 status = "!! "
                 detail = f"  legacy got{r['legacy_records']} want{v.get('legacy') or []}"
+            # A subject type outside the vocabulary is reported by name, and one inside it is not.
+            unknown = r.get("unknown_subject_type") or ""
+            if unknown != (v.get("unknown_subject_type") or ""):
+                status = "!! "
+                detail = (f"  unknown_subject_type got[{unknown}] "
+                          f"want[{v.get('unknown_subject_type') or ''}]")
         if status == "OK " and not v["must_verify"] and v.get("failing_check"):
             why = failing_check_error(v["failing_check"], r)
             if why:
@@ -2054,8 +2091,16 @@ def _presentation_problem(p):
 def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None):
     """Verify a holder presentation: the embedded bundle, the holder signature over the presented
     bundle bound to the audience and nonce, and the optional audience and nonce pins. Mirrors the Go
-    RunPresentation."""
+    RunPresentation.
+
+    None means no expectation. An audience or nonce passed as "" is an expectation that compares
+    against nothing, so it is refused before anything is verified, in the wording the browser
+    module uses, rather than read as none and the replay defense skipped under a checked verdict."""
     report = {"ok": False, "presentation_ok": False, "problems": [], "bundle": None}
+    for member, expected in (("audience", audience), ("nonce", nonce)):
+        if expected == "":
+            report["problems"].append(f"{member}: {EMPTY_EXPECTATION}")
+            return report
     try:
         p = parse_strict(raw_bytes)
     except VError as e:
@@ -2076,12 +2121,12 @@ def verify_presentation(raw_bytes, audience=None, nonce=None, evidence_dir=None)
         _check_presentation_sig(p, bundle_obj, report)
     except VError as e:
         report["problems"].append(f"{e.check}: {e.msg}")
-    if audience:
+    if audience is not None:
         m = p.get("audience") == audience
         report["audience_match"] = m
         if not m:
             report["problems"].append("presentation audience does not match the expected")
-    if nonce:
+    if nonce is not None:
         m = p.get("nonce") == nonce
         report["nonce_match"] = m
         if not m:
@@ -2129,12 +2174,23 @@ def run_presentations(dirpath):
     bad = 0
     for v in man["vectors"]:
         raw = open(os.path.join(dirpath, v["file"]), "rb").read()
-        r = verify_presentation(raw, v.get("expect_audience") or None, v.get("expect_nonce") or None)
+        # An absent member is no expectation and an empty one is an expectation supplied empty, so
+        # the two are passed as None and "" and never folded together.
+        r = verify_presentation(raw, v.get("expect_audience"), v.get("expect_nonce"))
         ok = r["ok"]
         status = "OK " if ok == v["must_verify"] else "!! "
+        detail = ""
+        # An expectation supplied empty is refused by name before anything is verified, so a case
+        # that carries one fails for that reason and no other.
+        for member in ("audience", "nonce"):
+            if v.get("expect_" + member) == "":
+                if r["problems"] != [f"{member}: {EMPTY_EXPECTATION}"]:
+                    status = "!! "
+                    detail = f"  empty {member} was not refused: {r['problems']}"
+                break
         if status == "!! ":
             bad += 1
-        print(f"{status}{v['name']:<28} ok={ok} expect={v['must_verify']}")
+        print(f"{status}{v['name']:<28} ok={ok} expect={v['must_verify']}{detail}")
     print(f"\n{'ALL MATCH' if bad == 0 else str(bad) + ' MISMATCH'}")
     return 1 if bad else 0
 

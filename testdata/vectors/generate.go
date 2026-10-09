@@ -66,14 +66,22 @@ type vector struct {
 	File string `json:"file"`
 	// MustVerify is whether a conformant verifier must report the bundle verified.
 	MustVerify bool `json:"must_verify"`
-	// Level is the expected conformance wording when MustVerify is true.
+	// Level is the expected conformance wording: the level achieved when MustVerify is true, and
+	// otherwise "not verified", or "unsupported" for a bundle the verifier does not implement. A
+	// failing report never names a level it reached partway.
 	Level string `json:"level,omitempty"`
 	// FailingCheck names the verification step that must fail when MustVerify is false: one of
-	// parse, signature, chain, anchor, span, disclosure, attestation, install, record, or
-	// unsupported.
+	// parse, signature, chain, anchor, span, disclosure, attestation, install, record, evidence,
+	// or unsupported.
 	FailingCheck string `json:"failing_check,omitempty"`
 	// Why explains the case in one sentence.
 	Why string `json:"why"`
+	// Evidence is whether a verifier is given this directory as its evidence directory for the
+	// case. A verifier that cannot read evidence, such as the browser build, skips such a case.
+	Evidence bool `json:"evidence,omitempty"`
+	// UnknownSubjectType is the subject type a verifier must report as outside its vocabulary in a
+	// bundle that must verify. Empty means the type is in the vocabulary and none may be reported.
+	UnknownSubjectType string `json:"unknown_subject_type,omitempty"`
 	// Unchecked lists, as "claim N member", every member a switchtender-audit-v1 link does not commit
 	// that a verifier must report unchecked in a bundle that must verify. Empty means none may be.
 	Unchecked []string `json:"unchecked,omitempty"`
@@ -93,16 +101,18 @@ type presentationManifest struct {
 }
 
 // presentationVector is one presentation conformance case. Audience and nonce are the caller's
-// expectations, so the same file can appear more than once under different pins.
+// expectations, so the same file can appear more than once under different pins. An absent
+// expectation is none, and one present and empty is an expectation supplied empty, which an entry
+// point able to tell the two apart refuses.
 type presentationVector struct {
 	// Name identifies the case.
 	Name string `json:"name"`
 	// File is the presentation file name within this directory.
 	File string `json:"file"`
-	// ExpectAudience is the audience the verifier is told to require, empty to skip the pin.
-	ExpectAudience string `json:"expect_audience,omitempty"`
-	// ExpectNonce is the challenge the verifier is told to require, empty to skip the pin.
-	ExpectNonce string `json:"expect_nonce,omitempty"`
+	// ExpectAudience is the audience the verifier is told to require, nil to skip the pin.
+	ExpectAudience *string `json:"expect_audience,omitempty"`
+	// ExpectNonce is the challenge the verifier is told to require, nil to skip the pin.
+	ExpectNonce *string `json:"expect_nonce,omitempty"`
 	// MustVerify is whether a conformant verifier must report the presentation verified.
 	MustVerify bool `json:"must_verify"`
 	// Why explains the case in one sentence.
@@ -153,6 +163,8 @@ func main() {
 	s.records()
 	s.tampers()
 	s.hardening()
+	s.subjects()
+	s.evidence()
 	s.presentations()
 
 	if err := s.write(); err != nil {
@@ -627,8 +639,10 @@ func (s *state) negatives() {
 	// Signature alg rewritten after signing. Emptying signatures before signing leaves alg
 	// outside the signed bytes, so this edit costs an attacker nothing and the ed25519
 	// signature still checks out. A verifier that picked its algorithm by reading alg would
-	// follow the attacker; one that treats alg as a label rejects the bundle.
-	s.add("signature-alg-rewritten", false, "", "signature",
+	// follow the attacker; one that treats alg as a label rejects the bundle. Every shipped
+	// verifier refuses the foreign alg as one it does not implement, before judging the
+	// signature, so the level it reports is the unsupported word.
+	s.add("signature-alg-rewritten", false, "unsupported", "signature",
 		"alg is outside the signed bytes, so a verifier rejects a foreign value rather than "+
 			"dispatching on it.", rewriteAlg(s.sign(s.v1(1, false)), "rsa-pss-sha256"))
 
@@ -723,6 +737,54 @@ func (s *state) negatives() {
 		"A subject type outside the known vocabulary is reported and never failed: subject "+
 			"types are informational, and a frozen verifier must not call a newer producer's "+
 			"subject a schema error.", s.sign(subj))
+	s.expectSubject("subject-unknown-type", "control")
+}
+
+// knownSubjectTypes is the subject vocabulary FORMAT.md states. It is written here rather than read
+// from a verifier, so the vectors hold every verifier to the specification, not to each other.
+var knownSubjectTypes = []string{"url", "fleet", "repo", "agent", "host", "run", "org"}
+
+// subjects emits one verifying bundle per known subject type, each expecting no unknown subject in
+// the report. Every member of the vocabulary is pinned, so a verifier whose list lacks any one of
+// them reports it unknown and fails its vector.
+func (s *state) subjects() {
+	for _, typ := range knownSubjectTypes {
+		m := s.v1(1, false)
+		m["subject"] = map[string]any{"type": typ, "id": "known-" + typ}
+		name := "subject-known-" + typ
+		s.add(name, true, "signed, chained (full)", "",
+			"The subject type "+typ+" is in the vocabulary FORMAT.md states, so a verifier reports "+
+				"no unknown subject type for it.", s.sign(m))
+	}
+}
+
+// evidenceAlteredFile is the artifact the evidence vector locates, written beside the vectors with
+// bytes that differ from the ones its claim sealed.
+const evidenceAlteredFile = "evidence-altered-snapshot.html"
+
+// evidence emits a record receipt whose first claim locates an artifact that no longer matches its
+// sealed digest, checked with this directory as the evidence directory. Every other check passes,
+// and the evidence check records its problem without stopping, so the case pins that a failure
+// found last still leaves the level "not verified" and lists no disclosed member, in a verifier
+// that stops at its first failure and in one that runs every check.
+func (s *state) evidence() {
+	altered := []byte("<p>snapshot, altered after sealing</p>\n")
+	if err := os.WriteFile(filepath.Join(dir, evidenceAlteredFile), altered, 0o600); err != nil {
+		panic(err)
+	}
+	sealed := sha256.Sum256([]byte("<p>snapshot as sealed</p>\n"))
+	m := s.recordReceipt(recordDisclosure{Reason: "text", Correction: true})
+	claim, _ := m["claims"].([]any)[0].(map[string]any)
+	claim["evidence"] = []any{map[string]any{
+		"role": "snapshot", "digest": "sha256:" + hex.EncodeToString(sealed[:]),
+		"media_type": "text/html", "location": evidenceAlteredFile,
+	}}
+	name := "evidence-altered-record"
+	s.add(name, false, "", "evidence",
+		"An artifact at its declared location whose bytes no longer hash to the sealed digest fails "+
+			"the bundle, which then reports no level and no disclosed member, though every check "+
+			"before the evidence check passed.", s.sign(m))
+	s.man.Vectors[len(s.man.Vectors)-1].Evidence = true
 }
 
 // mutateSigned applies fn to the decoded signed document and re-marshals it, for vectors that
@@ -1607,16 +1669,38 @@ func (s *state) sign(m map[string]any) []byte {
 	return out
 }
 
-// add records one vector and writes its bundle file.
+// add records one vector and writes its bundle file. A vector that must not verify declares the
+// level a failed bundle reports, because a failed bundle achieved none: "unsupported" when the
+// verifier does not implement what the bundle declares, and "not verified" otherwise. It follows
+// from the failing check unless the caller states it, as the one vector refused as unsupported
+// under the signature check does.
 func (s *state) add(name string, mustVerify bool, level, failing, why string, data []byte) {
 	file := name + ".loomseal.json"
 	if err := os.WriteFile(filepath.Join(dir, file), data, 0o600); err != nil {
 		panic(err)
 	}
+	if !mustVerify && level == "" {
+		level = "not verified"
+		if failing == "unsupported" {
+			level = "unsupported"
+		}
+	}
 	s.man.Vectors = append(s.man.Vectors, vector{
 		Name: name, File: file, MustVerify: mustVerify, Level: level,
 		FailingCheck: failing, Why: why,
 	})
+}
+
+// expectSubject records the subject type a verifier must report as outside its vocabulary in a
+// vector that must verify.
+func (s *state) expectSubject(name, unknown string) {
+	for i := range s.man.Vectors {
+		if s.man.Vectors[i].Name == name {
+			s.man.Vectors[i].UnknownSubjectType = unknown
+			return
+		}
+	}
+	panic("expectSubject: no vector named " + name)
 }
 
 // expect records which disclosed members a verifier must report unchecked and redacted in a vector
@@ -1670,20 +1754,29 @@ func (s *state) presentations() {
 	if err != nil {
 		panic(err)
 	}
+	// The expectations every case but the mismatched and empty ones requires.
+	aud, chal := supplied("acme-verifier"), supplied("chal-1")
 	vf := s.writePresentationFile("present-valid", valid)
-	s.addPresentation("present-valid", vf, "acme-verifier", "chal-1", true,
+	s.addPresentation("present-valid", vf, aud, chal, true,
 		"A presentation bound to the verifier and nonce it declares verifies under those pins.")
-	s.addPresentation("present-no-pins", vf, "", "", true,
+	s.addPresentation("present-no-pins", vf, nil, nil, true,
 		"The same presentation with no pins verifies: the pins are the caller's to require.")
-	s.addPresentation("present-wrong-audience", vf, "someone-else", "chal-1", false,
+	s.addPresentation("present-wrong-audience", vf, supplied("someone-else"), chal, false,
 		"The same presentation fails when the verifier requires a different audience, which is what "+
 			"stops it being replayed to another verifier.")
-	s.addPresentation("present-stale-nonce", vf, "acme-verifier", "old-nonce", false,
+	s.addPresentation("present-stale-nonce", vf, aud, supplied("old-nonce"), false,
 		"The same presentation fails against a stale challenge, which is what stops a replay.")
+	s.addPresentation("present-empty-audience", vf, supplied(""), chal, false,
+		"An expected audience supplied empty is refused before anything is verified, by every entry "+
+			"point that can tell it from an absent one, rather than read as no expectation.")
+	s.addPresentation("present-empty-nonce", vf, aud, supplied(""), false,
+		"An expected nonce supplied empty is refused before anything is verified, by every entry "+
+			"point that can tell it from an absent one, rather than read as no expectation and the "+
+			"replay defense skipped.")
 
 	tampered := []byte(strings.Replace(string(valid), "/api/runs", "/api/evil", 1))
 	tf := s.writePresentationFile("present-tampered-bundle", tampered)
-	s.addPresentation("present-tampered-bundle", tf, "acme-verifier", "chal-1", false,
+	s.addPresentation("present-tampered-bundle", tf, aud, chal, false,
 		"A presentation whose embedded bundle was changed fails: the bundle no longer verifies and its "+
 			"digest no longer matches the holder signature.")
 
@@ -1702,7 +1795,7 @@ func (s *state) presentations() {
 		panic(err)
 	}
 	bf := s.writePresentationFile("present-bad-holder-sig", badSig)
-	s.addPresentation("present-bad-holder-sig", bf, "acme-verifier", "chal-1", false,
+	s.addPresentation("present-bad-holder-sig", bf, aud, chal, false,
 		"A presentation whose holder signature was altered does not verify.")
 
 	// A member whose name differs from a presentation member only in case is refused, never folded
@@ -1720,7 +1813,7 @@ func (s *state) presentations() {
 		panic(err)
 	}
 	ff := s.writePresentationFile("present-casefold-audience", folded)
-	s.addPresentation("present-casefold-audience", ff, "acme-verifier", "chal-1", false,
+	s.addPresentation("present-casefold-audience", ff, aud, chal, false,
 		"A presentation carrying Audience beside audience is refused at parse: member names are "+
 			"matched exactly, so the variant is not read as the audience a reader sees.")
 	var kf map[string]any
@@ -1735,9 +1828,14 @@ func (s *state) presentations() {
 		panic(err)
 	}
 	kff := s.writePresentationFile("present-casefold-holder-key-id", folded)
-	s.addPresentation("present-casefold-holder-key-id", kff, "acme-verifier", "chal-1", false,
+	s.addPresentation("present-casefold-holder-key-id", kff, aud, chal, false,
 		"A holder carrying the signed key id under a name that folds onto key_id is refused at parse, "+
 			"rather than checked in place of the key_id the document shows.")
+}
+
+// supplied returns an expectation the verifier is told to require, an empty one included.
+func supplied(v string) *string {
+	return &v
 }
 
 // writePresentationFile writes one presentation document and returns its file name.
@@ -1750,7 +1848,7 @@ func (s *state) writePresentationFile(name string, data []byte) string {
 }
 
 // addPresentation records one presentation conformance case, referencing an already-written file.
-func (s *state) addPresentation(name, file, audience, nonce string, mustVerify bool, why string) {
+func (s *state) addPresentation(name, file string, audience, nonce *string, mustVerify bool, why string) {
 	s.presMan.Vectors = append(s.presMan.Vectors, presentationVector{
 		Name: name, File: file, ExpectAudience: audience, ExpectNonce: nonce,
 		MustVerify: mustVerify, Why: why,

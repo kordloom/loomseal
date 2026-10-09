@@ -109,7 +109,8 @@ every archive carries SLSA build provenance. Check a download before you run it:
 Without a Go toolchain, [loomseal.com/verify](https://loomseal.com/verify) runs this same
 verifier compiled to WebAssembly. The bundle is read in the tab and never uploaded. Evidence
 artifacts stay on your disk, so their digests report as referenced rather than verified; use
-`--evidence` here to check those too.
+`--evidence` here to check those too. The page accepts a holder presentation as well, checked
+against the audience and nonce you enter the way `--audience` and `--nonce` check them.
 
 The compiled module is built during deploy rather than committed. To run the page locally:
 
@@ -161,6 +162,10 @@ With one, a bundle signed by anything else fails:
 
     loomseal verify bundle.loomseal.json --fingerprint sha256:69f25ff6...
 
+The pin must be `sha256:` and 64 lowercase hex digits. Anything else, an empty value included, is
+a usage error rather than an unpinned run, so `--fingerprint "$PIN"` with the variable unset stops
+instead of verifying a bundle from any key with the exit code of a matched one.
+
 In `--json` the same distinction is `producer_pinned`, always emitted, so a pipeline that
 gates on `ok` can also see whether the signer was established. Treat an unpinned `ok` as
 "this document is internally consistent," never as "this document is from who it says."
@@ -198,7 +203,9 @@ echoes, and neither is compared unless you say what you expect:
 
 Without them, verification prints what the presentation claims and says the comparison did
 not happen. The nonce is the replay defense, so a presentation cut for one reviewer and one
-challenge is good against anyone who runs the bare command.
+challenge is good against anyone who runs the bare command. An empty `--audience` or `--nonce`
+is a usage error, as an empty pin is, so `--nonce "$NONCE"` with the variable unset stops
+instead of skipping the comparison with the exit code of a checked run.
 
 ## What verification proves
 

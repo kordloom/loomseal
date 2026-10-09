@@ -220,9 +220,9 @@ type Report struct {
 	// text is not echoed here, for the reason a revealed field's value is not: the report says what
 	// was checked, and the bundle holds what was said.
 	ReasonsVerified int `json:"reasons_verified,omitempty"`
-	// ReasonsRedacted lists the category of each reason a privacy redaction removed. Its text and
-	// random value are gone and its commitment stays, so it cannot be opened, by design, and is never
-	// a failure.
+	// ReasonsRedacted lists the category the holder claims for each reason it marked redacted. The
+	// holder withheld the text and the random value, the commitment stays unopened, and nothing
+	// commits the marker or its category, so each entry is the holder's claim and never a failure.
 	ReasonsRedacted []string `json:"reasons_redacted,omitempty"`
 	// ReasonsWithheld is how many committed reasons the bundle carries no opening for.
 	ReasonsWithheld int `json:"reasons_withheld,omitempty"`

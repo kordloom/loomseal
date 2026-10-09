@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/kordloom/loomseal/internal/verify"
 	"github.com/kordloom/loomseal/seal"
 )
 
@@ -214,14 +217,15 @@ func TestExecuteVerifyVerdictLines(t *testing.T) {
 			"attested   1 counter-signature(s) verified",
 			"vouched    counterparty sha256:",
 		},
-	}, { // Test 4: A redacted reason is reported by its category, unopenable by design.
+	}, { // Test 4: A reason the holder marked redacted is reported as its claim, not as a fact.
 		File: "switchtender-record-reason-redacted.loomseal.json",
 		Want: []string{
 			"records    1 decision(s), 0 correction(s), 1 outcome(s) reproduce the digests",
-			"reasons    1 redacted (personal_data), unopenable by design",
+			"reasons    1 withheld by the holder, category claimed and not committed: personal_data",
 			"disclosed  3 checked, 0 unchecked, 1 redacted",
 			"checked    decision_body 1, outcome_body 1, spec_body 1",
-			"redacted   claim 1 reason_redacted: personal_data, a privacy redaction removed",
+			"redacted   claim 1 reason_redacted: personal_data, the holder withheld the reason and " +
+				"claims this category, which nothing commits, and the commitment stays unopened",
 			"VERIFIED   signed, chained (full)",
 		},
 	}, { // Test 5: A correction is reported beside the decision it corrects.
@@ -322,6 +326,39 @@ func TestPrintableQuotesWhatWouldActOnATerminal(t *testing.T) {
 			t.Parallel()
 			if got := printable(test.In); got != test.WantResult {
 				t.Errorf("printable(%q) = %q, want %q", test.In, got, test.WantResult)
+			}
+		})
+	}
+}
+
+// TestReasonsLineWordsTheHolderClaim pins the reasons line: a reason the holder marked redacted is
+// counted as withheld under a category the holder claims and nothing commits, never as a redaction
+// that took place.
+func TestReasonsLineWordsTheHolderClaim(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		In         verify.Report
+		WantResult string
+	}{{ // Test 0: No reason disclosed or committed prints nothing.
+		In: verify.Report{}, WantResult: "",
+	}, { // Test 1: One marked reason names its claimed category in the singular.
+		In:         verify.Report{ReasonsRedacted: []string{"trade_secret"}},
+		WantResult: "1 withheld by the holder, category claimed and not committed: trade_secret",
+	}, { // Test 2: Two marked reasons name their claimed categories in the plural.
+		In: verify.Report{ReasonsRedacted: []string{"trade_secret", "personal_data"}},
+		WantResult: "2 withheld by the holder, categories claimed and not committed: " +
+			"trade_secret, personal_data",
+	}, { // Test 3: An opened reason, a marked one, and an undisclosed one are each counted.
+		In: verify.Report{ReasonsVerified: 1, ReasonsRedacted: []string{"personal_data"},
+			ReasonsWithheld: 1},
+		WantResult: "1 opened its commitment, 1 withheld by the holder, category claimed and not " +
+			"committed: personal_data, 1 committed and not disclosed",
+	}}
+	for testNum, test := range tests {
+		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
+			t.Parallel()
+			if diff := cmp.Diff(test.WantResult, reasonsLine(&test.In)); diff != "" {
+				t.Errorf("reasons line mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

@@ -17,7 +17,8 @@ const (
 	stateChecked = "checked"
 	// stateUnchecked is a member nothing this verifier reaches commits.
 	stateUnchecked = "unchecked"
-	// stateRedacted is a member that states a privacy redaction removed what it stood for.
+	// stateRedacted is a member that is the holder's statement that it withheld what the member
+	// stood for, with a category nothing commits.
 	stateRedacted = "redacted"
 )
 
@@ -91,7 +92,8 @@ type DisclosedMember struct {
 	Member string `json:"member"`
 	// State is checked, unchecked, or redacted.
 	State string `json:"state"`
-	// Detail names the commitment it was checked against, the redaction, or why it is unchecked.
+	// Detail names the commitment it was checked against, the category the holder claims for what
+	// it withheld, or why it is unchecked.
 	Detail string `json:"detail"`
 	// With names the member this one travels with, so a reader counts the pair as one record. Empty
 	// for a member that is a record of its own.
@@ -166,6 +168,21 @@ func pathMatches(pattern, path string) bool {
 		}
 	}
 	return true
+}
+
+// pathSegment returns the segment of path that the {name} segment of pattern matches, or empty
+// when path does not fit pattern or pattern has no such segment.
+func pathSegment(pattern, path, name string) string {
+	if !pathMatches(pattern, path) {
+		return ""
+	}
+	got := strings.Split(path, "/")
+	for i, w := range strings.Split(pattern, "/") {
+		if w == "{"+name+"}" && i < len(got) {
+			return got[i]
+		}
+	}
+	return ""
 }
 
 // recordMembers lists, in name order, the switchtender.audit/1 members a record of kind is read

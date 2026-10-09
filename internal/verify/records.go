@@ -52,15 +52,17 @@ const (
 )
 
 // reasonMembers are the payload members that disclose a record's reason: the text and the random
-// value that open its commitment, or the category of the privacy redaction that removed both.
+// value that open its commitment, or the holder's marker that it withheld both, with the category
+// it claims.
 var reasonMembers = []string{"reason_text", "reason_random", "reason_redacted"}
 
 // checkRecords verifies the records switchtender.audit/1 claims disclose beside the fields their
 // links commit. The link commits the entry's content_digest, and the digest commits the record's
 // body, so a body that does not reproduce the digest is not the record the chain holds. A decision
-// or correction body then commits a reason, which a disclosed text must open. A redacted reason
-// cannot be opened, by design, and is reported as redacted rather than failed. A disclosed spec is
-// held against the spec digest every verified decision and outcome committed.
+// or correction body then commits a reason, which a disclosed text must open. A reason the holder
+// marked redacted is not opened and is reported as withheld, with the category the holder claims,
+// rather than failed. A verified decision and a verified outcome of one run must name the same
+// spec digest, and a disclosed spec is held against every digest a verified record names.
 //
 // A claim is a record by the method and path its link commits, and only its own record's members
 // are read on it. The same names on any other claim are ordinary members, reported unchecked, so a
@@ -72,7 +74,7 @@ var reasonMembers = []string{"reason_text", "reason_random", "reason_redacted"}
 func (r *Report) checkRecords(claims []map[string]any, st memberStates) {
 	keyedAt := firstKeyed(claims)
 	var specs []disclosedSpecAt
-	var committed []string
+	var committed []committedSpecAt
 	for i, obj := range claims {
 		if t, _ := obj["type"].(string); t != switchTenderClaimType {
 			continue
@@ -96,16 +98,46 @@ func (r *Report) checkRecords(claims []map[string]any, st memberStates) {
 				specs = append(specs, disclosedSpecAt{claim: i, digest: spec})
 			}
 			if digest, ok := r.checkOutcome(i, payload, keyedAt, st); ok {
-				committed = append(committed, digest)
+				committed = append(committed, committedSpecAt{claim: i, kind: kind,
+					run: outcomeRun(payload), digest: digest})
 			}
 			continue
 		}
 		k := recordKinds[kind]
 		if digest, ok := r.checkRecordClaim(i, &k, payload, keyedAt, st); ok {
-			committed = append(committed, digest)
+			committed = append(committed, committedSpecAt{claim: i, kind: kind,
+				run: decisionRun(payload), digest: digest})
 		}
 	}
 	r.checkSpecs(specs, committed, st)
+}
+
+// committedSpecAt is the spec digest one verified record committed, the run the record belongs to,
+// and the claim it rides on.
+type committedSpecAt struct {
+	// claim is the index of the claim whose verified record committed the digest.
+	claim int
+	// kind is the record's kind, decision or outcome.
+	kind string
+	// run is the run the record belongs to, or empty when the record names none.
+	run string
+	// digest is the spec digest the record names, or empty for a decision that names none.
+	digest string
+}
+
+// outcomeRun returns the run an outcome claim belongs to: the {run} segment of the path its link
+// commits.
+func outcomeRun(payload map[string]any) string {
+	path, _ := payload["path"].(string)
+	return pathSegment(declared.Records.Kinds["outcome"].Path, path, "run")
+}
+
+// decisionRun returns the run a decision claim belongs to: the run_id its verified body names, or
+// empty when the body names none as a string.
+func decisionRun(payload map[string]any) string {
+	body, _ := payload["decision_body"].(map[string]any)
+	run, _ := body["run_id"].(string)
+	return run
 }
 
 // firstKeyed returns the index of the first switchtender.audit/1 claim whose content_digest is in
@@ -276,9 +308,10 @@ func recordDigestProblem(i int, payload map[string]any, kind *recordKind, body m
 }
 
 // checkReason checks the reason a verified record body commits against what the claim discloses.
-// Text and its random value must open the commitment. A redaction category stands in for both
-// once a privacy redaction removed them, and the commitment stays, so the reason is reported as
-// redacted and cannot be opened by design. A commitment with nothing disclosed is withheld.
+// Text and its random value must open the commitment. A redaction marker in their place is the
+// holder's statement that it withheld both, with a category nothing commits, so the commitment
+// stays unopened and the category is reported as claimed, never as established. A commitment with
+// nothing disclosed is withheld.
 func (r *Report) checkReason(i int, payload map[string]any, kind *recordKind, body map[string]any,
 	st memberStates) {
 	text, hasText := payload["reason_text"]
@@ -490,12 +523,18 @@ func withinDepth(v any, limit int) bool {
 	return true
 }
 
-// checkSpecs holds every disclosed spec against the spec digest each verified decision body and
-// each verified outcome record committed. A bundle discloses a spec only as one run's receipt, so
-// it holds one spec, and every decision and outcome in it concerns that spec. A spec with nothing
+// checkSpecs holds the spec digests verified records committed against one another, then every
+// disclosed spec against them. A bundle may hold the records of several runs, so a decision is
+// held only against the outcomes of its own run: a verified decision that committed one digest
+// beside a verified outcome of the same run that named another fails, whether or not the spec
+// itself is disclosed, since omitting an optional member must not hide what the committed records
+// say. A disclosed spec is a further value every committed digest must equal. A spec with nothing
 // verified beside it to commit its digest has no commitment this verifier can reach, so it is
 // counted as unchecked rather than read as matched.
-func (r *Report) checkSpecs(specs []disclosedSpecAt, committed []string, st memberStates) {
+func (r *Report) checkSpecs(specs []disclosedSpecAt, committed []committedSpecAt, st memberStates) {
+	if !r.runSpecsAgree(committed) {
+		return
+	}
 	if len(specs) == 0 {
 		return
 	}
@@ -514,9 +553,9 @@ func (r *Report) checkSpecs(specs []disclosedSpecAt, committed []string, st memb
 		return
 	}
 	for _, c := range committed {
-		if c != specs[0].digest {
+		if c.digest != specs[0].digest {
 			r.problem("record: a verified record committed spec %s but the disclosed spec hashes "+
-				"to %s", orNone(c), specs[0].digest)
+				"to %s", orNone(c.digest), specs[0].digest)
 			return
 		}
 	}
@@ -524,6 +563,41 @@ func (r *Report) checkSpecs(specs []disclosedSpecAt, committed []string, st memb
 	for _, s := range specs {
 		st.settleDeclared(s.claim, switchTenderClaimType, "spec_body")
 	}
+}
+
+// runSpecsAgree reports whether every verified decision names the same spec digest as every
+// verified outcome of its run, recording a problem at the first pair in claim order that differs.
+// A record that names no run or no digest commits nothing to compare. Two decisions, or two
+// outcomes, are not held against each other here.
+func (r *Report) runSpecsAgree(committed []committedSpecAt) bool {
+	seen := map[string]map[string][]committedSpecAt{}
+	for _, c := range committed {
+		if c.run == "" || c.digest == "" {
+			continue
+		}
+		byKind := seen[c.run]
+		if byKind == nil {
+			byKind = map[string][]committedSpecAt{}
+			seen[c.run] = byKind
+		}
+		other := byKind["outcome"]
+		if c.kind == "outcome" {
+			other = byKind["decision"]
+		}
+		if len(byKind[c.kind]) > 0 && len(other) > 0 {
+			other = other[:1]
+		}
+		for _, e := range other {
+			if e.digest != c.digest {
+				r.problem("record: claim %d committed spec %s and claim %d committed spec %s for "+
+					"run %q, and a run's decision and outcome name one spec", e.claim, e.digest,
+					c.claim, c.digest, c.run)
+				return false
+			}
+		}
+		byKind[c.kind] = append(byKind[c.kind], c)
+	}
+	return true
 }
 
 // orNone returns a committed spec digest for a problem line, naming an empty one plainly.

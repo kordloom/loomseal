@@ -1067,7 +1067,7 @@ _KEYED_PREFIX = "sha256s:"
 _EXACT_PREFIX = "sha256e:"
 
 # _REASON_MEMBERS disclose a record's reason: the text and the random value that open its
-# commitment, or the category of the privacy redaction that removed both.
+# commitment, or the holder's marker that it withheld both, with the category it claims.
 _REASON_MEMBERS = ("reason_text", "reason_random", "reason_redacted")
 
 # _FOLD maps the characters Go's encoding/json folds onto a lowercase ASCII letter, beside the ASCII
@@ -1116,6 +1116,34 @@ def _path_matches(pattern, path):
         elif w != g:
             return False
     return True
+
+
+def _path_segment(pattern, path, name):
+    """Return the segment of path that the {name} segment of pattern matches, or "" when path does
+    not fit pattern or pattern has no such segment. Mirrors the Go pathSegment."""
+    if not _path_matches(pattern, path):
+        return ""
+    got = path.split("/")
+    for i, w in enumerate(pattern.split("/")):
+        if w == "{" + name + "}" and i < len(got):
+            return got[i]
+    return ""
+
+
+def _outcome_run(payload):
+    """Return the run an outcome claim belongs to: the {run} segment of the path its link
+    commits."""
+    path = payload.get("path")
+    pattern = DECLARATION["records"]["kinds"]["outcome"].get("path", "")
+    return _path_segment(pattern, path if isinstance(path, str) else "", "run")
+
+
+def _decision_run(payload):
+    """Return the run a decision claim belongs to: the run_id its verified body names, or "" when
+    the body names none as a string."""
+    body = payload.get("decision_body")
+    run = body.get("run_id") if isinstance(body, dict) else None
+    return run if isinstance(run, str) else ""
 
 
 def _record_kind_of(payload):
@@ -1213,11 +1241,12 @@ def _check_records(b, report):
 
     The link commits the entry's content_digest and the digest commits the record's body, so a body
     that does not reproduce the digest is not the record the chain holds. A decision or correction
-    body commits a reason, which disclosed text must open. A redacted reason cannot be opened, by
-    design, and is reported as redacted rather than failed. A disclosed spec is held against the
-    spec digest every verified decision and outcome committed. A claim is a record by its committed
-    method and path, and only its own record's members are read on it: the same names elsewhere are
-    ordinary members, reported unchecked. Mirrors the Go checkRecords."""
+    body commits a reason, which disclosed text must open. A reason the holder marked redacted is
+    not opened and is reported as withheld, with the category the holder claims, rather than
+    failed. A verified decision and a verified outcome of one run must name the same spec digest,
+    and a disclosed spec is held against every digest a verified record names. A claim is a record
+    by its committed method and path, and only its own record's members are read on it: the same
+    names elsewhere are ordinary members, reported unchecked. Mirrors the Go checkRecords."""
     keyed_at = _first_keyed(b)
     specs, committed = [], []
     for i, c in enumerate(b["claims"]):
@@ -1241,10 +1270,12 @@ def _check_records(b, report):
                                            "cannot be hashed")
                 specs.append((i, "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()))
             spec = _check_outcome(i, payload, keyed_at, report)
+            run = _outcome_run(payload)
         else:
             spec = _check_record_claim(i, kind, payload, keyed_at, report)
+            run = _decision_run(payload)
         if spec is not None:
-            committed.append(spec)
+            committed.append((i, kind, run, spec))
     _check_specs(specs, committed, report)
 
 
@@ -1318,9 +1349,10 @@ def _record_digest_problem(i, payload, nonce_member, body, keyed_at):
 
 def _check_reason(i, payload, body_member, event_member, needs_reason, body, report):
     """Check the reason a verified record body commits against what the claim discloses. Text and
-    its random value must open the commitment. A redaction category stands in for both once a
-    privacy redaction removed them, so the reason is reported as redacted and cannot be opened by
-    design. A commitment with nothing disclosed is withheld."""
+    its random value must open the commitment. A redaction marker in their place is the holder's
+    statement that it withheld both, with a category nothing commits, so the commitment stays
+    unopened and the category is reported as claimed, never as established. A commitment with
+    nothing disclosed is withheld."""
     has_text, has_random = "reason_text" in payload, "reason_random" in payload
     has_redacted = "reason_redacted" in payload
     commitment = body.get("reason_commitment", "")
@@ -1455,10 +1487,12 @@ def _outcome_spec(text):
 
 
 def _check_specs(specs, committed, report):
-    """Hold every disclosed spec against the spec digest each verified decision and outcome record
-    committed. A bundle discloses a spec only as one run's receipt, so it holds one spec. A spec
-    with nothing verified beside it to commit its digest is counted as unchecked rather than read
-    as matched."""
+    """Hold the spec digests verified records committed, as (claim, kind, run, digest) tuples,
+    against one another, then every disclosed spec against them. A bundle may hold the records of
+    several runs, so a decision is held only against the outcomes of its own run, whether or not
+    the spec is disclosed. A spec with nothing verified beside it to commit its digest is counted
+    as unchecked rather than read as matched. Mirrors the Go checkSpecs."""
+    _run_specs_agree(committed)
     if not specs:
         return
     if any(s[1] != specs[0][1] for s in specs[1:]):
@@ -1469,13 +1503,34 @@ def _check_specs(specs, committed, report):
         for claim, _ in specs:
             _settle(report, claim, "spec_body", "unchecked", why)
         return
-    for c in committed:
+    for _, _, _, c in committed:
         if c != specs[0][1]:
             raise VError("record", f"a verified record committed spec {c or '(none)'} but the "
                                    f"disclosed spec hashes to {specs[0][1]}")
     report["specs_matched"] = len(specs)
     for claim, _ in specs:
         _settle_declared(report, claim, "switchtender.audit/1", "spec_body")
+
+
+def _run_specs_agree(committed):
+    """Fail at the first pair, in claim order, of a verified decision and a verified outcome of one
+    run that name different spec digests. A record that names no run or no digest commits nothing
+    to compare. Two decisions, or two outcomes, are not held against each other here. Mirrors the
+    Go runSpecsAgree."""
+    seen = {}
+    for claim, kind, run, digest in committed:
+        if not run or not digest:
+            continue
+        by_kind = seen.setdefault(run, {"decision": [], "outcome": []})
+        other = by_kind["decision" if kind == "outcome" else "outcome"]
+        if by_kind[kind] and other:
+            other = other[:1]
+        for e_claim, e_digest in other:
+            if e_digest != digest:
+                raise VError("record", f"claim {e_claim} committed spec {e_digest} and claim "
+                                       f"{claim} committed spec {digest} for run {_quote(run)}, "
+                                       "and a run's decision and outcome name one spec")
+        by_kind[kind].append((claim, digest))
 
 
 def _check_attestations(b, report):

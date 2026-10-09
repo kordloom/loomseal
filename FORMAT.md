@@ -947,11 +947,13 @@ The verifier performs these steps in order and fails closed:
    Evidence not supplied is reported as referenced, not checked, never as verified.
 7. For each `switchtender.audit/1` claim whose committed method and path make it a record: check
    the members its record is read for as "Disclosed records in switchtender.audit/1" states. A
-   redacted reason is reported and never fails, an outcome under an older digest form is reported
-   as carried and unchecked, and a body under the legacy unkeyed form is listed as legacy. Under
-   `switchtender-audit-v1`, report every disclosed member in its state, and qualify a verified
-   verdict with the number of unchecked records, as "Disclosed members and the three states"
-   states.
+   reason the holder marked redacted is reported as withheld, with the category the holder claims
+   and nothing commits, and never fails. An outcome under an older digest form is reported as
+   carried and unchecked, and a body under the legacy unkeyed form is listed as legacy. A verified
+   decision and a verified outcome of one run must name the same spec digest, whether or not a
+   spec is disclosed. Under `switchtender-audit-v1`, report every disclosed member in its state,
+   and qualify a verified verdict with the number of unchecked records, as "Disclosed members and
+   the three states" states.
 8. Report the conformance level achieved and an overall verdict. Any failed check fails the
    bundle.
 
@@ -1019,7 +1021,7 @@ it only to the claims that are records.
 | `correction_nonce` | string | The nonce the correction entry's `content_digest` is keyed under |
 | `reason_text`      | string | The reason a decision or correction body commits                 |
 | `reason_random`    | string | The 32 random bytes that hide the reason, as hex                 |
-| `reason_redacted`  | string | The category of the privacy redaction that removed the reason    |
+| `reason_redacted`  | string | The category a holder claims for a withheld reason, uncommitted  |
 | `spec_body`        | string | The run's spec, as the exact text its digest was taken over      |
 | `outcome_body`     | string | The run's outcome record, as the text its digest was taken over  |
 | `outcome_nonce`    | string | The nonce the outcome entry's `content_digest` is keyed under    |
@@ -1084,9 +1086,12 @@ string. The reason then travels in exactly one of three states:
   commitment must equal `sha256:` and the hex SHA-256 of the RFC 8785 canonical object
   `{"event": <event id>, "random": <reason_random>, "reason": <reason_text>}`.
 - **Redacted.** The claim carries `reason_redacted`, a non-empty category, and neither
-  `reason_text` nor `reason_random`. A privacy redaction removed the text and the random value
-  and kept the commitment, so the reason cannot be opened, by design. A verifier reports the
-  category and never fails a claim for it.
+  `reason_text` nor `reason_random`. The holder withheld the text and the random value and claims
+  a category for the withholding. The commitment stays and is not opened. Nothing commits the
+  marker or the category: a `switchtender-audit-v1` link reaches neither, and a holder that could
+  open the reason may mark it instead, which a verifier cannot tell from any other withholding. A
+  verifier reports the category as the holder's claim, never as an established redaction, and
+  never fails a claim for it.
 - **Withheld.** The claim carries none of the three. A verifier reports the reason as committed
   and not disclosed.
 
@@ -1127,15 +1132,29 @@ Otherwise it names none, which is no failure, since the outcome itself was check
 nothing verified beside it to name its digest has no commitment a verifier can reach, so it is
 reported as carried, not verified.
 
+Before any disclosed spec is read, and whether or not one is carried, each verified decision is
+held against every verified outcome of its own run. A decision's run is the `run_id` member of its
+verified body, a non-empty string, and an outcome's run is the `{run}` segment of the path its link
+commits. Runs are compared as exact strings. A bundle that discloses no spec may carry the records
+of several runs, so a decision is never held against another run's outcome. A verified decision
+that commits one spec digest beside a verified outcome of the same run that names another fails the
+bundle. A record that names no digest, and a decision whose body names no `run_id`, commit nothing
+to compare. This rule holds no two decisions, and no two outcomes, against each other. A disclosed
+spec is a further value every committed digest must equal, never the trigger for comparing them,
+so omitting the optional `spec_body` cannot hide an approval of one spec beside an execution of
+another.
+
 **Compatibility.** These checks refuse only what a producer conforming to this section never
 emits: a record that does not reproduce its digest, a reason that does not open its commitment, a
-spec that a verified decision or outcome does not name, an unkeyed digest after the keyed form
-began, or a record claim carrying a name that differs from one of its members only in case. A
-producer that can no longer rebuild a record matching its digest withholds the record, or discloses
-it knowing the bundle will fail, which is how a record altered at its source becomes visible. Each
-refusal is pinned by a must-not-verify vector. The same names on a claim that is no record are
-pinned by must-verify vectors, under `switchtender-audit-v1` and under a profile that commits the
-whole claim, so a bundle that used them before records existed keeps its verdict.
+spec that a verified decision or outcome does not name, a verified decision and a verified outcome
+of one run that name different spec digests, an unkeyed digest after the keyed form began, or a
+record claim carrying a name that differs from one of its members only in case. A producer that
+can no longer rebuild a record matching its digest withholds the record, or discloses it knowing
+the bundle will fail, which is how a record altered at its source becomes visible. Each refusal is
+pinned by a must-not-verify vector. The same names on a claim that is no record are pinned by
+must-verify vectors, under `switchtender-audit-v1` and under a profile that commits the whole
+claim, so a bundle that used them before records existed keeps its verdict. A bundle carrying the
+records of two runs with different specs is pinned by a must-verify vector too.
 
 ### Disclosed members and the three states
 
@@ -1149,8 +1168,9 @@ in one place and treated differently in another.
 A verifier reports every disclosed member of a bundle in exactly one of three states:
 
 - **checked**: the member reproduced the commitment its declaration names.
-- **redacted**: the member states that a privacy redaction removed what it stood for, and the
-  commitment stays. It cannot be opened, by design, and it never fails a bundle.
+- **redacted**: the member is the holder's statement that it withheld what the member stood for,
+  with a category nothing commits. The commitment stays and is not opened. A verifier reports the
+  category as the holder's claim, vouches for nothing in it, and never fails a bundle over it.
 - **unchecked**: nothing the verifier reaches commits the member. A member declared checked is
   unchecked where its declaration's condition holds, such as an outcome committed under an older
   digest form, or a record member on a claim that is not its record. A member the declaration does
@@ -1208,11 +1228,14 @@ record rests on, which is why the report states the unanchored window.
 
 A verified bundle that discloses `switchtender.audit/1` records also proves that each disclosed
 decision, correction, and exact-form outcome is the record its entry committed, that each opened
-reason is the text the record committed when it was made, and that a disclosed spec is the one
-every verified decision and outcome named. It does not prove a reason is true, and it proves
-nothing about an outcome committed under an older digest form, which travels unchecked. A body
-under the legacy unkeyed form proves the same as any other, and its digest also lets anyone who
-holds the bundle confirm a guess of the body, which is why a verifier lists it as legacy.
+reason is the text the record committed when it was made, that a verified decision and a verified
+outcome of one run name the same spec digest, and that a disclosed spec is the one every verified
+decision and outcome named. It does not prove a reason is true, nor that a reason the holder
+marked redacted was withheld for the category the holder claims, since nothing commits the marker
+or the category, and it proves nothing about an outcome committed under an older digest form, which
+travels unchecked. A body under the legacy unkeyed form proves the same as any other, and its
+digest also lets anyone who holds the bundle confirm a guess of the body, which is why a verifier
+lists it as legacy.
 
 A verified level 4 bundle adds: at every beat the producer committed to the exact entry
 population so far, so an entry removed after its beat contradicts either the links or the

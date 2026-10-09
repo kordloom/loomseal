@@ -203,8 +203,8 @@
   }
 
   // reasonsLine words what the disclosed reasons came to, as the command line does: how many opened
-  // their commitment, which were redacted and so cannot be opened by design, and how many were
-  // committed but not disclosed. It is empty when no record commits a reason.
+  // their commitment, how many the holder withheld under a category it claims and nothing commits,
+  // and how many were committed but not disclosed. It is empty when no record commits a reason.
   function reasonsLine(report) {
     var parts = [];
     var opened = report.reasons_verified || 0;
@@ -215,7 +215,9 @@
     }
     var redacted = report.reasons_redacted || [];
     if (redacted.length) {
-      parts.push(redacted.length + " redacted (" + redacted.join(", ") + "), unopenable by design");
+      var noun = redacted.length > 1 ? "categories" : "category";
+      parts.push(redacted.length + " withheld by the holder, " + noun +
+        " claimed and not committed: " + redacted.join(", "));
     }
     if (report.reasons_withheld) {
       parts.push(report.reasons_withheld + " committed and not disclosed");

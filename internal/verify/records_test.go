@@ -75,10 +75,11 @@ func (c *recordCase) outcome() map[string]any { return c.Payloads[len(c.Payloads
 
 // TestRecordsHoldWhatTheirEntriesCommitted pins the record check on every path it takes: a body
 // that reproduces its entry's content digest in the keyed and the unkeyed form, a reason that opens
-// the commitment its body carries, a redacted reason that cannot be opened by design and is never a
-// failure, a withheld one, a correction, and the disclosed spec held against the decision. Every
-// edit is made before the bundle is linked and signed, so the signature and every link hold and the
-// record check is the only one that can object, which is the receipt a producer re-signs.
+// the commitment its body carries, a reason the holder marked redacted, which is never a failure, a
+// withheld one, a correction, each decision's spec digest held against the outcomes of its own run,
+// and the disclosed spec held against every committed digest. Every edit is made before the bundle
+// is linked and signed, so the signature and every link hold and the record check is the only one
+// that can object, which is the receipt a producer re-signs.
 func TestRecordsHoldWhatTheirEntriesCommitted(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -91,7 +92,7 @@ func TestRecordsHoldWhatTheirEntriesCommitted(t *testing.T) {
 		WantOK: true,
 		WantCounts: recordCounts{Decisions: 1, Verified: 1, SpecsMatched: 1, Outcomes: 1,
 			Unchecked: recordOutcomeOlder(2), UncheckedRecords: 1},
-	}, { // Test 1: A redacted reason is reported by its category and never fails.
+	}, { // Test 1: A reason the holder marked redacted is reported by its claimed category.
 		Edit: func(c *recordCase) {
 			delete(c.decision(), "reason_text")
 			delete(c.decision(), "reason_random")
@@ -421,6 +422,66 @@ func TestRecordsHoldWhatTheirEntriesCommitted(t *testing.T) {
 		WantCounts: recordCounts{Decisions: 1, SpecsMatched: 1, Outcomes: 1,
 			Legacy: []string{"claim 1 decision_body"}, Unchecked: recordOutcomeOlder(2),
 			UncheckedRecords: 1},
+	}, { // Test 61: A decision and an outcome committing one spec digest verify, no spec disclosed.
+		Edit: func(c *recordCase) {
+			recordExactOutcome(recordTestOutcomeText(recordTestSpecDigest))(c)
+			delete(c.outcome(), "spec_body")
+		},
+		WantOK:     true,
+		WantCounts: recordCounts{Decisions: 1, Verified: 1, OutcomesVerified: 1},
+	}, { // Test 62: A decision and an outcome committing two spec digests fail, no spec disclosed.
+		Edit: func(c *recordCase) {
+			recordExactOutcome(recordTestOutcomeText(recordTestOtherSpecDigest))(c)
+			delete(c.outcome(), "spec_body")
+		},
+		WantProblem: "claim 1 committed spec " + recordTestSpecDigest + " and claim 2 committed spec " +
+			recordTestOtherSpecDigest + ` for run "run_records", and a run's decision and outcome ` +
+			"name one spec",
+	}, { // Test 63: Committed spec digests that disagree fail beside a disclosed spec too.
+		Edit:        recordExactOutcome(recordTestOutcomeText(recordTestOtherSpecDigest)),
+		WantProblem: "claim 1 committed spec " + recordTestSpecDigest + " and claim 2 committed spec",
+	}, { // Test 64: A decision naming no spec digest commits nothing to compare with the outcome's.
+		Edit: func(c *recordCase) {
+			recordRebody(c.decision(), "decision", func(b map[string]any) {
+				delete(b, "spec_digest")
+			})
+			recordExactOutcome(recordTestOutcomeText(recordTestSpecDigest))(c)
+			delete(c.outcome(), "spec_body")
+		},
+		WantOK:     true,
+		WantCounts: recordCounts{Decisions: 1, Verified: 1, OutcomesVerified: 1},
+	}, { // Test 65: Records of two runs, each naming its own spec, verify with no spec disclosed.
+		Edit: func(c *recordCase) {
+			c.Payloads = []map[string]any{c.Payloads[0], c.decision(),
+				recordTestDecision("run_other", recordTestOtherSpecDigest),
+				recordTestExactOutcome("run_other", recordTestOtherSpecDigest),
+				recordTestExactOutcome("run_records", recordTestSpecDigest)}
+		},
+		WantOK:     true,
+		WantCounts: recordCounts{Decisions: 2, Verified: 1, OutcomesVerified: 2},
+	}, { // Test 66: A decision fails beside its own run's outcome naming another run's spec.
+		Edit: func(c *recordCase) {
+			c.Payloads = []map[string]any{c.Payloads[0], c.decision(),
+				recordTestDecision("run_other", recordTestOtherSpecDigest),
+				recordTestExactOutcome("run_records", recordTestOtherSpecDigest)}
+		},
+		WantProblem: "claim 1 committed spec " + recordTestSpecDigest + " and claim 3 committed spec " +
+			recordTestOtherSpecDigest + ` for run "run_records"`,
+	}, { // Test 67: An outcome is held against every decision of its run that came before it.
+		Edit: func(c *recordCase) {
+			c.Payloads = []map[string]any{c.Payloads[0], c.decision(),
+				recordTestDecision("run_records", recordTestOtherSpecDigest),
+				recordTestExactOutcome("run_records", recordTestSpecDigest)}
+		},
+		WantProblem: "claim 2 committed spec " + recordTestOtherSpecDigest + " and claim 3 committed " +
+			"spec " + recordTestSpecDigest + ` for run "run_records"`,
+	}, { // Test 68: A decision whose body names no run_id belongs to no run and is compared to none.
+		Edit: func(c *recordCase) {
+			c.Payloads = []map[string]any{c.Payloads[0], recordTestDecision("",
+				recordTestOtherSpecDigest), recordTestExactOutcome("run_records", recordTestSpecDigest)}
+		},
+		WantOK:     true,
+		WantCounts: recordCounts{Decisions: 1, OutcomesVerified: 1},
 	}}
 
 	cross := os.Getenv("LOOMSEAL_CROSS_DIR")
@@ -547,31 +608,113 @@ func recordTestBundle(t *testing.T, correction bool, edit func(c *recordCase)) [
 const recordTestSpec = `{"command":"deploy","tool":"bash"}`
 
 // recordTestSpecDigest is sha256: and the hex SHA-256 of recordTestSpec.
-var recordTestSpecDigest = func() string {
-	sum := sha256.Sum256([]byte(recordTestSpec))
-	return "sha256:" + hex.EncodeToString(sum[:])
-}()
+var recordTestSpecDigest = recordTestDigestOf(recordTestSpec)
 
-// recordTestOutcomeText is a canonical outcome record naming spec.
+// recordTestOtherSpecDigest is the digest of a spec the run was not approved for.
+var recordTestOtherSpecDigest = recordTestDigestOf(`{"command":"deploy --force","tool":"bash"}`)
+
+// recordTestDigestOf is sha256: and the hex SHA-256 of a spec text's bytes.
+func recordTestDigestOf(spec string) string {
+	sum := sha256.Sum256([]byte(spec))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// recordTestOutcomeText is a canonical outcome record of run_records naming spec.
 func recordTestOutcomeText(spec string) string {
-	return `{"exit_code":0,"run_id":"run_records","spec_digest":"` + spec + `","status":"succeeded"}`
+	return recordTestRunOutcomeText("run_records", spec)
+}
+
+// recordTestRunOutcomeText is a canonical outcome record of run naming spec.
+func recordTestRunOutcomeText(run, spec string) string {
+	return `{"exit_code":0,"run_id":"` + run + `","spec_digest":"` + spec + `","status":"succeeded"}`
+}
+
+// recordTestDecision returns a decision claim payload of run, keyed and committing no reason, whose
+// body names spec. An empty run leaves run_id out of the body.
+func recordTestDecision(run, spec string) map[string]any {
+	body := map[string]any{"verdict": "approved", "spec_digest": spec}
+	path := "/runs/run_records/decision/approved"
+	if run != "" {
+		body["run_id"] = run
+		path = "/runs/" + run + "/decision/approved"
+	}
+	p := map[string]any{
+		"actor": "ops-admin", "method": "DECISION", "path": path, "decision_body": body,
+		"decision_nonce": hex.EncodeToString(recordTestBytes("nonce decision " + run)),
+	}
+	recordRekey(p, "decision")
+	return p
+}
+
+// recordTestExactOutcome returns an outcome claim payload of run that discloses no spec, and whose
+// outcome record names spec and is committed under the exact form.
+func recordTestExactOutcome(run, spec string) map[string]any {
+	p := recordTestExactOutcomeText(run, recordTestRunOutcomeText(run, spec))
+	delete(p, "spec_body")
+	return p
+}
+
+// recordTestExactOutcomeText returns an outcome claim payload of run carrying the spec, whose
+// outcome record, text, is committed under the exact form.
+func recordTestExactOutcomeText(run, text string) map[string]any {
+	nonce := recordTestBytes("nonce exact outcome " + run)
+	nonceSum := sha256.Sum256(nonce)
+	mac := hmac.New(sha256.New, nonce)
+	mac.Write([]byte(text))
+	return map[string]any{
+		"actor": "system:dispatcher", "method": "RUN",
+		"path": "/runs/" + run + "/outcome/succeeded", "spec_body": recordTestSpec,
+		"content_digest": "sha256e:" + hex.EncodeToString(nonceSum[:]) + ":" +
+			hex.EncodeToString(mac.Sum(nil)),
+		"outcome_body": text, "outcome_nonce": hex.EncodeToString(nonce),
+	}
 }
 
 // recordExactRun returns an edit that makes the case a run with no decision whose outcome, text,
 // is committed under the exact form, the way a producer commits the bytes it discloses.
 func recordExactRun(text string) func(c *recordCase) {
 	return func(c *recordCase) {
-		nonce := recordTestBytes("nonce exact outcome")
-		nonceSum := sha256.Sum256(nonce)
-		mac := hmac.New(sha256.New, nonce)
-		mac.Write([]byte(text))
-		c.Payloads = []map[string]any{c.Payloads[0], {
-			"actor": "system:dispatcher", "method": "RUN",
-			"path": "/runs/run_records/outcome/succeeded", "spec_body": recordTestSpec,
-			"content_digest": "sha256e:" + hex.EncodeToString(nonceSum[:]) + ":" +
-				hex.EncodeToString(mac.Sum(nil)),
-			"outcome_body": text, "outcome_nonce": hex.EncodeToString(nonce),
-		}}
+		c.Payloads = []map[string]any{c.Payloads[0], c.outcome()}
+		recordExactOutcome(text)(c)
+	}
+}
+
+// recordExactOutcome returns an edit that replaces the case's outcome claim with one whose outcome,
+// text, is committed under the exact form, leaving every claim before it as it was.
+func recordExactOutcome(text string) func(c *recordCase) {
+	return func(c *recordCase) {
+		c.Payloads[len(c.Payloads)-1] = recordTestExactOutcomeText("run_records", text)
+	}
+}
+
+// TestRedactedReasonIsReportedAsTheHolderClaim pins what the report says about a reason_redacted
+// member: the holder withheld the reason and claims a category nothing commits. The wording never
+// states that a redaction took place, since nothing in the signed bytes establishes one.
+func TestRedactedReasonIsReportedAsTheHolderClaim(t *testing.T) {
+	t.Parallel()
+	raw := recordTestBundle(t, false, func(c *recordCase) {
+		delete(c.decision(), "reason_text")
+		delete(c.decision(), "reason_random")
+		c.decision()["reason_redacted"] = "trade_secret"
+	})
+	r := Run(raw, Options{})
+	if !r.OK {
+		t.Fatalf("the receipt did not verify: %v", r.Problems)
+	}
+	want := DisclosedMember{Claim: 1, Member: "reason_redacted", State: stateRedacted,
+		Detail: "trade_secret, the holder withheld the reason and claims this category, which " +
+			"nothing commits, and the commitment stays unopened"}
+	var got DisclosedMember
+	for _, m := range r.Disclosed {
+		if m.Member == "reason_redacted" {
+			got = m
+		}
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("reason_redacted member (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"trade_secret"}, r.ReasonsRedacted); diff != "" {
+		t.Errorf("reasons redacted (-want +got):\n%s", diff)
 	}
 }
 

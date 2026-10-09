@@ -1931,8 +1931,9 @@ func (s *state) records() {
 			"commitment the decision body carries.", s.sign(m))
 
 	s.add("switchtender-record-reason-redacted", true, "signed, chained (full)", "",
-		"A reason removed by a privacy redaction is reported by its category and verifies: its text "+
-			"and random value are gone, its commitment stays, and it cannot be opened by design.",
+		"A reason the holder marked redacted verifies and is reported as withheld, with the "+
+			"category the holder claims: its text and random value are absent, its commitment stays "+
+			"unopened, and nothing commits the marker or the category, so neither is vouched for.",
 		s.sign(s.recordReceipt(recordDisclosure{Reason: "redacted"})))
 	s.expect("switchtender-record-reason-redacted", nil, []string{"claim 1 reason_redacted"})
 
@@ -2034,6 +2035,28 @@ func (s *state) records() {
 	s.add("switchtender-outcome-spec-altered", false, "", "record",
 		"A receipt with no decision whose disclosed spec was changed and re-signed fails, because "+
 			"the spec no longer hashes to the spec digest the verified outcome names.", s.sign(m))
+
+	s.add("switchtender-record-specs-agree", true, "signed, chained (full)", "",
+		"A decision that commits a spec digest and an exact-form outcome that names the same digest "+
+			"verify with no spec disclosed: the two committed digests agree, which is the receipt "+
+			"of one run.", s.sign(s.recordReceipt(recordDisclosure{Reason: "text", NoSpec: true})))
+
+	s.add("switchtender-record-specs-disagree", false, "", "record",
+		"A decision that commits one spec digest beside an exact-form outcome of the same run that "+
+			"names another fails with no spec disclosed: a run's decision and outcome name one "+
+			"spec, and leaving the optional spec_body out does not hide that.",
+		s.sign(s.recordReceipt(recordDisclosure{Reason: "text", NoSpec: true,
+			OutcomeSpec: specDigestOf(`{"command":"deploy --force --prod","tool":"bash"}`)})))
+
+	run := recordPayloads(recordDisclosure{Reason: "text", NoSpec: true})
+	run = append(run[:2:2], append(recordOtherRunPayloads(), run[2])...)
+	m = s.switchTenderChainOf(run)
+	m["subject"] = map[string]any{"type": "host", "id": "vectors-host"}
+	s.add("switchtender-record-specs-two-runs", true, "signed, chained (full)", "",
+		"The records of two runs share one bundle, each run's decision and outcome naming that "+
+			"run's own spec, with no spec disclosed. A decision is held only against the outcomes of "+
+			"its own run, named by its body's run_id and by the run segment of the outcome's path, "+
+			"so two runs with different specs verify.", s.sign(m))
 }
 
 // recordDisclosure shapes the receipt recordReceipt builds.
@@ -2054,16 +2077,24 @@ type recordDisclosure struct {
 	// KeyedCreation commits the request that created the run under the keyed form, so every entry
 	// after it postdates the keyed form.
 	KeyedCreation bool
+	// NoSpec leaves spec_body off the outcome claim, a receipt that discloses no spec.
+	NoSpec bool
+	// OutcomeSpec is the spec digest the outcome record names, or empty for the run's own spec.
+	OutcomeSpec string
 }
 
-// recordReceipt builds a SwitchTender run receipt on switchtender-audit-v1: the request that
-// created the run, the approval decision unless the run needed none, an optional correction to its
-// reason, and the outcome, which carries the spec and the outcome record. Each link recomputes from
-// its payload's bound fields, so only the disclosed members can disagree with what the chain
-// committed.
+// recordReceipt builds a SwitchTender run receipt on switchtender-audit-v1 from the payloads
+// recordPayloads shapes. Each link recomputes from its payload's bound fields, so only the
+// disclosed members can disagree with what the chain committed.
 func (s *state) recordReceipt(d recordDisclosure) map[string]any {
-	specSum := sha256.Sum256([]byte(recordSpec))
-	specDigest := "sha256:" + hex.EncodeToString(specSum[:])
+	return s.switchTenderChainOf(recordPayloads(d))
+}
+
+// recordPayloads shapes the claim payloads of a SwitchTender run receipt, in chain order: the
+// request that created the run, the approval decision unless the run needed none, an optional
+// correction to its reason, and the outcome, which carries the spec and the outcome record.
+func recordPayloads(d recordDisclosure) []map[string]any {
+	specDigest := specDigestOf(recordSpec)
 
 	decision := map[string]any{"run_id": recordRun, "verdict": "approved", "spec_digest": specDigest}
 	decisionPayload := map[string]any{
@@ -2123,7 +2154,11 @@ func (s *state) recordReceipt(d recordDisclosure) map[string]any {
 		})
 	}
 
-	outcomeText := recordOutcomeText("succeeded")
+	outcomeSpec := d.OutcomeSpec
+	if outcomeSpec == "" {
+		outcomeSpec = specDigest
+	}
+	outcomeText := recordOutcomeTextNaming("succeeded", outcomeSpec)
 	nonce := recordBytes("nonce outcome")
 	digest := exactRecordDigest(nonce, []byte(outcomeText))
 	if d.LegacyOutcome {
@@ -2133,22 +2168,72 @@ func (s *state) recordReceipt(d recordDisclosure) map[string]any {
 		}
 		digest = keyedRecordDigest(nonce, outcome)
 	}
-	payloads = append(payloads, map[string]any{
+	outcomePayload := map[string]any{
 		"actor": "system:dispatcher", "actor_type": "system", "on_behalf_of": "deploy-bot",
 		"method": "RUN", "path": "/runs/" + recordRun + "/outcome/succeeded",
-		"content_digest": digest, "spec_body": recordSpec,
-		"outcome_body": outcomeText, "outcome_nonce": hex.EncodeToString(nonce),
-	})
-	return s.switchTenderChainOf(payloads)
+		"content_digest": digest,
+		"outcome_body":   outcomeText, "outcome_nonce": hex.EncodeToString(nonce),
+	}
+	if !d.NoSpec {
+		outcomePayload["spec_body"] = recordSpec
+	}
+	return append(payloads, outcomePayload)
 }
 
-// recordOutcomeText is the run's outcome record as a producer fixes it before committing: reduced
-// to canonical bytes once, so the bytes committed under the exact form are the bytes disclosed.
+// recordOtherRun is a second run whose records share a bundle with recordRun's.
+const recordOtherRun = "run_vectors_other"
+
+// recordOtherSpec is recordOtherRun's spec, which differs from recordRun's.
+const recordOtherSpec = `{"command":"migrate","tool":"bash"}`
+
+// recordOtherRunPayloads shapes recordOtherRun's approval decision and its exact-form outcome, both
+// naming recordOtherSpec's digest, with no reason and no spec disclosed.
+func recordOtherRunPayloads() []map[string]any {
+	specDigest := specDigestOf(recordOtherSpec)
+	decision := map[string]any{
+		"run_id": recordOtherRun, "decision_id": "aud_decision_other", "verdict": "approved",
+		"spec_digest": specDigest,
+	}
+	decisionNonce := recordBytes("nonce decision other")
+	outcomeText, err := jcs.Serialize(map[string]any{
+		"run_id": recordOtherRun, "status": "succeeded", "exit_code": int64(0),
+		"spec_digest": specDigest,
+	})
+	if err != nil {
+		panic(err)
+	}
+	outcomeNonce := recordBytes("nonce outcome other")
+	return []map[string]any{{
+		"actor": "ops-admin", "actor_type": "session", "on_behalf_of": "ops-admin",
+		"method": "DECISION", "path": "/runs/" + recordOtherRun + "/decision/approved",
+		"content_digest": keyedRecordDigest(decisionNonce, decision),
+		"decision_body":  decision, "decision_nonce": hex.EncodeToString(decisionNonce),
+	}, {
+		"actor": "system:dispatcher", "actor_type": "system", "on_behalf_of": "deploy-bot",
+		"method": "RUN", "path": "/runs/" + recordOtherRun + "/outcome/succeeded",
+		"content_digest": exactRecordDigest(outcomeNonce, outcomeText),
+		"outcome_body":   string(outcomeText), "outcome_nonce": hex.EncodeToString(outcomeNonce),
+	}}
+}
+
+// specDigestOf is sha256: and the hex SHA-256 of a spec text's UTF-8 bytes.
+func specDigestOf(spec string) string {
+	sum := sha256.Sum256([]byte(spec))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// recordOutcomeText is the run's outcome record naming the run's own spec, as a producer fixes it
+// before committing: reduced to canonical bytes once, so the bytes committed under the exact form
+// are the bytes disclosed.
 func recordOutcomeText(status string) string {
-	specSum := sha256.Sum256([]byte(recordSpec))
+	return recordOutcomeTextNaming(status, specDigestOf(recordSpec))
+}
+
+// recordOutcomeTextNaming is the run's outcome record naming the spec digest given, in the
+// canonical bytes a producer commits under the exact form.
+func recordOutcomeTextNaming(status, specDigest string) string {
 	text, err := jcs.Serialize(map[string]any{
-		"run_id": recordRun, "status": status, "exit_code": int64(0),
-		"spec_digest": "sha256:" + hex.EncodeToString(specSum[:]),
+		"run_id": recordRun, "status": status, "exit_code": int64(0), "spec_digest": specDigest,
 	})
 	if err != nil {
 		panic(err)

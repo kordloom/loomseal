@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -61,6 +62,16 @@ func claimOf(m map[string]any) map[string]any {
 	c, _ := m["claims"].([]any)
 	first, _ := c[0].(map[string]any)
 	return first
+}
+
+// testAttestation returns an attestation object carrying at, whose key and signature are well
+// formed and verify nothing, which parse does not check.
+func testAttestation(at string) map[string]any {
+	return map[string]any{
+		"key_id": "sha256:" + strings.Repeat("ab", 32), "alg": "ed25519", "role": "approver",
+		"public_key": base64.StdEncoding.EncodeToString(make([]byte, 32)),
+		"sig":        base64.StdEncoding.EncodeToString(make([]byte, 64)), "at": at,
+	}
 }
 
 func TestParse(t *testing.T) {
@@ -198,6 +209,37 @@ func TestParse(t *testing.T) {
 	}, { // Test 32: A created_at with a one-digit hour is not RFC 3339 and is rejected.
 		Mutate: func(m map[string]any) { m["created_at"] = "2026-07-27T1:00:00Z" },
 		Want:   ErrSchema,
+	}, { // Test 33: A claim time carrying a numeric offset is rejected, since every time ends in Z.
+		Mutate:  func(m map[string]any) { claimOf(m)["at"] = "2026-07-27T15:00:00+00:00" },
+		Want:    ErrSchema,
+		WantMsg: "claim 0 at",
+	}, { // Test 34: A claim attestation carrying a time in the one form parses.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["attestations"] = []any{testAttestation("2026-08-30T12:00:00Z")}
+		},
+	}, { // Test 35: A claim attestation carrying an empty at is rejected rather than read as one
+		// that carries no time.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["attestations"] = []any{testAttestation("")}
+		},
+		Want:    ErrSchema,
+		WantMsg: "claim 0 attestation 0 at",
+	}, { // Test 36: A claim attestation whose at carries a numeric offset is rejected.
+		Mutate: func(m map[string]any) {
+			claimOf(m)["attestations"] = []any{testAttestation("2026-08-30T12:00:00+00:00")}
+		},
+		Want:    ErrSchema,
+		WantMsg: "claim 0 attestation 0 at",
+	}, { // Test 37: A head attestation carrying an empty at is rejected.
+		Mutate:  func(m map[string]any) { m["attestations"] = []any{testAttestation("")} },
+		Want:    ErrSchema,
+		WantMsg: "head attestation 0 at",
+	}, { // Test 38: An attestation that carries no at parses, since the member is optional.
+		Mutate: func(m map[string]any) {
+			att := testAttestation("")
+			delete(att, "at")
+			claimOf(m)["attestations"] = []any{att}
+		},
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
@@ -215,48 +257,77 @@ func TestParse(t *testing.T) {
 	}
 }
 
-// TestParseTime holds ParseTime to the RFC 3339 date-time production, refusing the looser forms
-// time.Parse accepts under the RFC3339 layout.
+// TestParseTime holds ParseTime to the one time form the format allows, the RFC 3339 date-time
+// production narrowed to UTC with years from 0001 to 9999, refusing the looser forms time.Parse
+// accepts under the RFC3339 layout and the forms general date parsers read. A time that parses
+// is read to the whole microsecond, with finer digits dropped toward the earlier instant.
 func TestParseTime(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		WantOK bool
-		In     string
+		WantMicro int64
+		WantOK    bool
+		In        string
 	}{{ // Test 0: A UTC time parses.
-		In: "2026-07-27T15:00:00Z", WantOK: true,
-	}, { // Test 1: A fraction after a period parses at any length.
-		In: "2026-07-27T15:00:00.123456789123Z", WantOK: true,
-	}, { // Test 2: A numeric offset parses.
-		In: "2026-07-27T15:00:00-05:30", WantOK: true,
-	}, { // Test 3: The last minute of an offset's range parses.
-		In: "2026-07-27T15:00:00+23:59", WantOK: true,
-	}, { // Test 4: February 29 parses in year 0000, a leap year.
-		In: "0000-02-29T00:00:00Z", WantOK: true,
-	}, { // Test 5: A one-digit hour is refused.
+		In: "2026-07-27T15:00:00Z", WantOK: true, WantMicro: 1785164400000000,
+	}, { // Test 1: A fraction after a period parses at any length, read to the microsecond.
+		In: "2026-07-27T15:00:00.123456789123Z", WantOK: true, WantMicro: 1785164400123456,
+	}, { // Test 2: The first instant of year 0001 parses.
+		In: "0001-01-01T00:00:00Z", WantOK: true, WantMicro: -62135596800000000,
+	}, { // Test 3: The last instant of year 9999 parses, its nanosecond digits dropped.
+		In: "9999-12-31T23:59:59.999999999Z", WantOK: true, WantMicro: 253402300799999999,
+	}, { // Test 4: February 29 parses in a leap year.
+		In: "2024-02-29T00:00:00Z", WantOK: true, WantMicro: 1709164800000000,
+	}, { // Test 5: A numeric offset is refused.
+		In: "2026-07-27T15:00:00-05:30",
+	}, { // Test 6: A zero numeric offset is refused.
+		In: "2026-07-27T15:00:00+00:00",
+	}, { // Test 7: Year 0000 is refused.
+		In: "0000-02-29T00:00:00Z",
+	}, { // Test 8: A one-digit hour is refused.
 		In: "2026-07-27T1:00:00Z",
-	}, { // Test 6: A comma before the fraction is refused.
+	}, { // Test 9: A comma before the fraction is refused.
 		In: "2026-07-27T15:00:00,5Z",
-	}, { // Test 7: An offset hour of 24 is refused.
-		In: "2026-07-27T15:00:00+24:00",
-	}, { // Test 8: An offset minute of 60 is refused.
-		In: "2026-07-27T15:00:00+23:60",
-	}, { // Test 9: A lower case separator is refused.
+	}, { // Test 10: A lower case separator is refused.
 		In: "2026-07-27t15:00:00Z",
-	}, { // Test 10: An hour of 24 is refused.
+	}, { // Test 11: A lower case zone letter is refused.
+		In: "2026-07-27T15:00:00z",
+	}, { // Test 12: A space between the date and the time is refused.
+		In: "2026-07-27 15:00:00Z",
+	}, { // Test 13: A leap second is refused.
+		In: "2016-12-31T23:59:60Z",
+	}, { // Test 14: An hour of 24 is refused.
 		In: "2026-07-27T24:00:00Z",
-	}, { // Test 11: February 29 is refused in a common year.
+	}, { // Test 15: February 29 is refused in a common year.
 		In: "1900-02-29T00:00:00Z",
-	}, { // Test 12: A time with no offset is refused.
+	}, { // Test 16: A month of 13 is refused.
+		In: "2026-13-01T00:00:00Z",
+	}, { // Test 17: A time with no zone is refused.
 		In: "2026-07-27T15:00:00",
-	}, { // Test 13: Trailing text is refused.
+	}, { // Test 18: Trailing text is refused.
 		In: "2026-07-27T15:00:00Z\n",
+	}, { // Test 19: A digit outside ASCII is refused.
+		In: "2026-07-27T15:00:0\uff10Z",
+	}, { // Test 20: A period with no fraction digits is refused.
+		In: "2026-07-27T15:00:00.Z",
+	}, { // Test 21: An empty string is refused.
+		In: "",
+	}, { // Test 22: Half a microsecond is dropped, not rounded up.
+		In: "2026-07-27T15:00:00.0000005Z", WantOK: true, WantMicro: 1785164400000000,
+	}, { // Test 23: A sub-microsecond fraction before the epoch drops toward the earlier instant.
+		In: "1969-12-31T23:59:59.9999999Z", WantOK: true, WantMicro: -1,
 	}}
 	for testNum, test := range tests {
 		t.Run(fmt.Sprintf("test %d", testNum), func(t *testing.T) {
 			t.Parallel()
-			_, err := ParseTime(test.In)
-			if got := err == nil; got != test.WantOK {
-				t.Errorf("ok mismatch for %q: got %v, want %v (%v)", test.In, got, test.WantOK, err)
+			got, err := ParseTime(test.In)
+			if ok := err == nil; ok != test.WantOK {
+				t.Errorf("ok mismatch for %q: got %v, want %v (%v)", test.In, ok, test.WantOK, err)
+			}
+			if !test.WantOK {
+				return
+			}
+			if diff := cmp.Diff(time.UnixMicro(test.WantMicro).UTC(), got); diff != "" {
+				t.Errorf("time mismatch for %q (-want +got):\n%s", test.In, diff)
 			}
 		})
 	}

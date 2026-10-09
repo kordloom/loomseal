@@ -60,6 +60,9 @@ type conformanceVector struct {
 	SpanLongestGap string `json:"span_longest_gap"`
 	// SpanGaps lists, in order, the gap lines a verifier must report.
 	SpanGaps []string `json:"span_gaps"`
+	// AnchorAttestations lists, in order, the time and signer line a verifier must report for each
+	// timestamp token it verified.
+	AnchorAttestations []string `json:"anchor_attestations"`
 }
 
 // TestConformanceVectors drives the verifier from the manifest so the shipped verifier and the
@@ -134,6 +137,13 @@ func TestConformanceVectors(t *testing.T) {
 				gaps := cmp.Diff(v.SpanGaps, report.SpanGaps, cmpopts.EquateEmpty())
 				if gaps != "" {
 					t.Errorf("span gaps (-want +got):\n%s", gaps)
+				}
+				// The signer is named by one rule, so the line naming each verified token's
+				// time and signer is part of the verdict a vector pins.
+				att := cmp.Diff(v.AnchorAttestations, report.AnchorAttestations,
+					cmpopts.EquateEmpty())
+				if att != "" {
+					t.Errorf("anchor attestations (-want +got):\n%s", att)
 				}
 				return
 			}

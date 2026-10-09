@@ -507,8 +507,8 @@
     <code>\uD800</code>-through-<code>\uDFFF</code> escape or as raw bytes, is rejected at
     parse and never coerced to the replacement character; coercion would let two different
     documents share one canonical form and one signature. Digest strings are
-    <code>sha256:</code> followed by 64 lowercase hex characters. Times are RFC 3339 in UTC;
-    fractional seconds are allowed where a chain profile requires them. Numbers in a bundle are
+    <code>sha256:</code> followed by 64 lowercase hex characters. Times are UTC, in the one form
+    stated below. Numbers in a bundle are
     written as plain integer literals with absolute value at most 2^53; fractions, exponents,
     and larger magnitudes are invalid, because RFC 8785 serializes numbers as IEEE doubles and
     those forms do not round-trip.</p>
@@ -524,31 +524,67 @@
     <code>proof</code> and an attestation's key, is RFC 4648 standard encoding with its padding
     and nothing else. A line break, whitespace, or any other byte outside the alphabet is
     rejected rather than skipped, because a decoder that skips such bytes gives one key or
-    signature many spellings. Every time, from <code>created_at</code> and each claim's
-    <code>at</code> to an anchor's and an attestation's <code>at</code> and a presentation's
-    <code>created_at</code>, is the RFC 3339 <code>date-time</code> production exactly: a
-    two-digit hour, a period before any fractional second, and <code>Z</code> or a numeric
-    offset whose hour is below 24 and whose minute is below 60. A one-digit hour, a comma before
-    the fraction, and an offset of 24 hours or 60 minutes are rejected, although general date
-    parsers read them, because two verifiers that each read a different superset of RFC 3339
-    reach different verdicts on one bundle. A bundle or presentation nests no deeper than 3200
+    signature many spellings. A bundle or presentation nests no deeper than 3200
     levels, where an array or an object is one level and the outermost object is the first. The
     bound is set by the shipped verifier with the least stack, the browser build, so every
     verifier reads a document within it to a verdict, and a deeper document is rejected at parse
     before any recursive reader sees it. A string that holds JSON text, such as an outcome
     record, is text to this bound, so a verifier that reads such text bounds its depth without
-    recursion before any recursive reader sees it. These rules refuse only inputs the schema or
-    RFC 3339 already forbids. Vectors pin each of them: the type refusals in every vector whose
+    recursion before any recursive reader sees it. The type, null, and base64 rules refuse only
+    inputs the schema or RFC 4648 already forbids. Vectors pin each of them: the type refusals in every vector whose
     name begins with <code>type-</code> and in <code>params-number</code>, the null refusals in
     <code>prev-null</code>, <code>attestation-null</code>, <code>disclosure-null</code>, and
     <code>params-null</code>, the base64 refusals in
-    every vector whose name ends in <code>line-break</code>, the time refusals in
+    every vector whose name ends in <code>line-break</code>, and the bound in
+    <code>nesting-past-bound</code> and <code>present-past-bound</code>, which are refused, and
+    <code>nesting-3000-deep</code>, <code>nesting-at-bound</code>, and
+    <code>switchtender-outcome-deep</code>, which verify.</p>
+    <p>Every time a bundle or a presentation carries, <code>created_at</code>, each claim's
+    <code>at</code>, an anchor's <code>at</code>, a claim attestation's and a head attestation's
+    <code>at</code>, and a presentation's <code>created_at</code>, takes one form and no other:
+    <code>YYYY-MM-DDTHH:MM:SS</code>, then an optional period and one or more digits of
+    fractional second, then <code>Z</code>, as in <code>2026-07-27T15:00:00Z</code> and
+    <code>2026-07-27T15:00:00.123456789Z</code>. Every digit is ASCII and every field has exactly
+    the width shown. The year runs from 0001 to 9999, the month from 01 to 12, and the day within
+    its month, February 29 only in a leap year. The hour runs from 00 to 23, and the minute and
+    the second from 00 to 59, so a leap second written as 60 is rejected. The <code>T</code> and
+    the <code>Z</code> are upper case. This is the RFC 3339 <code>date-time</code> production
+    narrowed to UTC, which is the form every producer this format describes writes. A verifier
+    rejects a bundle carrying any other string at parse, under every profile, before any profile
+    reads the time: a numeric offset, <code>+00:00</code> included, a space or a lower case
+    <code>t</code> in place of the <code>T</code>, a lower case <code>z</code>, a missing
+    <code>Z</code>, year 0000, a one-digit field, a comma before the fraction, and a field out of
+    range. A presentation whose <code>created_at</code> takes any other form fails the
+    presentation check. An attestation that carries <code>at</code> carries a time in this form,
+    so an empty <code>at</code> is rejected rather than read as no time.</p>
+    <p>A verifier reads every time to the whole microsecond, whatever precision its own time type
+    keeps, and drops any finer digits toward the earlier instant, never rounding them. Every
+    comparison a verdict rests on is made between times read that way: a claim's <code>at</code>
+    against a timestamp token's <code>genTime</code>, that <code>genTime</code> against its
+    certificate's validity window, and one span beat against the next. No verifier can then reach
+    a verdict on a digit another one drops. A profile that hashes a time still hashes every digit
+    as written.</p>
+    <p>The rule is this narrow because general date parsers each read a different superset of
+    RFC 3339, one a space for the <code>T</code>, another year 0000, another any offset, and two
+    verifiers built on two of them reached different verdicts on one signed bundle. Vectors pin
+    it: every vector whose name begins with <code>time-</code>,
     <code>created-at-one-digit-hour</code>, <code>created-at-comma-fraction</code>,
     <code>created-at-offset-hour-24</code>, <code>created-at-offset-minute-60</code>, and the
-    attestation and presentation vectors whose names end in <code>one-digit-hour</code> or
-    <code>comma-fraction</code>, and the bound in <code>nesting-past-bound</code> and
-    <code>present-past-bound</code>, which are refused, and <code>nesting-3000-deep</code>,
-    <code>nesting-at-bound</code>, and <code>switchtender-outcome-deep</code>, which verify.</p>
+    attestation and presentation vectors whose names end in <code>one-digit-hour</code>,
+    <code>comma-fraction</code>, <code>offset</code>, or <code>lowercase-z</code>. Of these,
+    <code>time-fraction</code>, <code>time-fraction-twelve-digits</code>,
+    <code>time-year-0001</code>, and <code>time-year-9999</code> verify. The four presentation
+    vectors <code>present-created-at-one-digit-hour</code>,
+    <code>present-created-at-comma-fraction</code>, <code>present-created-at-offset</code>, and
+    <code>present-created-at-lowercase-z</code> fail the presentation check. Every other one is
+    refused at parse. A timestamp token's TSTInfo is read by position, and its
+    <code>genTime</code> is the fifth member, a universal GeneralizedTime, so another tag in that
+    position fails the anchor check even when a valid GeneralizedTime follows it.
+    <code>genTime</code> is read in the one form RFC 3161 gives it,
+    <code>YYYYMMDDhhmmss</code>, then an optional period and fraction digits with no trailing
+    zero, then <code>Z</code>, with the same field ranges, and a token whose <code>genTime</code>
+    takes any other form fails the anchor check. The vectors whose names begin with
+    <code>anchor-gen-time-</code> pin the form, the slot and the microsecond comparisons.</p>
 
     <h2>Producer and signatures</h2>
     <p><code>producer.public_key</code> is the producer's raw 32-byte ed25519 public key,
@@ -641,11 +677,51 @@
     claim. An anchor that matches only a declared head beyond the bundled claims is reported, but
     because that head link is unverified the anchor binds nothing the verifier confirmed and does
     not by itself earn the anchored level. An anchor that matches no verified coordinate fails
-    the bundle. Verifier v0.1 reports embedded <code>rfc3161</code> tokens as carried without
-    validating them; token validation lands in v0.2, and until then a matched anchor reports as
-    anchored by reference and the relying party confirms the ref out of band. Anchoring cadence
-    bounds the window in which a compromised producer key could rewrite unanchored history;
-    anchor often.</p>
+    the bundle. A verifier opens an embedded <code>rfc3161</code> token and checks it offline:
+    its message imprint is the SHA-256 of the anchored link's raw bytes, its signed attributes
+    commit to its TSTInfo, its signature verifies against the timestamping certificate it
+    carries, and its <code>genTime</code> falls inside that certificate's validity window and no
+    more than five minutes before the entry it covers. A token that holds earns the anchored
+    (proof verified) level, and one that does not fails the anchor check. An
+    <code>rfc3161</code> anchor without a proof reports as anchored by reference, and the relying
+    party confirms the ref out of band. Anchoring cadence bounds the window in which a
+    compromised producer key could rewrite unanchored history; anchor often.</p>
+    <p>A token is read as DER, by position, and by no general ASN.1, X.509, or PKCS #7 parser,
+    because each one's tolerances differ from the next. DER's identifier and length rules apply to
+    every element the walk reaches, members no verifier interprets included: every element has a
+    one-octet identifier and a definite length in its shortest form and lies wholly inside its
+    container, nothing follows the ContentInfo, and an explicit tag or an encapsulating OCTET
+    STRING holds exactly one element. That rules out an indefinite length, a long form length
+    below 128 or with a leading zero octet, a length past its container, a stray octet inside any
+    constructed element, and the high tag number form. An encoding wrapped in a primitive
+    element, such as the TSTInfo, the RSA key, or an ECDSA signature, is read in full when a
+    verifier reads it at all.</p>
+    <p>DER's value rules apply to the values a verifier reads. Such an INTEGER is non-empty and in
+    its shortest form, such an OBJECT IDENTIFIER is non-empty with every subidentifier in its
+    shortest form and no larger than 2^31-1, a certificate's critical flag is present only as
+    TRUE, <code>0xFF</code>, the RSA parameters are a NULL with no content, the key BIT STRING has
+    no unused bits, and the signer certificate's validity times are each a UTCTime
+    <code>YYMMDDhhmmssZ</code> or a GeneralizedTime <code>YYYYMMDDhhmmssZ</code>. In a member no
+    verifier interprets they are not checked, so a token still verifies when such a member holds a
+    constructed string, an INTEGER, OBJECT IDENTIFIER, BOOLEAN, NULL, or time that DER would
+    encode otherwise, nonzero BIT STRING padding bits, an encoded default value, a SET OF out of
+    order, or a name string outside its character set. The signer certificate is version 3,
+    marked for timestamping, and holds an Ed25519 key, an ECDSA key on a NIST curve as an
+    uncompressed point, or an RSA key of 1024 to 16384 bits holding only its modulus and exponent,
+    and the signature algorithm must match that key. FORMAT.md states every rule, and the vectors
+    whose names begin with <code>anchor-der-</code> and <code>anchor-cert-</code> pin them, each
+    failing the anchor check, the <code>anchor-der-tag-</code> family among them, so every
+    member a verifier requires has a vector for its identifier.</p>
+    <p>A verifier names the signer from the signer certificate's subject alone, never from a parse
+    of the whole certificate, and every verifier writes the same name. A subject made of relative
+    distinguished names is written in the RFC 4514 form, last to first, with the short names
+    <code>CN</code>, <code>L</code>, <code>ST</code>, <code>O</code>, <code>OU</code>,
+    <code>C</code>, <code>STREET</code>, <code>DC</code>, and <code>UID</code>, any other type in
+    dotted form, and a value as escaped text when it is a UTF8String, PrintableString, or
+    IA5String that reads as text, or otherwise as <code>#</code> and the hexadecimal of its
+    encoding. Control characters are written as hexadecimal escapes, so a name cannot act on a
+    terminal. Any other subject is <code>#</code> and the hexadecimal of its whole encoding. The
+    vectors whose names begin with <code>anchor-signer-name-</code> pin the rule.</p>
 
     <h2 id="loomspan">Population attestation: LoomSpan</h2>
     <p>A chain proves its entries were not edited. It does not prove entries were written. A

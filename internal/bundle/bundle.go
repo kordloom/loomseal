@@ -496,7 +496,7 @@ func (s Signature) validate(i int) error {
 	return nil
 }
 
-// checkTime requires an RFC 3339 timestamp.
+// checkTime requires a time in the one form ParseTime reads.
 func checkTime(what, s string) error {
 	if _, err := ParseTime(s); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrSchema, what, err)
@@ -504,21 +504,34 @@ func checkTime(what, s string) error {
 	return nil
 }
 
-// reTime is the RFC 3339 date-time production: a four-digit year, two-digit fields, an upper case
-// T, a fraction of any length after a period, and Z or a numeric offset whose hour is below 24 and
-// whose minute is below 60.
-var reTime = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}` +
-	`(\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$`)
+// reTime is the one time form this format allows: a four-digit year, a two-digit month, day,
+// hour, minute, and second, an upper case T between the date and the time, an optional fraction
+// of one or more digits after a period, and an upper case Z. Every digit is ASCII.
+var reTime = regexp.MustCompile(
+	`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$`)
 
-// ParseTime parses an RFC 3339 time strictly: the shape reTime fixes, with the calendar fields in
-// range. time.Parse with the RFC3339 layout, and Time.UnmarshalText, which defers to it, also
-// accept a one-digit hour, a comma before the fraction, and offsets up to 24:60, none of which RFC
-// 3339 allows, so every time a bundle or a presentation carries is checked here before it is read.
+// ParseTime parses a time in the one form this format allows, the RFC 3339 date-time production
+// narrowed to UTC: the shape reTime fixes, a year from 0001 to 9999, a month from 01 to 12, a day
+// within its month, an hour below 24, and a minute and a second below 60, so a leap second is
+// refused. time.Parse with the RFC3339 layout also reads a one-digit hour, a comma before the
+// fraction, a numeric offset, and year 0000, so every time a bundle or a presentation carries is
+// read here and by nothing else, under every profile. The result is whole microseconds, with the
+// digits past the microsecond dropped toward the earlier instant rather than rounded, so every
+// comparison this verifier makes between times is the one a verifier whose time type stops at
+// microseconds makes.
 func ParseTime(s string) (time.Time, error) {
 	if !reTime.MatchString(s) {
-		return time.Time{}, fmt.Errorf("%q is not an RFC 3339 time", s)
+		return time.Time{}, fmt.Errorf("%q is not a UTC time of the form "+
+			"YYYY-MM-DDTHH:MM:SS[.fraction]Z", s)
 	}
-	return time.Parse(time.RFC3339, s)
+	if strings.HasPrefix(s, "0000-") {
+		return time.Time{}, fmt.Errorf("%q is in year 0000, and the first year allowed is 0001", s)
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t.Truncate(time.Microsecond), nil
 }
 
 // DecodeBase64 decodes a base64 standard encoding string, refusing any byte outside the alphabet

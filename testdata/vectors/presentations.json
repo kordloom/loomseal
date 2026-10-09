@@ -34,6 +34,22 @@
       "why": "A presentation whose created_at has a comma before its fractional second is refused, because the time is not RFC 3339."
     },
     {
+      "name": "present-created-at-lowercase-z",
+      "file": "present-created-at-lowercase-z.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose created_at ends in a lower case z is refused, because the time ends in an upper case Z."
+    },
+    {
+      "name": "present-created-at-offset",
+      "file": "present-created-at-offset.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "A presentation whose created_at carries a numeric offset, even +00:00, is refused, because a time ends in Z."
+    },
+    {
       "name": "present-created-at-one-digit-hour",
       "file": "present-created-at-one-digit-hour.loomseal-presentation.json",
       "expect_audience": "acme-verifier",

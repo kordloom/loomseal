@@ -105,6 +105,13 @@ for (const v of manifest.vectors) {
     const gaps = (r.span_gaps || []).join("|");
     const wantGaps = (v.span_gaps || []).join("|");
     if (gaps !== wantGaps) problems.push(`span_gaps got[${gaps}] want[${wantGaps}]`);
+    // The signer is named by one rule, so each verified token's time and signer line is part of
+    // the verdict a vector pins, here as on the command line.
+    const attested = (r.anchor_attestations || []).join("|");
+    const wantAttested = (v.anchor_attestations || []).join("|");
+    if (attested !== wantAttested) {
+      problems.push(`anchor_attestations got[${attested}] want[${wantAttested}]`);
+    }
   }
   if (problems.length) {
     bad++;

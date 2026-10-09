@@ -214,8 +214,8 @@ never coerced to the replacement character; coercion would let two different doc
 canonical form and one signature. Digest strings are `sha256:` followed by 64 lowercase hex
 characters, and a bare link or proof hash is 64 lowercase hex characters with no prefix. Hex is
 lowercase on the wire and a verifier rejects uppercase rather than folding case, because two spellings
-of one hash would give a bundle two canonical forms. Times are RFC 3339 in UTC; fractional seconds are allowed where a chain profile
-requires them. Numbers in a bundle are written as plain integer literals with absolute value at
+of one hash would give a bundle two canonical forms. Times are UTC, in the one form stated below.
+Numbers in a bundle are written as plain integer literals with absolute value at
 most 2^53; fractions, exponents, and larger magnitudes are invalid, because RFC 8785 serializes
 numbers as IEEE doubles and those forms do not round-trip.
 
@@ -229,27 +229,53 @@ the revealed field itself and may be any JSON, and the members of a claim payloa
 the producer. Every base64 value, from `producer.public_key` and each `sig` to an anchor's `proof`
 and an attestation's key, is RFC 4648 standard encoding with its padding and nothing else. A line
 break, whitespace, or any other byte outside the alphabet is rejected rather than skipped, because a
-decoder that skips such bytes gives one key or signature many spellings. Every time, from
-`created_at` and each claim's `at` to an anchor's and an attestation's `at` and a presentation's
-`created_at`, is the RFC 3339 `date-time` production exactly: a two-digit hour, a period before any
-fractional second, and `Z` or a numeric offset whose hour is below 24 and whose minute is below 60.
-A one-digit hour, a comma before the fraction, and an offset of 24 hours or 60 minutes are rejected,
-although general date parsers read them, because two verifiers that each read a different superset
-of RFC 3339 reach different verdicts on one bundle. A bundle or presentation nests no deeper than
+decoder that skips such bytes gives one key or signature many spellings. A bundle or presentation
+nests no deeper than
 3200 levels, where an array or an object is one level and the outermost object is the first. The
 bound is set by the shipped verifier with the least stack, the browser build, so every verifier
 reads a document within it to a verdict, and a deeper document is rejected at parse before any
 recursive reader sees it. A string that holds JSON text, such as an outcome record, is text to this
 bound, so a verifier that reads such text bounds its depth without recursion before any recursive
-reader sees it. These rules refuse only inputs the schema or RFC 3339 already forbids. Vectors pin
-each of them: the type refusals in every vector whose name begins with `type-` and in
-`params-number`, the null refusals in `prev-null`, `attestation-null`, `disclosure-null`, and
-`params-null`, the base64 refusals in
-every vector whose name ends in `line-break`, the time refusals in `created-at-one-digit-hour`,
-`created-at-comma-fraction`, `created-at-offset-hour-24`, `created-at-offset-minute-60`, and the
-attestation and presentation vectors whose names end in `one-digit-hour` or `comma-fraction`, and
-the bound in `nesting-past-bound` and `present-past-bound`, which are refused, and
-`nesting-3000-deep`, `nesting-at-bound`, and `switchtender-outcome-deep`, which verify.
+reader sees it. The type, null, and base64 rules refuse only inputs the schema or RFC 4648 already
+forbids. Vectors pin each of them: the type refusals in every vector whose name begins with
+`type-` and in `params-number`, the null refusals in `prev-null`, `attestation-null`,
+`disclosure-null`, and `params-null`, the base64 refusals in every vector whose name ends in
+`line-break`, and the bound in `nesting-past-bound` and `present-past-bound`, which are refused,
+and `nesting-3000-deep`, `nesting-at-bound`, and `switchtender-outcome-deep`, which verify.
+
+Every time a bundle or a presentation carries, `created_at`, each claim's `at`, an anchor's `at`,
+a claim attestation's and a head attestation's `at`, and a presentation's `created_at`, takes one
+form and no other: `YYYY-MM-DDTHH:MM:SS`, then an optional period and one or more digits of
+fractional second, then `Z`, as in `2026-07-27T15:00:00Z` and `2026-07-27T15:00:00.123456789Z`.
+Every digit is ASCII and every field has exactly the width shown. The year runs from 0001 to 9999,
+the month from 01 to 12, and the day within its month, February 29 only in a leap year. The hour
+runs from 00 to 23, and the minute and the second from 00 to 59, so a leap second written as 60 is
+rejected. The `T` and the `Z` are upper case. This is the RFC 3339 `date-time` production narrowed
+to UTC, which is the form every producer this format describes writes. A verifier rejects a bundle
+carrying any other string at parse, under every profile, before any profile reads the time: a
+numeric offset, `+00:00` included, a space or a lower case `t` in place of the `T`, a lower case
+`z`, a missing `Z`, year 0000, a one-digit field, a comma before the fraction, and a field out of
+range. A presentation whose `created_at` takes any other form fails the presentation check. An
+attestation that carries `at` carries a time in this form, so an empty `at` is rejected rather than
+read as no time.
+
+A verifier reads every time to the whole microsecond, whatever precision its own time type keeps,
+and drops any finer digits toward the earlier instant, never rounding them. Every comparison a
+verdict rests on is made between times read that way: a claim's `at` against a timestamp token's
+`genTime`, that `genTime` against its certificate's validity window, and one span beat against the
+next. No verifier can then reach a verdict on a digit another one drops. A profile that hashes a
+time still hashes every digit as written.
+
+The rule is this narrow because general date parsers each read a different superset of RFC 3339,
+one a space for the `T`, another year 0000, another any offset, and two verifiers built on two of
+them reached different verdicts on one signed bundle. Vectors pin it: every vector whose name
+begins with `time-`, `created-at-one-digit-hour`, `created-at-comma-fraction`,
+`created-at-offset-hour-24`, `created-at-offset-minute-60`, and the attestation and presentation
+vectors whose names end in `one-digit-hour`, `comma-fraction`, `offset`, or `lowercase-z`. Of
+these, `time-fraction`, `time-fraction-twelve-digits`, `time-year-0001`, and `time-year-9999`
+verify. The four presentation vectors `present-created-at-one-digit-hour`,
+`present-created-at-comma-fraction`, `present-created-at-offset`, and
+`present-created-at-lowercase-z` fail the presentation check. Every other one is refused at parse.
 
 ## Producer and signatures
 
@@ -421,8 +447,8 @@ The time is the claim's `at` **exactly as it appears in the bundle**. A verifier
 and must not parse the value and re-serialize it. A producer writes `at` in UTC, RFC 3339, ending in
 `Z`, with trailing zeros in the fractional part trimmed and the fractional part and its dot omitted
 entirely when the fraction is zero, so an `at` of `2026-07-27T15:00:00Z` is stored and hashed as
-`2026-07-27T15:00:00Z`. A verifier still rejects an `at` that is not well-formed RFC 3339 UTC; it
-simply never rewrites a well-formed one.
+`2026-07-27T15:00:00Z`. A verifier still rejects an `at` outside the one time form "Canonical form
+and digests" states; it simply never rewrites one inside it.
 
 Hashing the stored bytes is normative, not an optimization, and earlier wording that described the
 time as carrying nanosecond precision invited the opposite reading. A verifier that parsed the value
@@ -735,7 +761,8 @@ internally consistent history.
 
 A claim may carry an `attestations` array. Each attestation is `key_id`, `public_key` (raw ed25519,
 base64), `alg` (`ed25519`), `role` (what the signer is to the claim, such as `counterparty` or
-`auditor`), an optional `at` (RFC 3339 UTC, when the signer counter-signed), and `sig`. The
+`auditor`), an optional `at` (when the signer counter-signed, a time in the one form "Canonical
+form and digests" states and never empty), and `sig`. The
 signature is over the RFC 8785 canonical object `{ "loomseal": "attestation/1", "link": <the
 claim's chain.link>, "role": <role> }`, with `"at"` included exactly when the attestation carries
 it. The `loomseal` member is a domain tag: it keeps this signature meaningless anywhere else a
@@ -846,6 +873,223 @@ Without this a producer running its own authority could sign any hash with any d
 strongest verdict the format issues. The producer-written anchor `at` is a label for the reader and is
 not the value the verdict rests on; `genTime` is the fact, because it is the one time value the
 producer does not control.
+
+A verifier reads the token as DER, by the rules below, and by no general decoder. DER's rules fall
+in two groups, and they do not reach the same parts of a token.
+
+The identifier and length rules apply to every element, in the token and in the TSTInfo it
+encapsulates, including members no verifier interprets. Every element has a one-octet identifier
+and a definite length in its shortest form, and lies wholly inside its container, and every
+constructed element holds only whole elements. A length below 128 is one octet. A longer length is
+0x81 to 0x84 followed by that many octets, the first of them nonzero. Nothing may follow the
+ContentInfo. These BER forms are therefore refused wherever the walk reaches:
+
+- an indefinite length, a long form length below 128, and a length with a leading zero octet
+- a length that runs past its container, and a stray octet or truncated element inside any
+  constructed element
+- the high tag number form of an identifier
+
+The content of a primitive element is octets, not elements, so this walk does not enter it. Where
+a primitive element wraps an encoding a verifier reads, the verifier reads that encoding in full,
+and nothing inside it goes unread: the OCTET STRING holding the TSTInfo, which is walked as the
+token is; the subject key identifier and extended key usage values; the RSA key in the
+subjectPublicKey BIT STRING; and the ECDSA signature. Any other primitive content, such as a
+certificate's own signature or the value of an extension a verifier does not read, is not
+interpreted.
+
+The value rules apply only to the values a verifier reads, which are the members this section
+names:
+
+- An INTEGER has at least one content octet and is in its shortest two's complement form, so its
+  first nine bits are never all zero or all one. A version INTEGER also fits a signed 64-bit
+  integer.
+- An OBJECT IDENTIFIER has at least one content octet, no subidentifier that starts with the octet
+  0x80 or exceeds 2^31-1, and ends on the last octet of a subidentifier. 2^31-1 is the bound Go's
+  encoding/asn1 holds a subidentifier to. Without a bound one subidentifier can be as long as the
+  token, and naming it in decimal, as a verifier does when it refuses a token, is slow in one
+  language and refused outright by another, which limits the length of an integer it converts.
+- A BOOLEAN appears only to say TRUE, as the one octet 0xFF, because DER never encodes a default.
+- A NULL has no content octets.
+- A key BIT STRING has no unused bits.
+- `genTime` and the signer certificate's validity times take the forms stated below.
+
+So a token that carries, in a member no verifier interprets, any of the following still verifies,
+because no verifier reads the member that holds it:
+
+- a constructed encoding of a string type, such as a constructed BIT STRING or UTF8String
+- a value encoding DER forbids for an INTEGER, OBJECT IDENTIFIER, BOOLEAN, NULL, UTCTime or
+  GeneralizedTime, such as an empty or padded INTEGER, a padded subidentifier, a BOOLEAN 0x01, or a
+  NULL with content
+- nonzero unused bits in a BIT STRING, such as a certificate's own signature
+- an encoded DEFAULT value, such as a TSTInfo `ordering` of FALSE
+- members of a SET OF out of DER's order
+- a string inside a name outside its type's character set
+
+A verifier compares each element's whole identifier octet with the one its position requires, so
+the class and the constructed bit are checked along with the tag number. It reads members by
+position and never searches further along for one that is not in its slot. Inside a SEQUENCE the
+walk reaches, nothing after the last member a verifier uses is interpreted, though it must still be
+DER:
+
+- The ContentInfo is a SEQUENCE of the contentType `signedData` and a [0] holding exactly one
+  SignedData.
+- The SignedData is a SEQUENCE of a version INTEGER, the digestAlgorithms SET, the
+  encapContentInfo, an optional [0] certificates, an optional [1] crls, and the signerInfos SET.
+  The encapContentInfo is a SEQUENCE of the eContentType `id-ct-TSTInfo` and a [0] holding exactly
+  one OCTET STRING, whose content is exactly one TSTInfo. Every element of signerInfos is a
+  SignerInfo, and there must be exactly one.
+- The SignerInfo is a SEQUENCE of a version INTEGER, the signer identifier, the digestAlgorithm,
+  the constructed [0] signedAttrs, the signatureAlgorithm, and the signature OCTET STRING. The
+  signer identifier is a primitive [0] subject key identifier or an IssuerAndSerialNumber SEQUENCE
+  of an issuer SEQUENCE and a serial number INTEGER. Every signed attribute is a SEQUENCE of an
+  OBJECT IDENTIFIER and a SET. Every `messageDigest` attribute's SET holds exactly one OCTET STRING
+  equal to the digest of the eContent, and there is at least one. The digest is SHA-256, SHA-384 or
+  SHA-512.
+- The TSTInfo is a SEQUENCE whose first five members are the version, the policy, the message
+  imprint, the serial number and `genTime`. The message imprint is the third member and must use
+  SHA-256. `genTime` is the fifth, and is a universal GeneralizedTime, so another tag in that
+  position fails the anchor check even when a valid GeneralizedTime follows it.
+
+Every element of the certificates field is a Certificate SEQUENCE, read through its tbsCertificate
+as far as the extensions: an optional [0] holding exactly one version INTEGER, the serial number
+INTEGER, the signature SEQUENCE, the issuer SEQUENCE, the validity SEQUENCE, the subject SEQUENCE,
+the subjectPublicKeyInfo SEQUENCE, optional [1] and [2] unique identifiers, and an optional [3]
+holding exactly one SEQUENCE of extensions. Each extension is a SEQUENCE of an extnID, an optional
+critical BOOLEAN, and an extnValue OCTET STRING, and no extnID appears twice in one certificate. A
+subject key identifier value holds exactly one OCTET STRING, and an extended key usage value holds
+exactly one SEQUENCE of OBJECT IDENTIFIERs. The signer is the first carried certificate the signer
+identifier names, by its issuer's encoding octet for octet and its serial number, or by its subject
+key identifier. The signer must be a version 3 certificate, an explicit version of 2, and list
+`id-kp-timeStamping`. Its notBefore and notAfter are each a UTCTime `YYMMDDhhmmssZ`, whose two-digit
+year is 19YY from 50 to 99 and 20YY below 50, or a GeneralizedTime `YYYYMMDDhhmmssZ`, with the
+field ranges a bundle time has. Its key is one of three, each in one form:
+
+- Ed25519: 32 octets, with no algorithm parameters.
+- ECDSA on P-224, P-256, P-384 or P-521, named by its curve OBJECT IDENTIFIER and written as an
+  uncompressed point on that curve.
+- RSA, with NULL parameters, written as exactly one SEQUENCE holding only the modulus and the
+  public exponent. The modulus is positive, odd and from 1024 to 16384 bits. The exponent is odd
+  and from 3 to 2^31-1. Go's crypto/rsa sets no upper bound on the modulus and OpenSSL verifies
+  with none longer than 16384 bits, so every verifier holds keys to that bound.
+
+Any other key is refused. A certificate's own signature, and anything in a certificate beyond the
+members above, is not interpreted: whether the authority is trusted is the relying party's call,
+made from the signer a verifier reports.
+
+**The signer a verifier reports.** A verifier names the signer from the signer certificate's
+subject Name alone, never from a parse of the whole certificate, so the name does not depend on how
+strictly some X.509 library reads the rest of it. Every verifier writes the same name for the same
+subject, by this rule:
+
+- When the subject is one SEQUENCE of one or more SETs, each holding one or more attribute
+  SEQUENCEs of an OBJECT IDENTIFIER that meets the rules above and exactly one value, it is written
+  in the RFC 4514 form: the RDNs from the last to the first, separated by commas, and the
+  attributes of a multi-valued RDN in the order they are encoded, separated by plus signs. Each
+  attribute is its type, an equals sign, and its value.
+- The type is `CN`, `L`, `ST`, `O`, `OU`, `C`, `STREET`, `DC` or `UID` for the nine types RFC 4514
+  names, and the dotted form for any other, such as `1.2.840.113549.1.9.1` for an emailAddress.
+- The value of a named type is written as text when it is a primitive UTF8String holding valid
+  UTF-8, or a primitive PrintableString or IA5String holding only ASCII. A backslash goes before
+  `"`, `+`, `,`, `;`, `<`, `>` and `\`, before a `#` or a space that starts the text, and before a
+  space that ends it. Each character below U+0020 or from U+007F to U+009F is written as a
+  backslash and two lower case hexadecimal digits for each octet of its UTF-8 encoding, so a name
+  cannot act on the terminal that prints it. Any other value, and every value of a dotted type, is
+  `#` and the lower case hexadecimal of the value's whole encoding.
+- Any other subject, an empty SEQUENCE included, is named `#` and the lower case hexadecimal of its
+  whole encoding.
+
+A verified token is reported as its `genTime` in RFC 3339 to the second, then `by`, then that name.
+Every vector that verifies a token pins that line, and the vectors whose names begin with
+`anchor-signer-name-` pin each clause of the rule. `anchor-signer-name-rfc4514` carries a
+multi-valued RDN, an emailAddress, a BMPString and text that needs every escape, and the shipped
+`switchtender-audit-anchored-proof`, from a public authority, carries an emailAddress and a
+description.
+
+The signatureAlgorithm names the check, and it must match the signer key's type. It is
+sha256WithRSAEncryption, sha384WithRSAEncryption or sha512WithRSAEncryption, RSASSA-PSS,
+ecdsa-with-SHA256, ecdsa-with-SHA384 or ecdsa-with-SHA512, Ed25519, or a bare `rsaEncryption` or
+`id-ecPublicKey`, which is paired with the signer's digestAlgorithm. RSASSA-PSS is checked with
+SHA-256, MGF1 over SHA-256 and a 32-octet salt, and its parameters are not read. An RSA signature
+is exactly as long as the modulus and below it. The message it recovers is compared whole with the
+one RFC 8017 writes: for PKCS #1 v1.5, a DigestInfo whose algorithm carries NULL parameters, and
+for PSS, an encoding whose padding is all zero octets up to the one octet 0x01 before the salt.
+An ECDSA signature is exactly one SEQUENCE of two non-negative INTEGERs, each from 1 to the curve
+order less one.
+
+These rules are the whole of how a token is read. No general ASN.1, X.509 or PKCS #7 parser
+decides anything, because each accepts or refuses encodings by rules of its own that differ
+between libraries and between their releases, and a verdict must not depend on which one a
+verifier happens to use. Go's encoding/asn1, for one, ignores the length of the explicit [0]
+around the eContent, and its crypto/x509 accepts a certificate time without seconds that the
+OpenSSL PKCS #7 loader refuses.
+
+The vectors whose names begin with `anchor-der-` and `anchor-cert-` pin these rules, and each
+fails at the anchor check, except `anchor-der-oid-arc-31-bits`, a policy subidentifier of exactly
+2^31-1, which verifies. Each rule is pinned where every verifier reads it, not only once:
+
+- Each vector whose name begins with `anchor-der-tag-` writes one member a verifier requires under
+  another identifier, a constructed one without its constructed bit and a primitive one in the
+  context-specific class. With `anchor-tst-info-not-sequence`, `anchor-der-tag-class`,
+  `anchor-der-signed-attrs-primitive`, `anchor-der-sid-constructed`,
+  `anchor-gen-time-utc-time-tag` and `anchor-cert-time-wrong-tag`, every member a verifier
+  requires has a vector for the comparison of its whole identifier octet, the CMS wrapper and the
+  signer info included.
+- `anchor-der-signed-data-version-non-minimal`, `anchor-der-signer-info-version-non-minimal`,
+  `anchor-der-oid-extension-non-minimal`, `anchor-der-oid-key-purpose-non-minimal`,
+  `anchor-der-oid-attribute-type-non-minimal` and `anchor-der-trailing-in-econtent-explicit` pin a
+  value rule at a member whose value nothing else checks.
+- `anchor-cert-extra-version-non-minimal` and `anchor-cert-extra-serial-non-minimal` put the fault
+  in a second carried certificate, because every carried certificate is read, whichever one signed.
+- `anchor-der-oid-huge-arc`, a message imprint algorithm with one subidentifier of 3,000 octets,
+  and the vectors whose names begin with `anchor-der-oid-huge-arc-`, which put such a
+  subidentifier at every other OBJECT IDENTIFIER a verifier names when it refuses a token, fail at
+  the anchor check with no verifier fault.
+
+These fail at the anchor check as well, each for one fault:
+
+- the CMS wrapper: `anchor-content-type-not-signed-data`, `anchor-econtent-type-not-tst-info`,
+  `anchor-no-certificates`, `anchor-no-signers`, `anchor-two-signers`, `anchor-signer-not-carried`
+  (the signer identifier names a certificate the token does not carry) and
+  `anchor-digest-algorithm-sha1`
+- the signed attributes: `anchor-no-message-digest`, `anchor-message-digest-mismatch` and
+  `anchor-message-digest-two-values`
+- the imprint: `anchor-imprint-sha384-algorithm` (the right SHA-256 digest under the SHA-384
+  identifier) and `anchor-imprint-other-link`
+- the signer's key: `anchor-ec-compressed-point`, `anchor-ec-unsupported-curve`,
+  `anchor-rsa-key-1023-bits`, `anchor-rsa-key-16385-bits`, `anchor-rsa-modulus-even`,
+  `anchor-rsa-exponent-one`, `anchor-rsa-exponent-even`, `anchor-rsa-exponent-over-31-bits`,
+  `anchor-rsa-key-parameters-absent`, `anchor-rsa-key-trailing` (an element after the key
+  SEQUENCE), `anchor-rsa-key-extra-member` and `anchor-rsa-key-extra-octets` (a third INTEGER, or
+  three octets that are not DER, inside it), `anchor-rsa-modulus-non-minimal`,
+  `anchor-rsa-exponent-non-minimal`, and `anchor-rsa-modulus-negative` (the modulus written as the
+  negative INTEGER -n, under which Go's crypto/rsa still verifies a signature made with n)
+- the signature: `anchor-signature-invalid`, `anchor-signature-algorithm-key-mismatch`,
+  `anchor-signature-algorithm-rsa-key-mismatch`, `anchor-signature-algorithm-ec-key-mismatch`,
+  `anchor-rsa-signature-short`, `anchor-rsa-signature-not-below-modulus`,
+  `anchor-rsa-digest-info-without-null`, `anchor-rsa-pss-salt-20`, `anchor-rsa-pss-other-digest`,
+  `anchor-rsa-pss-trailer`, `anchor-rsa-pss-top-bit` and `anchor-rsa-pss-leading-octet`
+
+Each of those tokens is signed over whatever its encoding became, with the private key that
+matches the key the token carries, so the fault it names is the only thing wrong with it.
+`anchor-ec-p256`, `anchor-rsa-pkcs1`, `anchor-rsa-bare-key-algorithm`, `anchor-rsa-key-16384-bits`,
+`anchor-rsa-pss` and `anchor-validity-utc-year-pivot` (a validity from the UTCTime `500101000000Z`,
+read as 1950, to `491231235959Z`, read as 2049) verify.
+`anchor-gen-time-utc-time-then-generalized` and `anchor-gen-time-utc-time-tag` pin the `genTime`
+slot, `anchor-imprint-trailing-sha256` (a SHA-384 imprint, with a SHA-256 imprint of the right link
+after `genTime`) pins the imprint, and `anchor-tst-info-not-sequence` (a TSTInfo under a SET tag)
+pins the SEQUENCE. Each fails at the anchor check.
+
+A verifier reads `genTime` in the one form RFC 3161 gives it: `YYYYMMDDhhmmss`, then an optional
+period and fraction digits with no trailing zero, then `Z`, with the field ranges a bundle time has.
+A token whose `genTime` takes any other form, a numeric offset or a trailing zero in the fraction
+included, fails the anchor check. Both comparisons above use the one precision "Canonical form and
+digests" states. `genTime` and the claim's `at` are each read to the whole microsecond with finer
+digits dropped, and the certificate's validity bounds are whole seconds, as X.509 writes them. The
+vectors whose names begin with `anchor-gen-time-` pin this. A `genTime` 299.9 seconds before its
+claim verifies and one 300.1 seconds before fails. A `genTime` five minutes and half a microsecond
+before its claim verifies, and so does one half a microsecond past its certificate's last valid
+second, because neither half microsecond is read. A `genTime` half a second past that second fails,
+and so do a numeric offset and a trailing zero, each at the anchor check.
 
 An `rfc3161` anchor carrying no `proof` is reported as anchored by reference, exactly like a `git` or
 `https` anchor, and does not earn the anchored level. Its type declares that an offline proof exists,

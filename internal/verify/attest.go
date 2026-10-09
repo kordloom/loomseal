@@ -56,11 +56,9 @@ func (r *Report) checkHeadAttestations(b *bundle.Bundle, expected map[string]boo
 		}
 		obj := map[string]any{"loomseal": "head-attestation/1", "link": b.Chain.Head.Link,
 			"seq": b.Chain.Head.Seq, "role": a.Role}
+		// Parse refused an at that is not a time, an empty one included, so a non-empty At is
+		// the time the attestation carries and an empty one is no time at all.
 		if a.At != "" {
-			if _, err := bundle.ParseTime(a.At); err != nil {
-				r.problem("head attestation %d at: %v", j, err)
-				continue
-			}
 			obj["at"] = a.At
 		}
 		preimage, err := jcs.Serialize(obj)
@@ -128,11 +126,8 @@ func (r *Report) checkAttestations(b *bundle.Bundle, expected map[string]bool) {
 			// shaped object might be signed. When the attestation carries at, the time sits
 			// inside the signed bytes, so a sign-off time cannot be edited after the fact.
 			obj := map[string]any{"loomseal": "attestation/1", "link": c.Chain.Link, "role": a.Role}
+			// Parse refused an at that is not a time, an empty one included.
 			if a.At != "" {
-				if _, err := bundle.ParseTime(a.At); err != nil {
-					r.problem("claim %d attestation %d at: %v", i, j, err)
-					continue
-				}
 				obj["at"] = a.At
 			}
 			preimage, err := jcs.Serialize(obj)

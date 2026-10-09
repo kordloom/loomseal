@@ -10,6 +10,158 @@
       "why": "An anchor time that is not RFC 3339 is refused at parse."
     },
     {
+      "name": "anchor-cert-duplicate-extension",
+      "file": "anchor-cert-duplicate-extension.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate carries its extended key usage extension twice fails the anchor check, because no extension may appear twice."
+    },
+    {
+      "name": "anchor-cert-ed25519-key-33-octets",
+      "file": "anchor-cert-ed25519-key-33-octets.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose Ed25519 signer key is its true 32 octets followed by a zero octet fails the anchor check, because an Ed25519 key is exactly 32 octets."
+    },
+    {
+      "name": "anchor-cert-ed25519-parameters",
+      "file": "anchor-cert-ed25519-parameters.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose Ed25519 signer key carries algorithm parameters fails the anchor check, because RFC 8410 requires them absent."
+    },
+    {
+      "name": "anchor-cert-eku-trailing",
+      "file": "anchor-cert-eku-trailing.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's extended key usage value holds another element after the SEQUENCE of purposes fails the anchor check, because the value holds exactly one SEQUENCE."
+    },
+    {
+      "name": "anchor-cert-extensions-trailing",
+      "file": "anchor-cert-extensions-trailing.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's [3] holds another element after the SEQUENCE of extensions fails the anchor check, because an explicit tag holds exactly one element."
+    },
+    {
+      "name": "anchor-cert-extra-serial-non-minimal",
+      "file": "anchor-cert-extra-serial-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token that carries, after its signer certificate, a second certificate whose serial number is the INTEGER 8 written as 00 08 fails the anchor check, because every carried certificate is read, whichever one signed."
+    },
+    {
+      "name": "anchor-cert-extra-version-non-minimal",
+      "file": "anchor-cert-extra-version-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token that carries, after its signer certificate, a second certificate whose version is the INTEGER 2 written as 00 02 fails the anchor check, because every carried certificate is read, whichever one signed."
+    },
+    {
+      "name": "anchor-cert-key-unused-bits",
+      "file": "anchor-cert-key-unused-bits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer key BIT STRING declares unused bits fails the anchor check, because a key is whole octets."
+    },
+    {
+      "name": "anchor-cert-no-timestamping-usage",
+      "file": "anchor-cert-no-timestamping-usage.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's extended key usage lists only serverAuth fails the anchor check, because the signer must be marked for timestamping."
+    },
+    {
+      "name": "anchor-cert-not-version-3",
+      "file": "anchor-cert-not-version-3.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate carries no version member fails the anchor check, because the signer must be a version 3 certificate."
+    },
+    {
+      "name": "anchor-cert-not-yet-valid",
+      "file": "anchor-cert-not-yet-valid.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime, 15:01:00, falls a minute before its signer certificate's notBefore fails the anchor check, because the certificate was not yet valid when it signed."
+    },
+    {
+      "name": "anchor-cert-ski-trailing",
+      "file": "anchor-cert-ski-trailing.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's subject key identifier value holds another element after the identifier fails the anchor check, because the value holds exactly one OCTET STRING."
+    },
+    {
+      "name": "anchor-cert-time-generalized-fraction",
+      "file": "anchor-cert-time-generalized-fraction.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's notAfter is a GeneralizedTime with a fraction fails the anchor check, because RFC 5280 writes it as YYYYMMDDhhmmssZ."
+    },
+    {
+      "name": "anchor-cert-time-utc-no-seconds",
+      "file": "anchor-cert-time-utc-no-seconds.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's notAfter is a UTCTime without seconds fails the anchor check, because DER and RFC 5280 write a UTCTime as YYMMDDhhmmssZ."
+    },
+    {
+      "name": "anchor-cert-time-utc-offset",
+      "file": "anchor-cert-time-utc-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's notAfter is a UTCTime with a numeric offset fails the anchor check, because DER and RFC 5280 end a UTCTime in Z."
+    },
+    {
+      "name": "anchor-cert-time-wrong-tag",
+      "file": "anchor-cert-time-wrong-tag.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's notAfter holds UTCTime text under the PrintableString tag fails the anchor check, because a validity time is a UTCTime or a GeneralizedTime."
+    },
+    {
+      "name": "anchor-cert-time-year-0000",
+      "file": "anchor-cert-time-year-0000.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's notBefore is in year 0000 fails the anchor check, because a certificate time has the ranges a bundle time has."
+    },
+    {
+      "name": "anchor-cert-version-trailing",
+      "file": "anchor-cert-version-trailing.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate's [0] holds another element after the version INTEGER fails the anchor check, because an explicit tag holds exactly one element."
+    },
+    {
+      "name": "anchor-content-type-not-signed-data",
+      "file": "anchor-content-type-not-signed-data.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ContentInfo names id-data rather than signedData fails the anchor check."
+    },
+    {
       "name": "anchor-corrupt-token",
       "file": "anchor-corrupt-token.loomseal.json",
       "must_verify": false,
@@ -25,6 +177,826 @@
       "why": "An rfc3161 proof on a declared head beyond the bundled claims is not opened and earns no anchored level, because the link it attests is tied to nothing the verifier confirmed."
     },
     {
+      "name": "anchor-der-critical-false-encoded",
+      "file": "anchor-der-critical-false-encoded.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate writes an extension's critical flag as FALSE fails the anchor check, because DER never encodes a default value."
+    },
+    {
+      "name": "anchor-der-critical-not-ff",
+      "file": "anchor-der-critical-not-ff.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate marks an extension critical with the BOOLEAN octet 0x01 fails the anchor check, because DER writes TRUE as 0xFF."
+    },
+    {
+      "name": "anchor-der-high-tag-number",
+      "file": "anchor-der-high-tag-number.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo carries, after genTime, an element whose identifier uses the high tag number form fails the anchor check, although no verifier interprets that member, because every element in a token has a one-octet identifier."
+    },
+    {
+      "name": "anchor-der-integer-empty",
+      "file": "anchor-der-integer-empty.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo serial number is an INTEGER with no content octets fails the anchor check, because a DER INTEGER has at least one."
+    },
+    {
+      "name": "anchor-der-integer-non-minimal",
+      "file": "anchor-der-integer-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo version is the INTEGER 1 written as 00 01 fails the anchor check, because DER writes an INTEGER in its shortest form."
+    },
+    {
+      "name": "anchor-der-length-indefinite",
+      "file": "anchor-der-length-indefinite.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose message imprint has an indefinite length fails the anchor check, because DER lengths are definite."
+    },
+    {
+      "name": "anchor-der-length-leading-zero",
+      "file": "anchor-der-length-leading-zero.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate length is written in three octets, the first of them zero, fails the anchor check, because DER writes every length in its shortest form."
+    },
+    {
+      "name": "anchor-der-length-long-form",
+      "file": "anchor-der-length-long-form.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime length is written in the long form although it is below 128 fails the anchor check, because DER writes every length in its shortest form."
+    },
+    {
+      "name": "anchor-der-length-nine-octets",
+      "file": "anchor-der-length-nine-octets.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate length is written in nine octets, a value that is the true length plus 2^64, fails the anchor check, because a length has at most four octets, and a reader that kept nine in a 64-bit integer would read the true length."
+    },
+    {
+      "name": "anchor-der-length-overrun",
+      "file": "anchor-der-length-overrun.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime length runs one octet past the end of its TSTInfo fails the anchor check, because every element lies wholly inside its container."
+    },
+    {
+      "name": "anchor-der-malformed-unread-member",
+      "file": "anchor-der-malformed-unread-member.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo carries, after genTime, an element whose length runs past the TSTInfo fails the anchor check, although no verifier interprets that member, because a token is DER throughout."
+    },
+    {
+      "name": "anchor-der-null-content",
+      "file": "anchor-der-null-content.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signer key parameters are a NULL holding one octet fails the anchor check, because a DER NULL has no content octets."
+    },
+    {
+      "name": "anchor-der-oid-arc-31-bits",
+      "file": "anchor-der-oid-arc-31-bits.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose policy is 1.3.6.1.4.1.2147483647 verifies, because a subidentifier of 2^31-1 is within the bound.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-der-oid-arc-over-31-bits",
+      "file": "anchor-der-oid-arc-over-31-bits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose policy is 1.3.6.1.4.1.2147483648 fails the anchor check, because no subidentifier a verifier reads exceeds 2^31-1, the bound Go's encoding/asn1 holds one to."
+    },
+    {
+      "name": "anchor-der-oid-attribute-type-non-minimal",
+      "file": "anchor-der-oid-attribute-type-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signed attributes carry, after the messageDigest, an attribute whose type pads a subidentifier with 0x80 fails the anchor check, because every signed attribute's type is read."
+    },
+    {
+      "name": "anchor-der-oid-empty",
+      "file": "anchor-der-oid-empty.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo policy is an OBJECT IDENTIFIER with no content octets fails the anchor check."
+    },
+    {
+      "name": "anchor-der-oid-extension-non-minimal",
+      "file": "anchor-der-oid-extension-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate carries an extension no verifier interprets, whose extnID pads a subidentifier with 0x80, fails the anchor check, because every extnID is read and DER writes each subidentifier in its shortest form."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc",
+      "file": "anchor-der-oid-huge-arc.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose message imprint hash algorithm is an OBJECT IDENTIFIER under 1.2 with one subidentifier of 3,000 octets fails the anchor check, and never faults a verifier, because no subidentifier a verifier reads exceeds 2^31-1."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-content-type",
+      "file": "anchor-der-oid-huge-arc-content-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose contentType has one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-curve",
+      "file": "anchor-der-oid-huge-arc-curve.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ECDSA signer key names a curve with one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-digest-algorithm",
+      "file": "anchor-der-oid-huge-arc-digest-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SignerInfo digestAlgorithm has one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-econtent-type",
+      "file": "anchor-der-oid-huge-arc-econtent-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose eContentType has one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-extension-critical",
+      "file": "anchor-der-oid-huge-arc-extension-critical.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate marks critical, with the BOOLEAN octet 0x01, an extension whose extnID has one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-extension-twice",
+      "file": "anchor-der-oid-huge-arc-extension-twice.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate carries twice an extension whose extnID has one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-key-algorithm",
+      "file": "anchor-der-oid-huge-arc-key-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer key's algorithm has one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-huge-arc-signature-algorithm",
+      "file": "anchor-der-oid-huge-arc-signature-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signatureAlgorithm has one subidentifier of 3,000 octets fails the anchor check without a verifier fault."
+    },
+    {
+      "name": "anchor-der-oid-key-purpose-non-minimal",
+      "file": "anchor-der-oid-key-purpose-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate lists, after id-kp-timeStamping, a key purpose that pads a subidentifier with 0x80 fails the anchor check, because every key purpose is read."
+    },
+    {
+      "name": "anchor-der-oid-non-minimal",
+      "file": "anchor-der-oid-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo policy pads a subidentifier with a leading 0x80 octet fails the anchor check, because DER writes each subidentifier in its shortest form."
+    },
+    {
+      "name": "anchor-der-oid-truncated",
+      "file": "anchor-der-oid-truncated.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo policy ends inside a subidentifier fails the anchor check."
+    },
+    {
+      "name": "anchor-der-sid-constructed",
+      "file": "anchor-der-sid-constructed.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer identifier is a constructed [0] fails the anchor check, although its content equals the signer certificate's subject key identifier, because a subject key identifier is a primitive [0]."
+    },
+    {
+      "name": "anchor-der-signed-attrs-primitive",
+      "file": "anchor-der-signed-attrs-primitive.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signed attributes carry a primitive [0] identifier fails the anchor check, because the signed attributes are a constructed [0], and a verifier compares the whole identifier octet."
+    },
+    {
+      "name": "anchor-der-signed-data-version-non-minimal",
+      "file": "anchor-der-signed-data-version-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SignedData version is the INTEGER 3 written as 00 03 fails the anchor check, because DER writes an INTEGER in its shortest form."
+    },
+    {
+      "name": "anchor-der-signer-info-version-non-minimal",
+      "file": "anchor-der-signer-info-version-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SignerInfo version is the INTEGER 1 written as 00 01 fails the anchor check, because DER writes an INTEGER in its shortest form."
+    },
+    {
+      "name": "anchor-der-tag-certificate",
+      "file": "anchor-der-tag-certificate.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer certificate SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-certificate-issuer",
+      "file": "anchor-der-tag-certificate-issuer.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose certificate issuer SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-certificate-serial",
+      "file": "anchor-der-tag-certificate-serial.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose certificate serial number is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-certificate-signature-algorithm",
+      "file": "anchor-der-tag-certificate-signature-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose certificate signature SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-certificate-version",
+      "file": "anchor-der-tag-certificate-version.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose certificate version INTEGER is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-class",
+      "file": "anchor-der-tag-class.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo version is written under the context-specific class with the INTEGER's tag number fails the anchor check, because a verifier compares the whole identifier octet, class included."
+    },
+    {
+      "name": "anchor-der-tag-content-info",
+      "file": "anchor-der-tag-content-info.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ContentInfo SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-content-info-content",
+      "file": "anchor-der-tag-content-info-content.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ContentInfo [0] is written under the identifier 0x80 rather than 0xa0 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-content-type",
+      "file": "anchor-der-tag-content-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose contentType is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-digest-algorithm",
+      "file": "anchor-der-tag-digest-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose digestAlgorithm SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-digest-algorithm-oid",
+      "file": "anchor-der-tag-digest-algorithm-oid.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose digestAlgorithm OBJECT IDENTIFIER is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-digest-algorithms",
+      "file": "anchor-der-tag-digest-algorithms.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose digestAlgorithms SET is written under the identifier 0x11 rather than 0x31 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-ecdsa-signature",
+      "file": "anchor-der-tag-ecdsa-signature.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ECDSA signature SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-ecdsa-signature-value",
+      "file": "anchor-der-tag-ecdsa-signature-value.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ECDSA signature's first INTEGER is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-econtent",
+      "file": "anchor-der-tag-econtent.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose eContent OCTET STRING is written under the identifier 0x84 rather than 0x04 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-econtent-explicit",
+      "file": "anchor-der-tag-econtent-explicit.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose eContent [0] is written under the identifier 0x80 rather than 0xa0 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-econtent-type",
+      "file": "anchor-der-tag-econtent-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose eContentType is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-elliptic-curve",
+      "file": "anchor-der-tag-elliptic-curve.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ECDSA key's curve OBJECT IDENTIFIER is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-encap-content-info",
+      "file": "anchor-der-tag-encap-content-info.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose encapContentInfo SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-extension",
+      "file": "anchor-der-tag-extension.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose extended key usage extension SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-extension-id",
+      "file": "anchor-der-tag-extension-id.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose extended key usage extnID is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-extension-value",
+      "file": "anchor-der-tag-extension-value.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose extended key usage extnValue is written under the identifier 0x84 rather than 0x04 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-extensions",
+      "file": "anchor-der-tag-extensions.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SEQUENCE of extensions is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-imprint-algorithm",
+      "file": "anchor-der-tag-imprint-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageImprint hashAlgorithm SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-imprint-algorithm-oid",
+      "file": "anchor-der-tag-imprint-algorithm-oid.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageImprint hashAlgorithm OBJECT IDENTIFIER is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-imprint-digest",
+      "file": "anchor-der-tag-imprint-digest.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageImprint hashedMessage is written under the identifier 0x84 rather than 0x04 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-key-purpose",
+      "file": "anchor-der-tag-key-purpose.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose id-kp-timeStamping key purpose is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-key-purposes",
+      "file": "anchor-der-tag-key-purposes.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SEQUENCE of key purposes is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-message-digest",
+      "file": "anchor-der-tag-message-digest.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageDigest OCTET STRING is written under the identifier 0x84 rather than 0x04 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-message-imprint",
+      "file": "anchor-der-tag-message-imprint.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageImprint SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-policy",
+      "file": "anchor-der-tag-policy.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo policy is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-public-key",
+      "file": "anchor-der-tag-public-key.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose subjectPublicKey BIT STRING is written under the identifier 0x83 rather than 0x03 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-public-key-algorithm",
+      "file": "anchor-der-tag-public-key-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose public key AlgorithmIdentifier SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-public-key-algorithm-oid",
+      "file": "anchor-der-tag-public-key-algorithm-oid.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose public key algorithm OBJECT IDENTIFIER is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-rsa-exponent",
+      "file": "anchor-der-tag-rsa-exponent.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA public exponent is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-rsa-key",
+      "file": "anchor-der-tag-rsa-key.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA key SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-rsa-modulus",
+      "file": "anchor-der-tag-rsa-modulus.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA modulus is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-rsa-parameters",
+      "file": "anchor-der-tag-rsa-parameters.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA key's NULL parameters is written under the identifier 0x85 rather than 0x05 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-sid",
+      "file": "anchor-der-tag-sid.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer identifier SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-sid-issuer",
+      "file": "anchor-der-tag-sid-issuer.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer identifier's issuer is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-sid-serial",
+      "file": "anchor-der-tag-sid-serial.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer identifier's serial number is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signature",
+      "file": "anchor-der-tag-signature.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signature OCTET STRING is written under the identifier 0x84 rather than 0x04 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signature-algorithm",
+      "file": "anchor-der-tag-signature-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signatureAlgorithm SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signature-algorithm-oid",
+      "file": "anchor-der-tag-signature-algorithm-oid.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signatureAlgorithm OBJECT IDENTIFIER is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signed-attribute",
+      "file": "anchor-der-tag-signed-attribute.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageDigest attribute SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signed-attribute-type",
+      "file": "anchor-der-tag-signed-attribute-type.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageDigest attribute type is written under the identifier 0x86 rather than 0x06 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signed-attribute-values",
+      "file": "anchor-der-tag-signed-attribute-values.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageDigest attribute's SET of values is written under the identifier 0x11 rather than 0x31 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signed-data",
+      "file": "anchor-der-tag-signed-data.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SignedData SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signed-data-version",
+      "file": "anchor-der-tag-signed-data-version.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SignedData version is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signer-info",
+      "file": "anchor-der-tag-signer-info.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SignerInfo SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signer-info-version",
+      "file": "anchor-der-tag-signer-info-version.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SignerInfo version is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-signer-infos",
+      "file": "anchor-der-tag-signer-infos.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signerInfos SET is written under the identifier 0x11 rather than 0x31 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-subject",
+      "file": "anchor-der-tag-subject.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose certificate subject SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-subject-key-identifier",
+      "file": "anchor-der-tag-subject-key-identifier.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose subject key identifier OCTET STRING is written under the identifier 0x84 rather than 0x04 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-subject-public-key-info",
+      "file": "anchor-der-tag-subject-public-key-info.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose subjectPublicKeyInfo SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-tbs-certificate",
+      "file": "anchor-der-tag-tbs-certificate.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose tbsCertificate SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-tst-serial",
+      "file": "anchor-der-tag-tst-serial.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo serial number is written under the identifier 0x82 rather than 0x02 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-tag-validity",
+      "file": "anchor-der-tag-validity.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose certificate validity SEQUENCE is written under the identifier 0x10 rather than 0x30 fails the anchor check, because a verifier compares the whole identifier octet of every member it reads, class and constructed bit included."
+    },
+    {
+      "name": "anchor-der-trailing-after-token",
+      "file": "anchor-der-trailing-after-token.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token followed by another element fails the anchor check, because nothing may follow the ContentInfo."
+    },
+    {
+      "name": "anchor-der-trailing-in-econtent",
+      "file": "anchor-der-trailing-in-econtent.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose eContent OCTET STRING holds an element after the TSTInfo fails the anchor check, because the OCTET STRING holds exactly the DER TSTInfo, which the signed attributes commit to."
+    },
+    {
+      "name": "anchor-der-trailing-in-econtent-explicit",
+      "file": "anchor-der-trailing-in-econtent-explicit.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose eContent [0] holds a NULL after the OCTET STRING fails the anchor check, because an explicit tag holds exactly one element."
+    },
+    {
+      "name": "anchor-der-trailing-in-explicit",
+      "file": "anchor-der-trailing-in-explicit.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ContentInfo [0] holds an element after the SignedData fails the anchor check, because an explicit tag holds exactly one element."
+    },
+    {
+      "name": "anchor-der-version-over-64-bits",
+      "file": "anchor-der-version-over-64-bits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo version needs nine octets fails the anchor check, because a version must fit a signed 64-bit integer."
+    },
+    {
+      "name": "anchor-digest-algorithm-sha1",
+      "file": "anchor-digest-algorithm-sha1.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer digests the eContent with SHA-1, consistently and under a valid signature, fails the anchor check, because the digest is SHA-256, SHA-384 or SHA-512."
+    },
+    {
+      "name": "anchor-ec-compressed-point",
+      "file": "anchor-ec-compressed-point.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ECDSA signer key is a compressed point fails the anchor check, because a verifier reads only the uncompressed form."
+    },
+    {
+      "name": "anchor-ec-p256",
+      "file": "anchor-ec-p256.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token signed by a P-256 ECDSA authority whose key is an uncompressed point verifies.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-ec-signature-trailing",
+      "file": "anchor-ec-signature-trailing.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose valid ECDSA signature is followed by one more octet fails the anchor check, because an ECDSA signature is exactly one SEQUENCE of two INTEGERs."
+    },
+    {
+      "name": "anchor-ec-unsupported-curve",
+      "file": "anchor-ec-unsupported-curve.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ECDSA signer key is on secp256k1 fails the anchor check, because a verifier reads keys on P-224, P-256, P-384, and P-521 only."
+    },
+    {
+      "name": "anchor-econtent-type-not-tst-info",
+      "file": "anchor-econtent-type-not-tst-info.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose encapsulated content names id-data rather than id-ct-TSTInfo fails the anchor check."
+    },
+    {
       "name": "anchor-empty-ref",
       "file": "anchor-empty-ref.loomseal.json",
       "must_verify": false,
@@ -33,12 +1005,154 @@
       "why": "An anchor with an empty ref locates nothing and is refused at parse."
     },
     {
+      "name": "anchor-gen-time-fraction-inside-skew",
+      "file": "anchor-gen-time-fraction-inside-skew.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token signed 299.9 seconds before the claim it covers is inside the five-minute skew and verifies, because a verifier reads the genTime fraction rather than cutting it to the second.",
+      "anchor_attestations": [
+        "2026-07-27T14:55:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-gen-time-fraction-outside-skew",
+      "file": "anchor-gen-time-fraction-outside-skew.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token signed 300.1 seconds before the claim it covers predates the entry by more than the five-minute skew and fails the anchor check."
+    },
+    {
+      "name": "anchor-gen-time-offset",
+      "file": "anchor-gen-time-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime carries a numeric offset fails the anchor check, although an ASN.1 GeneralizedTime may carry one, because RFC 3161 requires a genTime ending in Z."
+    },
+    {
+      "name": "anchor-gen-time-past-not-after",
+      "file": "anchor-gen-time-past-not-after.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime lies half a second past its certificate's last valid second was signed outside the certificate's life and fails the anchor check."
+    },
+    {
+      "name": "anchor-gen-time-sub-microsecond-claim",
+      "file": "anchor-gen-time-sub-microsecond-claim.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token signed exactly five minutes before a claim whose time carries half a microsecond verifies, because every verifier reads the claim time to the whole microsecond and drops the finer digits.",
+      "anchor_attestations": [
+        "2026-07-27T14:55:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-gen-time-sub-microsecond-not-after",
+      "file": "anchor-gen-time-sub-microsecond-not-after.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose genTime lies half a microsecond past its certificate's last valid second verifies, because every verifier reads genTime to the whole microsecond and drops the finer digits.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-gen-time-trailing-zero",
+      "file": "anchor-gen-time-trailing-zero.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime fraction ends in a zero fails the anchor check, because RFC 3161 requires trailing zeros to be omitted."
+    },
+    {
+      "name": "anchor-gen-time-utc-time-tag",
+      "file": "anchor-gen-time-utc-time-tag.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime slot holds well-formed genTime text under the UTCTime tag fails the anchor check, because genTime must be a universal GeneralizedTime."
+    },
+    {
+      "name": "anchor-gen-time-utc-time-then-generalized",
+      "file": "anchor-gen-time-utc-time-then-generalized.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose genTime slot holds a UTCTime fails the anchor check, although a valid GeneralizedTime follows it in the TSTInfo, because genTime is the fifth TSTInfo member and a verifier never searches further along for one."
+    },
+    {
+      "name": "anchor-imprint-other-link",
+      "file": "anchor-imprint-other-link.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose SHA-256 message imprint is of another value than the anchored link fails the anchor check, because the token attests to that value and no other."
+    },
+    {
+      "name": "anchor-imprint-sha384-algorithm",
+      "file": "anchor-imprint-sha384-algorithm.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose message imprint holds the SHA-256 of the right link but names SHA-384 fails the anchor check, because the imprint must use SHA-256."
+    },
+    {
+      "name": "anchor-imprint-trailing-sha256",
+      "file": "anchor-imprint-trailing-sha256.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose message imprint uses SHA-384 fails the anchor check, although a SHA-256 imprint of the right link follows genTime in the TSTInfo, because the message imprint is the third TSTInfo member and must be SHA-256."
+    },
+    {
       "name": "anchor-matches-nothing",
       "file": "anchor-matches-nothing.loomseal.json",
       "must_verify": false,
       "level": "not verified",
       "failing_check": "anchor",
       "why": "An anchor whose coordinates match nothing in the bundle fails."
+    },
+    {
+      "name": "anchor-message-digest-mismatch",
+      "file": "anchor-message-digest-mismatch.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageDigest attribute is the digest of other octets than its eContent fails the anchor check, although its signature over the attributes is valid."
+    },
+    {
+      "name": "anchor-message-digest-two-values",
+      "file": "anchor-message-digest-two-values.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose messageDigest attribute holds the right digest twice fails the anchor check, because its SET holds exactly one OCTET STRING."
+    },
+    {
+      "name": "anchor-no-certificates",
+      "file": "anchor-no-certificates.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token that carries no certificates fails the anchor check, because its signature can only be checked against a certificate it carries."
+    },
+    {
+      "name": "anchor-no-message-digest",
+      "file": "anchor-no-message-digest.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signed attributes carry no messageDigest attribute fails the anchor check, because the signature then covers nothing that names the TSTInfo."
+    },
+    {
+      "name": "anchor-no-signers",
+      "file": "anchor-no-signers.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signerInfos SET is empty fails the anchor check, because a token has exactly one signer."
     },
     {
       "name": "anchor-only-declared-head",
@@ -64,6 +1178,370 @@
       "why": "An anchor proof that is not base64 is refused at parse, never reported as anchored by reference."
     },
     {
+      "name": "anchor-rsa-bare-key-algorithm",
+      "file": "anchor-rsa-bare-key-algorithm.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose RSA signature algorithm names only rsaEncryption verifies, checked with the signer's SHA-256 digest.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-rsa-digest-info-without-null",
+      "file": "anchor-rsa-digest-info-without-null.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose PKCS #1 v1.5 signature encodes the SHA-256 DigestInfo without its NULL parameters fails the anchor check, because a verifier compares the whole encoding with the one RFC 8017 writes."
+    },
+    {
+      "name": "anchor-rsa-exponent-even",
+      "file": "anchor-rsa-exponent-even.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose valid signature is made with the RSA public exponent 4 fails the anchor check, because the exponent is odd."
+    },
+    {
+      "name": "anchor-rsa-exponent-non-minimal",
+      "file": "anchor-rsa-exponent-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signer key writes its public exponent 65537 as 00 01 00 01 fails the anchor check, because DER writes an INTEGER in its shortest form."
+    },
+    {
+      "name": "anchor-rsa-exponent-one",
+      "file": "anchor-rsa-exponent-one.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA public exponent is 1, so its valid signature is its own encoded message, fails the anchor check, because the exponent is at least 3."
+    },
+    {
+      "name": "anchor-rsa-exponent-over-31-bits",
+      "file": "anchor-rsa-exponent-over-31-bits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose valid signature is made with the RSA public exponent 2^32-5 fails the anchor check, because a verifier reads RSA exponents from 3 to 2^31-1."
+    },
+    {
+      "name": "anchor-rsa-key-1023-bits",
+      "file": "anchor-rsa-key-1023-bits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signer key has a 1023-bit modulus fails the anchor check, because a verifier reads RSA keys of at least 1024 bits."
+    },
+    {
+      "name": "anchor-rsa-key-16384-bits",
+      "file": "anchor-rsa-key-16384-bits.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token signed by an RSA authority whose modulus is 16384 bits, the longest a verifier reads, verifies.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-rsa-key-16385-bits",
+      "file": "anchor-rsa-key-16385-bits.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose valid signature is made with an RSA modulus of 16385 bits fails the anchor check, because a verifier reads RSA keys of at most 16384 bits."
+    },
+    {
+      "name": "anchor-rsa-key-extra-member",
+      "file": "anchor-rsa-key-extra-member.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA key SEQUENCE holds the INTEGER 5 after the modulus and the exponent fails the anchor check, because the key holds only those two."
+    },
+    {
+      "name": "anchor-rsa-key-extra-octets",
+      "file": "anchor-rsa-key-extra-octets.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA key SEQUENCE holds three octets that are not DER after the modulus and the exponent fails the anchor check, because the key holds only those two, and nothing inside it goes unread."
+    },
+    {
+      "name": "anchor-rsa-key-parameters-absent",
+      "file": "anchor-rsa-key-parameters-absent.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signer key names rsaEncryption without the NULL parameters fails the anchor check, because RFC 3279 writes them as NULL."
+    },
+    {
+      "name": "anchor-rsa-key-trailing",
+      "file": "anchor-rsa-key-trailing.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA key BIT STRING holds another element after the key SEQUENCE fails the anchor check, because the BIT STRING holds exactly one SEQUENCE."
+    },
+    {
+      "name": "anchor-rsa-modulus-even",
+      "file": "anchor-rsa-modulus-even.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose valid signature is made with an even RSA modulus of 1025 bits fails the anchor check, because an RSA modulus is odd."
+    },
+    {
+      "name": "anchor-rsa-modulus-negative",
+      "file": "anchor-rsa-modulus-negative.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signer key writes its modulus as the negative INTEGER -n, in its shortest form, fails the anchor check, although Go's crypto/rsa verifies the signature made with n under it, because the modulus must be positive."
+    },
+    {
+      "name": "anchor-rsa-modulus-non-minimal",
+      "file": "anchor-rsa-modulus-non-minimal.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signer key writes its modulus with a second leading zero octet fails the anchor check, because DER writes an INTEGER in its shortest form."
+    },
+    {
+      "name": "anchor-rsa-pkcs1",
+      "file": "anchor-rsa-pkcs1.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token signed by a 2048-bit RSA authority with sha256WithRSAEncryption verifies.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-rsa-pss",
+      "file": "anchor-rsa-pss.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token signed with RSASSA-PSS over SHA-256 with a 32-octet salt, under a 2049-bit modulus whose encoded message is one octet shorter than the signature, verifies.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
+      "name": "anchor-rsa-pss-leading-octet",
+      "file": "anchor-rsa-pss-leading-octet.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSASSA-PSS signature under a 2049-bit modulus recovers a right encoding behind a leading octet of 1, where a zero octet belongs, fails the anchor check."
+    },
+    {
+      "name": "anchor-rsa-pss-other-digest",
+      "file": "anchor-rsa-pss-other-digest.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose well-formed RSASSA-PSS signature covers other attributes than the token carries fails the anchor check."
+    },
+    {
+      "name": "anchor-rsa-pss-salt-20",
+      "file": "anchor-rsa-pss-salt-20.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSASSA-PSS signature is valid with a 20-octet salt fails the anchor check, because a verifier reads PSS with a salt as long as the SHA-256 digest."
+    },
+    {
+      "name": "anchor-rsa-pss-top-bit",
+      "file": "anchor-rsa-pss-top-bit.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSASSA-PSS encoding under a 2048-bit modulus sets its leftmost bit, which a 2047-bit encoding leaves clear, and is otherwise right, fails the anchor check."
+    },
+    {
+      "name": "anchor-rsa-pss-trailer",
+      "file": "anchor-rsa-pss-trailer.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSASSA-PSS encoding ends in 0xbb rather than 0xbc, and is otherwise right, fails the anchor check."
+    },
+    {
+      "name": "anchor-rsa-signature-not-below-modulus",
+      "file": "anchor-rsa-signature-not-below-modulus.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signature is a valid signature plus the modulus, written in as many octets as the modulus, fails the anchor check, because RFC 8017 requires the signature to be below the modulus."
+    },
+    {
+      "name": "anchor-rsa-signature-short",
+      "file": "anchor-rsa-signature-short.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signature drops a leading zero octet, so it is shorter than the modulus, fails the anchor check, because RFC 8017 requires the signature to be as long as the modulus."
+    },
+    {
+      "name": "anchor-signature-algorithm-ec-key-mismatch",
+      "file": "anchor-signature-algorithm-ec-key-mismatch.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose ECDSA signature is labeled sha256WithRSAEncryption fails the anchor check, because the signature algorithm must match the signer key."
+    },
+    {
+      "name": "anchor-signature-algorithm-key-mismatch",
+      "file": "anchor-signature-algorithm-key-mismatch.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose Ed25519 signature is labeled ecdsa-with-SHA256 fails the anchor check, because the signature algorithm must match the signer key, and a verifier never checks a signature under a scheme the signer did not name."
+    },
+    {
+      "name": "anchor-signature-algorithm-rsa-key-mismatch",
+      "file": "anchor-signature-algorithm-rsa-key-mismatch.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose RSA signature is labeled ecdsa-with-SHA256 fails the anchor check, because the signature algorithm must match the signer key."
+    },
+    {
+      "name": "anchor-signature-invalid",
+      "file": "anchor-signature-invalid.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose Ed25519 signature has one bit changed fails the anchor check."
+    },
+    {
+      "name": "anchor-signer-name-attribute-not-a-sequence",
+      "file": "anchor-signer-name-attribute-not-a-sequence.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject holds an attribute written as a SET rather than a SEQUENCE verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #300e310c310a06035504030c03545341"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-empty",
+      "file": "anchor-signer-name-empty.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject is an empty SEQUENCE verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #3000"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-empty-rdn",
+      "file": "anchor-signer-name-empty-rdn.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject holds an RDN with no attributes verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #30023100"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-not-a-name",
+      "file": "anchor-signer-name-not-a-name.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject is a SEQUENCE holding an INTEGER verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #3003020101"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-rdn-not-a-set",
+      "file": "anchor-signer-name-rdn-not-a-set.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject holds an RDN written as a SEQUENCE rather than a SET verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #300e300c300a06035504030c03545341"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-rfc4514",
+      "file": "anchor-signer-name-rfc4514.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject holds a multi-valued RDN, an emailAddress, a BMPString, and text that RFC 4514 escapes verifies, and every verifier names its signer by the one rule FORMAT.md states.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=\\#1 TSA\\; \\\u003c\\\"x\\\"\\\u003e \\\\ \\1b\\c2\\85\\ ,DC=example,ST=#1e0c00420061007900650072006e,L=\\ Würzburg,1.2.840.113549.1.9.1=#160f747361406578616d706c652e6f7267,O=Acme\\, Inc.+OU=Time\\+Stamp,C=DE"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-two-values",
+      "file": "anchor-signer-name-two-values.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject holds an attribute with two values verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #3011310f300d06035504030c035453410c0158"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-type-non-minimal",
+      "file": "anchor-signer-name-type-non-minimal.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject names an attribute type that pads a subidentifier with 0x80 verifies, because nothing decides a verdict from the subject, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #300f310d300b0604550480030c03545341"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-type-not-an-oid",
+      "file": "anchor-signer-name-type-not-an-oid.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject names an attribute type under the identifier 0x86 verifies, and every verifier names its signer by the hexadecimal of the subject's encoding.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by #300e310c300a86035504030c03545341"
+      ]
+    },
+    {
+      "name": "anchor-signer-name-values-as-hex",
+      "file": "anchor-signer-name-values-as-hex.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate's subject holds a constructed UTF8String, a UTF8String that is not UTF-8, a PrintableString that is not ASCII, and a type RFC 4514 has no short name for verifies, and every verifier writes each of those values in hexadecimal.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=#2c050c03545341,OU=#0c01ff,O=#130441636de9,2.5.4.5=#13023432"
+      ]
+    },
+    {
+      "name": "anchor-signer-not-carried",
+      "file": "anchor-signer-not-carried.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signer identifier names serial number 8 under the right issuer, while it carries only the certificate with serial number 7, fails the anchor check, because a verifier never checks a signature against a certificate the signer identifier does not name."
+    },
+    {
+      "name": "anchor-tst-info-not-sequence",
+      "file": "anchor-tst-info-not-sequence.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose TSTInfo is encoded under a SET tag rather than a SEQUENCE fails the anchor check, although its members are all in place."
+    },
+    {
+      "name": "anchor-two-signers",
+      "file": "anchor-two-signers.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "anchor",
+      "why": "A token whose signerInfos holds the authority's valid SignerInfo twice fails the anchor check, because a token has exactly one signer."
+    },
+    {
       "name": "anchor-unknown-type",
       "file": "anchor-unknown-type.loomseal.json",
       "must_verify": false,
@@ -72,12 +1550,22 @@
       "why": "An anchor type outside the vocabulary the format defines is refused at parse, never reported as anchored by reference."
     },
     {
+      "name": "anchor-validity-utc-year-pivot",
+      "file": "anchor-validity-utc-year-pivot.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full), anchored (proof verified)",
+      "why": "A token whose signer certificate is valid from the UTCTime 500101000000Z, read as 1950, to 491231235959Z, read as 2049, verifies, because a two-digit year from 50 to 99 is 19YY and one below 50 is 20YY.",
+      "anchor_attestations": [
+        "2026-07-27T15:01:00Z by CN=LoomSeal conformance vector timestamp authority"
+      ]
+    },
+    {
       "name": "attestation-at-one-digit-hour",
       "file": "attestation-at-one-digit-hour.loomseal.json",
       "must_verify": false,
       "level": "not verified",
-      "failing_check": "attestation",
-      "why": "An attestation whose signed at has a one-digit hour is refused, because the time is not RFC 3339."
+      "failing_check": "parse",
+      "why": "An attestation whose signed at has a one-digit hour is refused at parse, because the time is not in the one form the format allows."
     },
     {
       "name": "attestation-key-line-break",
@@ -449,8 +1937,8 @@
       "file": "head-attestation-at-one-digit-hour.loomseal.json",
       "must_verify": false,
       "level": "not verified",
-      "failing_check": "attestation",
-      "why": "A head attestation whose signed at has a one-digit hour is refused, because the time is not RFC 3339."
+      "failing_check": "parse",
+      "why": "A head attestation whose signed at has a one-digit hour is refused at parse, because the time is not in the one form the format allows."
     },
     {
       "name": "head-attestation-key-line-break",
@@ -1231,7 +2719,10 @@
       "file": "switchtender-audit-anchored-proof.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full), anchored (proof verified)",
-      "why": "An rfc3161 anchor carrying a real timestamp token verifies offline against the link it attests to, with no network and no trust in the producer."
+      "why": "An rfc3161 anchor carrying a real timestamp token verifies offline against the link it attests to, with no network and no trust in the producer.",
+      "anchor_attestations": [
+        "2026-08-10T04:57:09Z by ST=Bayern,C=DE,L=Wuerzburg,1.2.840.113549.1.9.1=#1615627573696c657a6173406d61696c626f782e6f7267,CN=www.freetsa.org,2.5.4.13=#0c6d54686973206365727469666963617465206469676974616c6c79207369676e7320646f63756d656e747320616e642074696d65207374616d70207265717565737473206d616465207573696e672074686520667265657473612e6f7267206f6e6c696e65207365727669636573,OU=TSA,O=Free TSA"
+      ]
     },
     {
       "name": "switchtender-audit-bound-install",
@@ -2056,6 +3547,210 @@
       "level": "not verified",
       "failing_check": "signature",
       "why": "A byte changed after signing fails the producer signature."
+    },
+    {
+      "name": "time-anchor-offset",
+      "file": "time-anchor-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An anchor at carrying a numeric offset is refused at parse."
+    },
+    {
+      "name": "time-attestation-empty",
+      "file": "time-attestation-empty.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An attestation carrying an empty at is refused at parse rather than read as one that carries no time, although its signature covers no time and would verify."
+    },
+    {
+      "name": "time-attestation-offset",
+      "file": "time-attestation-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "An attestation whose signed at carries a numeric offset is refused at parse."
+    },
+    {
+      "name": "time-created-at-offset",
+      "file": "time-created-at-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A created_at carrying a numeric offset, even +00:00, is refused at parse."
+    },
+    {
+      "name": "time-created-at-year-0000",
+      "file": "time-created-at-year-0000.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A created_at in year 0000 is refused at parse."
+    },
+    {
+      "name": "time-day-out-of-range",
+      "file": "time-day-out-of-range.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time on February 30 is refused at parse, because the day is not in its month."
+    },
+    {
+      "name": "time-fraction",
+      "file": "time-fraction.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A claim time with a nine-digit fraction after a period is in the one form and verifies."
+    },
+    {
+      "name": "time-fraction-twelve-digits",
+      "file": "time-fraction-twelve-digits.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A fraction of any length is in the one form and verifies. A verifier reads it to the whole microsecond and drops the finer digits, never rounding them."
+    },
+    {
+      "name": "time-head-attestation-empty",
+      "file": "time-head-attestation-empty.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A head attestation carrying an empty at is refused at parse rather than read as one that carries no time."
+    },
+    {
+      "name": "time-hour-24",
+      "file": "time-hour-24.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time at hour 24 is refused at parse, because the hour is below 24."
+    },
+    {
+      "name": "time-leap-second",
+      "file": "time-leap-second.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time written as a leap second, second 60, is refused at parse."
+    },
+    {
+      "name": "time-lowercase-t",
+      "file": "time-lowercase-t.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time with a lower case t between the date and the time is refused at parse."
+    },
+    {
+      "name": "time-lowercase-z",
+      "file": "time-lowercase-z.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time ending in a lower case z is refused at parse."
+    },
+    {
+      "name": "time-no-zone",
+      "file": "time-no-zone.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time with no Z is refused at parse, because a time names its zone."
+    },
+    {
+      "name": "time-offset",
+      "file": "time-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time carrying a numeric offset, even +00:00, is refused at parse: every time is UTC and ends in Z."
+    },
+    {
+      "name": "time-offset-nonzero",
+      "file": "time-offset-nonzero.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time carrying a nonzero numeric offset is refused at parse, although RFC 3339 allows it, because every time ends in Z."
+    },
+    {
+      "name": "time-space-separator",
+      "file": "time-space-separator.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time with a space between the date and the time is refused at parse, although a general date parser reads it."
+    },
+    {
+      "name": "time-span-offset",
+      "file": "time-span-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A span beat at 2026-07-27T15:01:00+00:00 is refused at parse, as any claim time outside the one form is, so no verifier measures it."
+    },
+    {
+      "name": "time-span-space-separator",
+      "file": "time-span-space-separator.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A span beat at 2026-07-27 15:01:00Z is refused at parse, as any claim time outside the one form is, so no verifier measures it."
+    },
+    {
+      "name": "time-span-year-0000",
+      "file": "time-span-year-0000.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A span beat at 0000-07-27T15:01:00Z is refused at parse, as any claim time outside the one form is, so no verifier measures it."
+    },
+    {
+      "name": "time-switchtender-offset",
+      "file": "time-switchtender-offset.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A switchtender-audit-v1 claim at 2026-07-27T15:00:00+00:00, hashed verbatim into an honest link, is refused at parse, as under every other profile."
+    },
+    {
+      "name": "time-switchtender-space-separator",
+      "file": "time-switchtender-space-separator.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A switchtender-audit-v1 claim at 2026-07-27 15:00:00Z, hashed verbatim into an honest link, is refused at parse, as under every other profile."
+    },
+    {
+      "name": "time-switchtender-year-0000",
+      "file": "time-switchtender-year-0000.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A switchtender-audit-v1 claim at 0000-07-27T15:00:00Z, hashed verbatim into an honest link, is refused at parse, as under every other profile."
+    },
+    {
+      "name": "time-year-0000",
+      "file": "time-year-0000.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "parse",
+      "why": "A claim time in year 0000 is refused at parse: the first year allowed is 0001."
+    },
+    {
+      "name": "time-year-0001",
+      "file": "time-year-0001.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The first instant of year 0001 is the earliest time the format allows and verifies."
+    },
+    {
+      "name": "time-year-9999",
+      "file": "time-year-9999.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The last instant of year 9999 is the latest time the format allows and verifies."
     },
     {
       "name": "type-anchor-at",

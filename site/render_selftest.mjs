@@ -107,9 +107,21 @@ check("legacy present", true, renderToHTML(legacy),
   "legacy     claim 1 decision_body is committed under the unkeyed digest form");
 check("legacy absent", false, renderToHTML(base({ decision_records: 1 })), "legacy ");
 
+// Withheld reasons: a reason the holder marked redacted is worded as its claim, which nothing
+// commits, and never as a redaction that took place.
+const withheld = base({ decision_records: 1, correction_records: 1,
+  reasons_redacted: ["trade_secret", "personal_data"] });
+check("withheld reasons present", true, renderToHTML(withheld),
+  "reasons    2 withheld by the holder, categories claimed and not committed: trade_secret, " +
+  "personal_data");
+check("withheld reason singular", true,
+  renderToHTML(base({ decision_records: 1, reasons_redacted: ["trade_secret"] })),
+  "reasons    1 withheld by the holder, category claimed and not committed: trade_secret");
+check("withheld reasons never vouched", false, renderToHTML(withheld), "unopenable by design");
+
 if (bad === 0) {
   console.log("ALL NOTICES RENDERED  pin NONE, ALTERED, declared head, unknown claim type, install, " +
-    "attestors, unchecked members, records, legacy");
+    "attestors, unchecked members, records, legacy, withheld reasons");
   process.exit(0);
 }
 console.log(`${bad} NOTICE MISMATCH`);

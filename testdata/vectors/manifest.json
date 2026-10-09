@@ -733,7 +733,7 @@
       "file": "switchtender-record-reason-redacted.loomseal.json",
       "must_verify": true,
       "level": "signed, chained (full)",
-      "why": "A reason removed by a privacy redaction is reported by its category and verifies: its text and random value are gone, its commitment stays, and it cannot be opened by design.",
+      "why": "A reason the holder marked redacted verifies and is reported as withheld, with the category the holder claims: its text and random value are absent, its commitment stays unopened, and nothing commits the marker or the category, so neither is vouched for.",
       "redacted": [
         "claim 1 reason_redacted"
       ]
@@ -758,6 +758,27 @@
       "must_verify": false,
       "failing_check": "record",
       "why": "A receipt whose disclosed spec was changed and re-signed fails, because it no longer hashes to the spec digest the verified decision committed."
+    },
+    {
+      "name": "switchtender-record-specs-agree",
+      "file": "switchtender-record-specs-agree.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A decision that commits a spec digest and an exact-form outcome that names the same digest verify with no spec disclosed: the two committed digests agree, which is the receipt of one run."
+    },
+    {
+      "name": "switchtender-record-specs-disagree",
+      "file": "switchtender-record-specs-disagree.loomseal.json",
+      "must_verify": false,
+      "failing_check": "record",
+      "why": "A decision that commits one spec digest beside an exact-form outcome of the same run that names another fails with no spec disclosed: a run's decision and outcome name one spec, and leaving the optional spec_body out does not hide that."
+    },
+    {
+      "name": "switchtender-record-specs-two-runs",
+      "file": "switchtender-record-specs-two-runs.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "The records of two runs share one bundle, each run's decision and outcome naming that run's own spec, with no spec disclosed. A decision is held only against the outcomes of its own run, named by its body's run_id and by the run segment of the outcome's path, so two runs with different specs verify."
     },
     {
       "name": "switchtender-record-unkeyed",

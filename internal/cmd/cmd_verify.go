@@ -323,8 +323,9 @@ func renderReport(w io.Writer, r *verify.Report) {
 		}
 	}
 	// Every member a switchtender-audit-v1 link does not commit, in one of three states. What was
-	// checked is summarized by member, and a redacted one is named, since a reader should know a
-	// reason was given and removed. The unchecked ones follow the verdict, which counts them.
+	// checked is summarized by member, and a redacted one is named, since a reader should know the
+	// holder withheld a reason and what it claims about that. The unchecked ones follow the verdict,
+	// which counts them.
 	if r.OK && len(r.Disclosed) > 0 {
 		checked, unchecked, redacted := disclosedCounts(r.Disclosed)
 		fmt.Fprintf(w, "disclosed  %d checked, %d unchecked, %d redacted\n", checked, unchecked,
@@ -446,9 +447,9 @@ func printable(s string) string {
 	return s
 }
 
-// reasonsLine words what the disclosed reasons came to: how many opened their commitment, which
-// were redacted and so cannot be opened by design, and how many were committed but not disclosed.
-// It is empty when no record commits a reason.
+// reasonsLine words what the disclosed reasons came to: how many opened their commitment, how many
+// the holder withheld under a category it claims and nothing commits, and how many were committed
+// but not disclosed. It is empty when no record commits a reason.
 func reasonsLine(r *verify.Report) string {
 	var parts []string
 	switch {
@@ -458,8 +459,12 @@ func reasonsLine(r *verify.Report) string {
 		parts = append(parts, fmt.Sprintf("%d opened their commitments", r.ReasonsVerified))
 	}
 	if n := len(r.ReasonsRedacted); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d redacted (%s), unopenable by design", n,
-			strings.Join(r.ReasonsRedacted, ", ")))
+		noun := "category"
+		if n > 1 {
+			noun = "categories"
+		}
+		parts = append(parts, fmt.Sprintf("%d withheld by the holder, %s claimed and not committed: %s",
+			n, noun, strings.Join(r.ReasonsRedacted, ", ")))
 	}
 	if r.ReasonsWithheld > 0 {
 		parts = append(parts, fmt.Sprintf("%d committed and not disclosed", r.ReasonsWithheld))

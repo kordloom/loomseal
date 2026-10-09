@@ -24,7 +24,7 @@
       "correction_nonce": {"state": "checked", "by": "the entry's content_digest", "with": "correction_body", "records": ["correction"]},
       "reason_text": {"state": "checked", "by": "the reason_commitment its record body carries", "records": ["decision", "correction"]},
       "reason_random": {"state": "checked", "by": "the reason_commitment its record body carries", "with": "reason_text", "records": ["decision", "correction"]},
-      "reason_redacted": {"state": "redacted", "by": "a privacy redaction removed the reason's text and random value and kept its commitment", "records": ["decision", "correction"]},
+      "reason_redacted": {"state": "redacted", "by": "the holder withheld the reason and claims this category, which nothing commits, and the commitment stays unopened", "records": ["decision", "correction"]},
       "spec_body": {"state": "checked", "by": "the spec_digest a verified decision or outcome names", "unchecked": "no verified decision or outcome names a spec digest", "records": ["outcome"]},
       "outcome_body": {"state": "checked", "by": "the entry's content_digest in the exact form", "unchecked": "the entry committed it under an older digest form, over the producer's own redaction", "records": ["outcome"]},
       "outcome_nonce": {"state": "checked", "by": "the entry's content_digest in the exact form", "with": "outcome_body", "records": ["outcome"]}

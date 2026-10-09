@@ -115,6 +115,10 @@ A bundle is a JSON object with these members:
 | `attestations`| no      | Head-level counter-signatures over the chain head    |
 | `signatures` | yes      | At least one producer signature over the bundle      |
 
+The subject vocabulary this format knows is `url`, `fleet`, `repo`, `agent`, `host`, `run`, and
+`org`. A verifier reports a subject type outside it by name and continues. Every shipped verifier
+holds this same list, and a conformance vector per known type pins that they do.
+
 Example, the shape of a bundle on the generic profile. Digests, keys, and the signature are
 illustrative placeholders, so this exact document does not verify; the conformance vectors are
 the documents that do:
@@ -237,6 +241,16 @@ bundle whose declared fingerprint does not match the key it carries; the fingerp
 for readers, never an input to a decision. Verifiers compare that recomputed fingerprint, not the
 declared one, against a pinned value when the caller provides one. Pinning against a value the bundle
 itself supplies would let any producer claim any identity.
+
+A pin is `sha256:` and 64 lowercase hex digits. A verifier refuses a pin its caller supplied in any
+other form, an empty one included, before it verifies anything: a caller who supplied a pin meant to
+pin, and an empty value read as no pin would verify a bundle from any key with the outcome of a
+matched one. This binds every entry point that can tell a supplied pin from an absent one, such as a
+command-line flag or a function argument. A library option whose empty value means no pin is the
+unpinned run by construction, and a malformed pin given there fails the bundle as a mismatch. A bundle
+that verifies with no pin reads the same `VERIFIED` as a pinned one, beside a line saying no signer
+was pinned and with `producer_pinned` false in the report. The qualification is that line, never a
+different word, so every shipped surface prints one verdict for one report.
 
 Emptying `signatures` before signing puts the whole array, including each entry's `alg` and
 `key_id`, outside the signed bytes. Everything else, including `chain.profile` and every anchor,
@@ -955,7 +969,11 @@ The verifier performs these steps in order and fails closed:
    and qualify a verified verdict with the number of unchecked records, as "Disclosed members and
    the three states" states.
 8. Report the conformance level achieved and an overall verdict. Any failed check fails the
-   bundle.
+   bundle, and a failed bundle achieved no level: its report words the level as `not verified`,
+   whatever the earlier steps held, and a bundle the verifier does not implement words it as
+   `unsupported`. The level names what the verdict established, never the step a failed bundle
+   reached, so a reader keying on it is not told that a bundle with a corrupt anchor proof is
+   anchored.
 
 Who can verify what:
 
@@ -1180,6 +1198,11 @@ A verifier reports every disclosed member of a bundle in exactly one of three st
 A record body checked against the legacy unkeyed form is checked, and a verifier also lists it as
 legacy, since its digest confirms a guess for anyone who holds the bundle.
 
+The states belong to a verified verdict. A bundle that fails any check lists no disclosed members
+and counts none unchecked: a member's state rests on checks a verifier may never have reached, and
+a verifier that stops at the first failure and one that runs every check would otherwise list
+different states for the same bytes.
+
 A member and the member it travels with, such as a body and its nonce, count as one record when
 both are on the same claim. Alone, either counts as a record of its own. A bundle that verifies
 with no unchecked record reads `VERIFIED`. One that verifies with any reads
@@ -1312,6 +1335,18 @@ leaf, the reduced bundle still verifies, and the presentation commits to exactly
 A verifier checks the embedded bundle on its own terms, then the holder signature over the presented
 bundle, and finally that the `audience` and `nonce` match what it expected. It reports the holder
 fingerprint and both matches, and leaves whether the holder is who they claim to the relying party.
+
+An expected audience or nonce is optional, and a verifier that compared neither says so beside the
+verdict. An entry point that can tell a supplied expectation from an absent one refuses one supplied
+empty before anything is verified, for the reason an empty pin is refused: it compares against
+nothing, and read as absent it would turn off the replay defense under the outcome of a checked run.
+The command line's `--audience` and `--nonce`, the browser module's `loomsealVerifyPresentation`,
+and the reference verifier's `verify_presentation` are such entry points. Each refuses an empty
+string as `expected value is empty and compares against nothing`, and a caller with no expectation
+passes none: no flag, `undefined`, or `None`. Go's `PresentationOptions` is not such an entry point.
+It is a struct whose empty field means no expectation, so an empty field there is the unchecked run
+by construction, and the report leaves that match unset, as it does when no expectation was given.
+The `present-empty-audience` and `present-empty-nonce` vectors pin the refusal.
 
 ## Media type and file names
 

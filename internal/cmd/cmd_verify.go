@@ -53,6 +53,30 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "loomseal verify: exactly one bundle file is required")
 		return CodeUsage
 	}
+	// A pin the caller passed is checked for its form before anything is verified. An empty value,
+	// which is what --fingerprint "$PIN" sends when the variable is unset, would otherwise read as
+	// no pin at all and verify a bundle from any key with the exit code of a matched pin. Only a
+	// flag the caller gave is held to this; an absent flag is the unpinned run, and the report says
+	// so.
+	supplied := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { supplied[f.Name] = true })
+	if supplied["fingerprint"] {
+		if err := verify.CheckFingerprint(*fingerprint); err != nil {
+			fmt.Fprintf(stderr, "loomseal verify: --fingerprint: %v\n", err)
+			return CodeUsage
+		}
+	}
+	// An expected audience or nonce the caller passed is held to the same rule. --nonce "$NONCE"
+	// with the variable unset would otherwise skip the replay defense and exit as a checked run.
+	for _, name := range []string{"audience", "nonce"} {
+		if !supplied[name] {
+			continue
+		}
+		if err := verify.CheckExpectation(fs.Lookup(name).Value.String()); err != nil {
+			fmt.Fprintf(stderr, "loomseal verify: --%s: %v\n", name, err)
+			return CodeUsage
+		}
+	}
 	var raw []byte
 	var err error
 	if file == "-" {

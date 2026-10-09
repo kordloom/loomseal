@@ -75,7 +75,8 @@ type Producer struct {
 
 // Subject is the thing the claims describe.
 type Subject struct {
-	// Type is the subject kind: url, fleet, repo, or agent.
+	// Type is the subject kind, a lowercase token. SubjectTypes holds the known vocabulary, and a
+	// type outside it is reported, never failed.
 	Type string `json:"type"`
 	// ID names the subject, such as the watched URL.
 	ID string `json:"id"`
@@ -240,7 +241,8 @@ var (
 // Allowed enum values from the schema.
 var (
 	reSubjectType = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
-	// subjectTypes is the known vocabulary. Membership is reported, never enforced.
+	// SubjectTypes is the known subject vocabulary, the list FORMAT.md states. Membership is
+	// reported, never enforced, and the reference verifier holds the same list.
 	SubjectTypes = map[string]bool{"url": true, "fleet": true, "repo": true, "agent": true,
 		"host": true, "run": true, "org": true}
 	profiles    = map[string]bool{ProfileSwitchTender: true, ProfileV1: true, ProfileMerkle: true}

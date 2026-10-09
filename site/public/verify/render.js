@@ -1,11 +1,13 @@
-// Shared renderer for the browser verify page.
+// Shared renderer and dispatcher for the browser verify page.
 //
 // The verdict and every qualifying line are produced here, line for line with the command line's
-// renderReport, so the page a relying party runs in a tab does not quietly drop the notices the
-// command line prints. A notice the command line shows and the page hides, such as the unpinned
-// "pin NONE" line, reads to a browser user as a bare VERIFIED with none of the context that says
-// what the verdict is worth. reportLines is pure so it can be held to that parity in a test with no
-// DOM.
+// renderReport and renderPresentation, so the page a relying party runs in a tab does not quietly
+// drop the notices the command line prints. A notice the command line shows and the page hides, such
+// as the unpinned "pin NONE" line, reads to a browser user as a bare VERIFIED with none of the
+// context that says what the verdict is worth. reportLines and presentationLines are pure so they
+// can be held to that parity in a test with no DOM, and verifyBytes is the one path a dropped file
+// takes to the compiled verifier, so the module's self-test drives the page's own routing rather
+// than the entry points behind it.
 (function (global) {
   "use strict";
 
@@ -20,6 +22,83 @@
   // pad left-aligns a label into the eleven-column gutter the command line uses.
   function pad(s) {
     return (s + "           ").slice(0, 11);
+  }
+
+  // unset reports whether a pin comparison was never made.
+  function unset(v) {
+    return v === undefined || v === null;
+  }
+
+  // verifyBytes runs the compiled verifier over a file's bytes the way loomseal verify does: a holder
+  // presentation goes to the presentation entry point with the audience and nonce the relying party
+  // expects, and anything else to the bundle entry point. A producer pin applies to either. The
+  // bundle entry point refuses a presentation at parse, over its audience member, so a page that
+  // skipped this test would refuse a presentation the command line and the reference accept. A
+  // blank audience or nonce field is no expectation, so it is passed as undefined: the entry point
+  // refuses an empty string the way the command line refuses --nonce "".
+  function verifyBytes(bytes, opts) {
+    opts = opts || {};
+    var raw;
+    if (global.loomsealLooksLikePresentation(bytes)) {
+      raw = global.loomsealVerifyPresentation(bytes, opts.audience || undefined,
+        opts.nonce || undefined, opts.pin || undefined);
+    } else {
+      raw = opts.pin ? global.loomsealVerify(bytes, opts.pin) : global.loomsealVerify(bytes);
+    }
+    return JSON.parse(raw);
+  }
+
+  // isPresentation reports whether a report came from the presentation entry point, which always
+  // carries presentation_ok, a member a bundle report never has.
+  function isPresentation(report) {
+    return Object.prototype.hasOwnProperty.call(report, "presentation_ok");
+  }
+
+  // verdict returns the command line's final line for a bundle report. The level is named only on
+  // a verified bundle: a failed one achieved none, and an unsupported one was never judged, so
+  // neither carries a level beside its word. The plain word is kept for a bundle with nothing
+  // disclosed beside its commitments left unchecked; anything else says how much was not checked.
+  function verdict(report) {
+    if (report.unsupported) {
+      return "UNSUPPORTED  this verifier does not implement what the bundle declares; not judged";
+    }
+    if (report.ok !== true) return "NOT VERIFIED";
+    var unchecked = report.disclosed_unchecked || 0;
+    if (unchecked > 0) {
+      return "VERIFIED, " + unchecked + " disclosed record(s) unchecked   " + (report.level || "");
+    }
+    return "VERIFIED   " + (report.level || "");
+  }
+
+  // presentationLines returns a presentation report's own rows in the command line's order and
+  // wording: who presented to whom, each pin that was compared, each pin that was not, and the
+  // problems. The wrapped bundle's rows follow separately.
+  function presentationLines(report) {
+    var rows = [];
+    function row(label, text) { rows.push([label, String(text)]); }
+
+    if (report.presentation_ok) {
+      row("presented", "by holder " + (report.holder_key_id || "") + " to " +
+        JSON.stringify(report.audience || ""));
+    } else {
+      row("presented", "FAILED");
+    }
+    if (!unset(report.audience_match)) row("audience", "match " + report.audience_match);
+    if (!unset(report.nonce_match)) row("nonce", "match " + report.nonce_match);
+    // The nonce is the whole replay defense, so a pin that was not compared is said to be
+    // unchecked, as the command line says it, rather than left to be inferred from a missing row.
+    if (report.ok && (unset(report.audience_match) || unset(report.nonce_match))) {
+      if (unset(report.nonce_match)) {
+        row("nonce", JSON.stringify(report.nonce || "") +
+          ", NOT CHECKED, so a presentation made for an older");
+        row("", "challenge replays freely: pass --nonce with the one you issued");
+      }
+      if (unset(report.audience_match)) {
+        row("audience", "NOT CHECKED: pass --audience with the identifier you expect");
+      }
+    }
+    (report.problems || []).forEach(function (p) { row("problem", p); });
+    return rows;
   }
 
   // reportLines returns the report as [label, text] rows in the command line's order and wording.
@@ -225,26 +304,40 @@
     return parts.join(", ");
   }
 
-  // renderInto writes the verdict banner and the report rows into an element. The plain word is
-  // kept for a bundle with nothing disclosed beside its commitments left unchecked. Anything else
-  // says how much was not checked, and the rows name it.
+  // padRow renders one [label, text] row into the command line's gutter, escaped for HTML.
+  function padRow(r) {
+    return esc(pad(r[0])) + esc(r[1]);
+  }
+
+  // renderInto writes the verdict banner and the report rows into an element. A bundle's banner is
+  // the command line's final line. A presentation's banner is the presentation verdict, and its
+  // rows are the presentation's own lines, a separator, the wrapped bundle's lines, and the
+  // bundle's own verdict line, in the order the command line prints them.
   function renderInto(el, report, name, subEl) {
     var ok = report.ok === true;
-    var unchecked = report.disclosed_unchecked || 0;
-    var verdict = report.unsupported ? "UNSUPPORTED" : !ok ? "NOT VERIFIED" :
-      unchecked > 0 ? "VERIFIED, " + unchecked + " disclosed record(s) unchecked" : "VERIFIED";
-    var klass = report.unsupported ? "no" : (ok ? "ok" : "no");
-    var html = '<div class="verdict ' + klass + '">' + verdict + "   " +
-      esc(report.level || "") + "</div>";
-    var body = reportLines(report).map(function (r) {
-      return esc(pad(r[0])) + esc(r[1]);
-    }).join("\n");
-    html += "<pre><code>" + body + "</code></pre>";
+    var banner;
+    var lines;
+    if (isPresentation(report)) {
+      banner = ok ? "PRESENTATION VERIFIED" : "PRESENTATION NOT VERIFIED";
+      lines = presentationLines(report).map(padRow);
+      if (report.bundle) {
+        lines.push("---");
+        lines = lines.concat(reportLines(report.bundle).map(padRow), [esc(verdict(report.bundle))]);
+      }
+    } else {
+      banner = verdict(report);
+      lines = reportLines(report).map(padRow);
+    }
+    var html = '<div class="verdict ' + (ok ? "ok" : "no") + '">' + esc(banner) + "</div>";
+    html += "<pre><code>" + lines.join("\n") + "</code></pre>";
     html += '<details><summary>Full report</summary><pre><code>' +
       esc(JSON.stringify(report, null, 2)) + "</code></pre></details>";
     el.innerHTML = html;
     if (subEl && name) subEl.textContent = "Checked " + name;
   }
 
-  global.LoomSeal = { esc: esc, pad: pad, reportLines: reportLines, renderInto: renderInto };
+  global.LoomSeal = {
+    esc: esc, pad: pad, verdict: verdict, verifyBytes: verifyBytes,
+    reportLines: reportLines, presentationLines: presentationLines, renderInto: renderInto,
+  };
 })(typeof window !== "undefined" ? window : globalThis);

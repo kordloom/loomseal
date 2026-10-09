@@ -26,6 +26,22 @@
       "why": "A holder carrying the signed key id under a name that folds onto key_id is refused at parse, rather than checked in place of the key_id the document shows."
     },
     {
+      "name": "present-empty-audience",
+      "file": "present-valid.loomseal-presentation.json",
+      "expect_audience": "",
+      "expect_nonce": "chal-1",
+      "must_verify": false,
+      "why": "An expected audience supplied empty is refused before anything is verified, by every entry point that can tell it from an absent one, rather than read as no expectation."
+    },
+    {
+      "name": "present-empty-nonce",
+      "file": "present-valid.loomseal-presentation.json",
+      "expect_audience": "acme-verifier",
+      "expect_nonce": "",
+      "must_verify": false,
+      "why": "An expected nonce supplied empty is refused before anything is verified, by every entry point that can tell it from an absent one, rather than read as no expectation and the replay defense skipped."
+    },
+    {
       "name": "present-no-pins",
       "file": "present-valid.loomseal-presentation.json",
       "must_verify": true,

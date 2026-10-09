@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,12 +34,18 @@ type conformanceVector struct {
 	File string `json:"file"`
 	// MustVerify is whether a conformant verifier must report the bundle verified.
 	MustVerify bool `json:"must_verify"`
-	// Level is the expected conformance wording when MustVerify is true.
+	// Level is the expected conformance wording: the level achieved when MustVerify is true, and
+	// otherwise "not verified" or "unsupported".
 	Level string `json:"level"`
 	// FailingCheck names the step that must fail when MustVerify is false.
 	FailingCheck string `json:"failing_check"`
 	// Why explains the case.
 	Why string `json:"why"`
+	// Evidence is whether the vectors directory is the evidence directory for the case.
+	Evidence bool `json:"evidence"`
+	// UnknownSubjectType is the subject type a verifier must report as outside its vocabulary when
+	// MustVerify is true. Empty means none may be reported.
+	UnknownSubjectType string `json:"unknown_subject_type"`
 	// Unchecked lists the disclosed members, as "claim N member", a verifier must report unchecked.
 	Unchecked []string `json:"unchecked"`
 	// Redacted lists the disclosed members a verifier must report redacted.
@@ -50,7 +57,7 @@ type conformanceVector struct {
 
 // TestConformanceVectors drives the verifier from the manifest so the shipped verifier and the
 // published vectors can never disagree. Each vector asserts the overall verdict, the conformance
-// level for cases that verify, and the failing check for cases that must not.
+// level, the states of the disclosed members, and the failing check for cases that must not verify.
 func TestConformanceVectors(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join(vectorsDir, "manifest.json"))
@@ -71,26 +78,43 @@ func TestConformanceVectors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read vector: %v", err)
 			}
-			report := verify.Run(doc, verify.Options{})
+			var opts verify.Options
+			if v.Evidence {
+				opts.EvidenceDir = vectorsDir
+			}
+			report := verify.Run(doc, opts)
 			if report.OK != v.MustVerify {
 				t.Fatalf("verified %t, want %t; problems %v", report.OK, v.MustVerify,
 					report.Problems)
 			}
+			// The level is pinned on every vector. A bundle that fails achieved no level, so its
+			// report must not name the step it reached before failing.
+			if v.Level != "" && report.Level != v.Level {
+				t.Errorf("level %q, want %q", report.Level, v.Level)
+			}
+			// A verified bundle is only as good as what it leaves unchecked, so the states of its
+			// disclosed members are part of the verdict a vector pins, and a bundle that does not
+			// verify lists none.
+			unchecked, redacted := disclosedStates(report)
+			if diff := cmp.Diff(v.Unchecked, unchecked, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("unchecked members (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(v.Redacted, redacted, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("redacted members (-want +got):\n%s", diff)
+			}
+			// A bundle that does not verify lists no disclosed member in any state, checked ones
+			// included, and counts none unchecked.
+			if !v.MustVerify && (len(report.Disclosed) != 0 || report.DisclosedUnchecked != 0) {
+				t.Errorf("a failed bundle lists %d disclosed members and %d unchecked records",
+					len(report.Disclosed), report.DisclosedUnchecked)
+			}
 			if v.MustVerify {
-				if v.Level != "" && report.Level != v.Level {
-					t.Errorf("level %q, want %q", report.Level, v.Level)
-				}
-				// A verified bundle is only as good as what it leaves unchecked, so the states of
-				// its disclosed members are part of the verdict a vector pins.
-				unchecked, redacted := disclosedStates(report)
-				if diff := cmp.Diff(v.Unchecked, unchecked, cmpopts.EquateEmpty()); diff != "" {
-					t.Errorf("unchecked members (-want +got):\n%s", diff)
-				}
-				if diff := cmp.Diff(v.Redacted, redacted, cmpopts.EquateEmpty()); diff != "" {
-					t.Errorf("redacted members (-want +got):\n%s", diff)
-				}
 				if diff := cmp.Diff(v.Legacy, report.LegacyRecords, cmpopts.EquateEmpty()); diff != "" {
 					t.Errorf("legacy records (-want +got):\n%s", diff)
+				}
+				if report.UnknownSubjectType != v.UnknownSubjectType {
+					t.Errorf("unknown subject type %q, want %q", report.UnknownSubjectType,
+						v.UnknownSubjectType)
 				}
 				return
 			}
@@ -106,12 +130,12 @@ type presentationManifest struct {
 
 // presentationVector is one presentation conformance case.
 type presentationVector struct {
-	Name           string `json:"name"`
-	File           string `json:"file"`
-	ExpectAudience string `json:"expect_audience"`
-	ExpectNonce    string `json:"expect_nonce"`
-	MustVerify     bool   `json:"must_verify"`
-	Why            string `json:"why"`
+	Name           string  `json:"name"`
+	File           string  `json:"file"`
+	ExpectAudience *string `json:"expect_audience"`
+	ExpectNonce    *string `json:"expect_nonce"`
+	MustVerify     bool    `json:"must_verify"`
+	Why            string  `json:"why"`
 }
 
 // TestPresentationConformance drives the presentation verifier from its manifest, so the shipped
@@ -137,14 +161,37 @@ func TestPresentationConformance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read presentation: %v", err)
 			}
-			rep := verify.RunPresentation(doc, verify.PresentationOptions{
-				Audience: v.ExpectAudience, Nonce: v.ExpectNonce,
-			})
+			// PresentationOptions holds no difference between an expectation supplied empty and
+			// none, so a case that supplies one is held to the check the command line applies to
+			// a flag the caller gave, and must be refused there before anything is verified.
+			var opts verify.PresentationOptions
+			err = errors.Join(applyExpectation(v.ExpectAudience, &opts.Audience),
+				applyExpectation(v.ExpectNonce, &opts.Nonce))
+			if err != nil {
+				if v.MustVerify || !errors.Is(err, verify.ErrExpectation) {
+					t.Fatalf("expectation refused with %v, want verified %t", err, v.MustVerify)
+				}
+				return
+			}
+			rep := verify.RunPresentation(doc, opts)
 			if rep.OK != v.MustVerify {
 				t.Fatalf("verified %t, want %t; problems %v", rep.OK, v.MustVerify, rep.Problems)
 			}
 		})
 	}
+}
+
+// applyExpectation sets dst to a supplied expectation once it passes the check the command line
+// applies to a flag the caller gave. A nil expectation is none and leaves dst empty.
+func applyExpectation(supplied, dst *string) error {
+	if supplied == nil {
+		return nil
+	}
+	if err := verify.CheckExpectation(*supplied); err != nil {
+		return err
+	}
+	*dst = *supplied
+	return nil
 }
 
 // assertFailingCheck confirms the failure fell on the check the manifest names.
@@ -213,6 +260,14 @@ func assertFailingCheck(t *testing.T, check string, r *verify.Report) {
 		}
 		if !hasProblem(r, "install") {
 			t.Errorf("install case did not fail on the install check: %v", r.Problems)
+		}
+	case "evidence":
+		if !r.SignatureOK || !r.ChainOK {
+			t.Errorf("evidence case failed earlier than the evidence check: %v", r.Problems)
+		}
+		if r.EvidenceMismatched == 0 || !hasProblem(r, "evidence ") {
+			t.Errorf("evidence case did not fail on an altered artifact: mismatched %d problems %v",
+				r.EvidenceMismatched, r.Problems)
 		}
 	case "unsupported":
 		if !r.Unsupported {

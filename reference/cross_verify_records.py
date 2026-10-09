@@ -42,6 +42,13 @@ def main():
             want = case.get("want_problem", "")
             if not any(p.startswith("record:") and want in p for p in report["problems"]):
                 why = "no record problem mentions %r: %s" % (want, report["problems"])
+            # A failed bundle achieved no level and lists no disclosed state, in this verifier and
+            # in the Go one, so the two reports agree on every field a consumer might key on.
+            if report["level"] != "not verified":
+                why += "level=%r, want 'not verified' " % report["level"]
+            if report["disclosed"] or report["disclosed_unchecked"]:
+                why += "disclosed=%d unchecked=%d on a failed bundle, want none " % (
+                    len(report["disclosed"]), report["disclosed_unchecked"])
         else:
             got = dict(report)
             got["unchecked"] = ["claim %d %s" % (d["claim"], d["member"])

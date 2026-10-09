@@ -48,7 +48,9 @@ type PresentationHolder struct {
 	Alg string `json:"alg"`
 }
 
-// PresentationOptions carries the caller's expectations for a presentation.
+// PresentationOptions carries the caller's expectations for a presentation. An empty field is no
+// expectation, so a caller holding a value a user supplied runs it through CheckExpectation first,
+// as the command line does for --audience and --nonce.
 type PresentationOptions struct {
 	// Audience, when set, requires the presentation to be addressed to it.
 	Audience string
@@ -56,6 +58,16 @@ type PresentationOptions struct {
 	Nonce string
 	// Bundle carries the options for verifying the embedded bundle.
 	Bundle Options
+}
+
+// CheckExpectation refuses an expected audience or nonce the caller supplied empty. A caller who
+// passed one meant to compare, and an empty value read as no expectation would skip the comparison,
+// which for the nonce is the whole replay defense. A caller with no expectation supplies none.
+func CheckExpectation(expected string) error {
+	if expected == "" {
+		return ErrExpectation
+	}
+	return nil
 }
 
 // PresentationReport is the outcome of verifying a presentation.

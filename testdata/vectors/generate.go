@@ -355,6 +355,8 @@ func (s *state) positives() {
 			"proof rejects a valid bundle.",
 		s.sign(s.merkleBundle(9, []int{2}, 8)))
 
+	s.cobleProofs()
+
 	s.add("switchtender-audit-json-escapes", true, "signed, chained (full)", "",
 		"A recorded path carrying &, <, > and U+2028 verifies, because the profile serializes with "+
 			"RFC 8785 rather than an encoder that escapes those characters for HTML.",
@@ -5797,6 +5799,45 @@ func (s *state) merkleBundleShaped(size int, disclose []int, fromSize int,
 	return m
 }
 
+// cobleLog shapes a tree log the way Coble emits one proof run: the coble.equivalence/1 summary as
+// the first leaf and one coble.comparison/1 claim per comparison after it.
+func cobleLog(log []map[string]any) {
+	log[0]["type"] = "coble.equivalence/1"
+	log[0]["payload"] = map[string]any{
+		"crossing": "ingress", "verdict": "not-equivalent", "leaf_count": int64(len(log) - 1),
+	}
+	statuses := []string{"match", "mismatch", "match", "target-only"}
+	for i := 1; i < len(log); i++ {
+		log[i]["type"] = "coble.comparison/1"
+		log[i]["payload"] = map[string]any{
+			"class": "route-http", "object": fmt.Sprintf("shop.example.com/%d", i),
+			"status": statuses[(i-1)%len(statuses)],
+		}
+	}
+}
+
+// cobleProofs emits the vectors for Coble's equivalence proofs: a full proof run, the sparse
+// disclosure an auditor receives for one comparison, and a comparison whose status was edited after
+// the tree was built.
+func (s *state) cobleProofs() {
+	s.add("coble-proof-full", true, "signed, chained (tree of 5)", "",
+		"A Coble proof run with its summary and every comparison as leaves of one tree verifies, "+
+			"and both claim types read as registered.",
+		s.sign(s.merkleBundleShaped(5, []int{0, 1, 2, 3, 4}, 0, cobleLog)))
+
+	s.add("coble-proof-disclosed", true, "signed, chained (tree of 5)", "",
+		"The summary and one comparison disclosed from a five leaf proof verify under the same "+
+			"signed root, so an auditor checks one comparison without receiving the others.",
+		s.sign(s.merkleBundleShaped(5, []int{0, 3}, 0, cobleLog)))
+
+	m := s.merkleBundleShaped(5, []int{0, 1, 2, 3, 4}, 0, cobleLog)
+	claim := m["claims"].([]any)[2].(map[string]any)
+	claim["payload"].(map[string]any)["status"] = "match"
+	s.add("coble-proof-status-altered", false, "", "chain",
+		"A comparison whose mismatch was rewritten as a match after the tree was built no longer "+
+			"hashes to its own leaf, even re-signed by the producer.", s.sign(m))
+}
+
 // hexList hex encodes a proof's hashes for a bundle.
 func hexList(in [][]byte) []any {
 	out := make([]any, 0, len(in))
@@ -6402,6 +6443,8 @@ func (s *state) tampers() {
 		"loomseal.span/1":         {{build: s.switchTenderSpans}},
 		"loomseal.agentrun/1":     {{build: s.typedBuilder("loomseal.agentrun/1")}},
 		"whodar.knowledge-risk/1": {{build: s.typedBuilder("whodar.knowledge-risk/1")}},
+		"coble.equivalence/1":     {{build: s.typedBuilder("coble.equivalence/1")}},
+		"coble.comparison/1":      {{build: s.typedBuilder("coble.comparison/1")}},
 	}
 	types := make([]string, 0, len(decl.Types))
 	for t := range decl.Types {
@@ -6708,6 +6751,10 @@ func (s *state) switchTenderTyped(claimType string) map[string]any {
 			"outcome": "succeeded"},
 		"whodar.knowledge-risk/1": {"finding": "single maintainer", "topics_scored": int64(4),
 			"critical": int64(1)},
+		"coble.equivalence/1": {"crossing": "ingress", "verdict": "equivalent",
+			"leaf_count": int64(32)},
+		"coble.comparison/1": {"class": "route-http", "object": "shop.example.com/cart",
+			"status": "match"},
 	}
 	p := map[string]any{"actor": "release-token", "method": "POST", "path": "/api/runs"}
 	for k, v := range payloads[claimType] {

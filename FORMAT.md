@@ -1384,6 +1384,14 @@ emitting product and documented there; this registry fixes the names and require
 | `loomseal.rotation/1`  | reserved     |          | key succession statement, unspecified |
 | `loomseal.agentrun/1`  | Any producer | v0.1     | session, tool, args, outcome          |
 | `whodar.knowledge-risk/1` | Whodar    | v0.1     | finding, topics_scored, critical      |
+| `coble.equivalence/1`  | Coble        | v0.1     | crossing, verdict, leaf_count         |
+| `coble.comparison/1`   | Coble        | v0.1     | class, object, status                 |
+
+Coble emits one proof run as a `loomseal-merkle-v1` log: the `coble.equivalence/1` summary is the
+first leaf and each `coble.comparison/1` claim after it is one comparison between the two sides.
+Because the tree commits every member of every claim, a holder discloses the summary and any chosen
+comparisons under the one signed root, and an auditor checks those comparisons without receiving the
+rest of the estate.
 
 `switchtender.run/1` is reserved and nothing emits it. A run's record travels today as
 `switchtender.audit/1` claims: the request that created it, any approval or rejection, and an

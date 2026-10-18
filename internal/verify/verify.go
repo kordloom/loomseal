@@ -33,6 +33,8 @@ var knownClaimTypes = map[string]bool{
 	"loomseal.span/1":         true,
 	"loomseal.agentrun/1":     true,
 	"whodar.knowledge-risk/1": true,
+	"coble.equivalence/1":     true,
+	"coble.comparison/1":      true,
 }
 
 // reFingerprint is the one form a producer key fingerprint takes.

@@ -1920,6 +1920,28 @@
       "why": "A claim with no type is refused at parse."
     },
     {
+      "name": "coble-proof-disclosed",
+      "file": "coble-proof-disclosed.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 5)",
+      "why": "The summary and one comparison disclosed from a five leaf proof verify under the same signed root, so an auditor checks one comparison without receiving the others."
+    },
+    {
+      "name": "coble-proof-full",
+      "file": "coble-proof-full.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (tree of 5)",
+      "why": "A Coble proof run with its summary and every comparison as leaves of one tree verifies, and both claim types read as registered."
+    },
+    {
+      "name": "coble-proof-status-altered",
+      "file": "coble-proof-status-altered.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "chain",
+      "why": "A comparison whose mismatch was rewritten as a match after the tree was built no longer hashes to its own leaf, even re-signed by the producer."
+    },
+    {
       "name": "consistency-under-linear",
       "file": "consistency-under-linear.loomseal.json",
       "must_verify": false,
@@ -3104,6 +3126,195 @@
       "level": "not verified",
       "failing_check": "record",
       "why": "A decision under the unkeyed content digest after an entry under the keyed form fails: the producer was keying its digests by then, so the entry is not one from before nonces, and an unkeyed digest lets anyone holding the bundle confirm a guess of the body."
+    },
+    {
+      "name": "tamper-coble-comparison-1-class",
+      "file": "tamper-coble-comparison-1-class.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's class, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 class",
+        "claim 0 object",
+        "claim 0 status"
+      ]
+    },
+    {
+      "name": "tamper-coble-comparison-1-class-case",
+      "file": "tamper-coble-comparison-1-class-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Class\" beside class, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Class",
+        "claim 0 class",
+        "claim 0 object",
+        "claim 0 status"
+      ]
+    },
+    {
+      "name": "tamper-coble-comparison-1-class-fold",
+      "file": "tamper-coble-comparison-1-class-fold.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"claſs\" beside class, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 class",
+        "claim 0 claſs",
+        "claim 0 object",
+        "claim 0 status"
+      ]
+    },
+    {
+      "name": "tamper-coble-comparison-1-object",
+      "file": "tamper-coble-comparison-1-object.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's object, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 class",
+        "claim 0 object",
+        "claim 0 status"
+      ]
+    },
+    {
+      "name": "tamper-coble-comparison-1-object-case",
+      "file": "tamper-coble-comparison-1-object-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Object\" beside object, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Object",
+        "claim 0 class",
+        "claim 0 object",
+        "claim 0 status"
+      ]
+    },
+    {
+      "name": "tamper-coble-comparison-1-status",
+      "file": "tamper-coble-comparison-1-status.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's status, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 class",
+        "claim 0 object",
+        "claim 0 status"
+      ]
+    },
+    {
+      "name": "tamper-coble-comparison-1-status-case",
+      "file": "tamper-coble-comparison-1-status-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Status\" beside status, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Status",
+        "claim 0 class",
+        "claim 0 object",
+        "claim 0 status"
+      ]
+    },
+    {
+      "name": "tamper-coble-comparison-1-status-fold",
+      "file": "tamper-coble-comparison-1-status-fold.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"ſtatus\" beside status, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 class",
+        "claim 0 object",
+        "claim 0 status",
+        "claim 0 ſtatus"
+      ]
+    },
+    {
+      "name": "tamper-coble-equivalence-1-crossing",
+      "file": "tamper-coble-equivalence-1-crossing.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's crossing, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 crossing",
+        "claim 0 leaf_count",
+        "claim 0 verdict"
+      ]
+    },
+    {
+      "name": "tamper-coble-equivalence-1-crossing-case",
+      "file": "tamper-coble-equivalence-1-crossing-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Crossing\" beside crossing, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Crossing",
+        "claim 0 crossing",
+        "claim 0 leaf_count",
+        "claim 0 verdict"
+      ]
+    },
+    {
+      "name": "tamper-coble-equivalence-1-crossing-fold",
+      "file": "tamper-coble-equivalence-1-crossing-fold.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"croſsing\" beside crossing, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 crossing",
+        "claim 0 croſsing",
+        "claim 0 leaf_count",
+        "claim 0 verdict"
+      ]
+    },
+    {
+      "name": "tamper-coble-equivalence-1-leaf_count",
+      "file": "tamper-coble-equivalence-1-leaf_count.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's leaf_count, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 crossing",
+        "claim 0 leaf_count",
+        "claim 0 verdict"
+      ]
+    },
+    {
+      "name": "tamper-coble-equivalence-1-leaf_count-case",
+      "file": "tamper-coble-equivalence-1-leaf_count-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Leaf_count\" beside leaf_count, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Leaf_count",
+        "claim 0 crossing",
+        "claim 0 leaf_count",
+        "claim 0 verdict"
+      ]
+    },
+    {
+      "name": "tamper-coble-equivalence-1-verdict",
+      "file": "tamper-coble-equivalence-1-verdict.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0's verdict, altered and re-signed by the producer, verifies with the member reported unchecked, as schema/claim-members.json declares.",
+      "unchecked": [
+        "claim 0 crossing",
+        "claim 0 leaf_count",
+        "claim 0 verdict"
+      ]
+    },
+    {
+      "name": "tamper-coble-equivalence-1-verdict-case",
+      "file": "tamper-coble-equivalence-1-verdict-case.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "Claim 0 carries \"Verdict\" beside verdict, a name that differs from it only in case, planted by the producer and re-signed, and verifies with it reported unchecked, since nothing reads the member on this claim.",
+      "unchecked": [
+        "claim 0 Verdict",
+        "claim 0 crossing",
+        "claim 0 leaf_count",
+        "claim 0 verdict"
+      ]
     },
     {
       "name": "tamper-loomseal-agentrun-1-args",

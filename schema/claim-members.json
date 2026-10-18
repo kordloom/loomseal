@@ -45,6 +45,16 @@
       "finding": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
       "topics_scored": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
       "critical": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"}
+    },
+    "coble.equivalence/1": {
+      "crossing": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "verdict": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "leaf_count": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"}
+    },
+    "coble.comparison/1": {
+      "class": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "object": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"},
+      "status": {"state": "unchecked", "reason": "a switchtender-audit-v1 link does not commit it"}
     }
   }
 }

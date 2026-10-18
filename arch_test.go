@@ -18,7 +18,8 @@ const module = "github.com/kordloom/loomseal"
 //
 // The layering this encodes: jcs, merkle, rfc3161, and schema stand alone at the bottom; bundle
 // speaks jcs; chain speaks bundle and merkle; verify speaks all of them and nothing above;
-// seal is the one facade exporting internals to producers; cmd is the top and nothing
+// seal is the one facade exporting internals to producers and verifier the one exporting the
+// verifier to relying parties in Go; cmd is the top and nothing
 // imports it. A change that needs a new edge changes this table in the same commit, on
 // purpose, with the reasoning in review, which is exactly the decision an agent reaching
 // across a boundary skips.
@@ -35,6 +36,7 @@ var allowedImports = map[string][]string{
 	"rfc3161":             {},
 	"schema":              {},
 	"seal":                {"internal/bundle", "internal/chain", "jcs"},
+	"verifier":            {"internal/verify"},
 	"wasm":                {"internal/verify"},
 }
 

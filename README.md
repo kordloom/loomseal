@@ -251,6 +251,13 @@ Producers use the [seal](seal) package to sign bundles and compute generic chain
 
     signed, err := seal.SignBundle(raw, privateKey)
 
+Products that check bundles from Go use the [verifier](verifier) package, which runs the same
+verifier as the command line and the browser page:
+
+    import "github.com/kordloom/loomseal/verifier"
+
+    report := verifier.Run(raw, verifier.Options{Fingerprint: pin})
+
 The format document is [FORMAT.md](FORMAT.md); the schema is
 [schema/loomseal-bundle.schema.json](schema/loomseal-bundle.schema.json). New claim types enter
 through the registry in the spec.

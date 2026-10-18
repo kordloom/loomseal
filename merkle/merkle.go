@@ -108,6 +108,37 @@ func InclusionProof(m int64, leaves [][]byte) ([][]byte, error) {
 	return inclusionPath(m, leaves), nil
 }
 
+// InclusionProofs returns the audit path of every leaf, in leaf order, each exactly what
+// InclusionProof returns for that index. It hashes every subtree once, so a producer disclosing
+// many leaves of a large log pays n log n rather than the n squared of one InclusionProof per leaf.
+// The paths share their hash slices, so a caller must not modify them.
+func InclusionProofs(leaves [][]byte) [][][]byte {
+	paths := make([][][]byte, len(leaves))
+	if len(leaves) > 0 {
+		fillPaths(leaves, paths)
+	}
+	return paths
+}
+
+// fillPaths appends to paths the audit path of every leaf in one subtree, lowest sibling first,
+// and returns that subtree's root.
+func fillPaths(leaves [][]byte, paths [][][]byte) []byte {
+	n := int64(len(leaves))
+	if n == 1 {
+		return LeafHash(leaves[0])
+	}
+	k := splitPoint(n)
+	left := fillPaths(leaves[:k], paths[:k])
+	right := fillPaths(leaves[k:], paths[k:])
+	for i := range paths[:k] {
+		paths[i] = append(paths[i], right)
+	}
+	for i := k; i < n; i++ {
+		paths[i] = append(paths[i], left)
+	}
+	return NodeHash(left, right)
+}
+
 // inclusionPath is the recursive audit path of RFC 6962 section 2.1.1. The path for a single leaf
 // is empty; otherwise the leaf sits in one half and the whole other half's root is the sibling.
 func inclusionPath(m int64, leaves [][]byte) [][]byte {

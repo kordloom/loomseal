@@ -343,3 +343,37 @@ func TestVerifyConsistencyBounds(t *testing.T) {
 		})
 	}
 }
+
+// TestInclusionProofsMatchOneAtATime holds the batch paths to InclusionProof for every leaf of
+// every log up to 70 leaves, past several powers of two, so a batch that mishandles an odd
+// subtree or orders a level wrong fails here.
+func TestInclusionProofsMatchOneAtATime(t *testing.T) {
+	t.Parallel()
+	if got := InclusionProofs(nil); len(got) != 0 {
+		t.Fatalf("InclusionProofs(nil) = %d paths, want none", len(got))
+	}
+	for n := int64(1); n <= 70; n++ {
+		all := InclusionProofs(leaves(n))
+		if int64(len(all)) != n {
+			t.Fatalf("log of %d: %d paths", n, len(all))
+		}
+		root := Root(leaves(n))
+		for m := int64(0); m < n; m++ {
+			want, err := InclusionProof(m, leaves(n))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(all[m]) != len(want) {
+				t.Fatalf("leaf %d of %d: path of %d, want %d", m, n, len(all[m]), len(want))
+			}
+			for i := range want {
+				if !bytes.Equal(all[m][i], want[i]) {
+					t.Fatalf("leaf %d of %d: level %d differs", m, n, i)
+				}
+			}
+			if !VerifyInclusion(leaves(n)[m], m, n, all[m], root) {
+				t.Errorf("leaf %d of %d does not verify against its own root", m, n)
+			}
+		}
+	}
+}

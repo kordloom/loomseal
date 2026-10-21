@@ -3080,6 +3080,29 @@
       "why": "A decision body that commits a reason the receipt does not disclose verifies, with the reason reported as committed and not disclosed."
     },
     {
+      "name": "switchtender-record-release",
+      "file": "switchtender-record-release.loomseal.json",
+      "must_verify": true,
+      "level": "signed, chained (full)",
+      "why": "A release of one of the run's steps reproduces its entry's keyed content digest and verifies beside the decision that released it, and the step's own spec digest in its body is held to no other record, since a release commits nothing a verifier reads."
+    },
+    {
+      "name": "switchtender-record-release-altered",
+      "file": "switchtender-record-release-altered.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "A receipt whose disclosed release body was changed and re-signed fails, because the body no longer reproduces the content digest its entry committed and the link fixed."
+    },
+    {
+      "name": "switchtender-record-release-reason",
+      "file": "switchtender-record-release-reason.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "A reason disclosed beside a release body fails: a release commits no reason, so the text is nothing the chain fixed, and a reader must not be shown it as the release's reason."
+    },
+    {
       "name": "switchtender-record-spec-altered",
       "file": "switchtender-record-spec-altered.loomseal.json",
       "must_verify": false,
@@ -3741,6 +3764,54 @@
       "level": "not verified",
       "failing_check": "record",
       "why": "Claim 1 carries \"reaſon_text\" beside reason_text, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-release_body",
+      "file": "tamper-switchtender-audit-1-release_body.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "Claim 2's release_body, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-release_body-case",
+      "file": "tamper-switchtender-audit-1-release_body-case.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "Claim 2 carries \"Release_body\" beside release_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-release_body-fold",
+      "file": "tamper-switchtender-audit-1-release_body-fold.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "Claim 2 carries \"releaſe_body\" beside release_body, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-release_nonce",
+      "file": "tamper-switchtender-audit-1-release_nonce.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "Claim 2's release_nonce, altered and re-signed by the producer, fails the commitment it is checked against."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-release_nonce-case",
+      "file": "tamper-switchtender-audit-1-release_nonce-case.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "Claim 2 carries \"Release_nonce\" beside release_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
+    },
+    {
+      "name": "tamper-switchtender-audit-1-release_nonce-fold",
+      "file": "tamper-switchtender-audit-1-release_nonce-fold.loomseal.json",
+      "must_verify": false,
+      "level": "not verified",
+      "failing_check": "record",
+      "why": "Claim 2 carries \"releaſe_nonce\" beside release_nonce, a name that differs from it only in case, planted by the producer and re-signed, and fails, since a reader folding case would take one for the other."
     },
     {
       "name": "tamper-switchtender-audit-1-spec_body",

@@ -28,6 +28,8 @@ type recordCounts struct {
 	Decisions int `json:"decision_records"`
 	// Corrections is CorrectionRecords.
 	Corrections int `json:"correction_records"`
+	// Releases is ReleaseRecords.
+	Releases int `json:"release_records"`
 	// Verified is ReasonsVerified.
 	Verified int `json:"reasons_verified"`
 	// Redacted is ReasonsRedacted.
@@ -73,13 +75,17 @@ func (c *recordCase) correction() map[string]any { return c.Payloads[2] }
 // outcome returns the outcome claim's payload, always the last.
 func (c *recordCase) outcome() map[string]any { return c.Payloads[len(c.Payloads)-1] }
 
+// release returns the release claim's payload, the one before the outcome, which only a case edited
+// by recordWithRelease carries.
+func (c *recordCase) release() map[string]any { return c.Payloads[len(c.Payloads)-2] }
+
 // TestRecordsHoldWhatTheirEntriesCommitted pins the record check on every path it takes: a body
 // that reproduces its entry's content digest in the keyed and the unkeyed form, a reason that opens
 // the commitment its body carries, a reason the holder marked redacted, which is never a failure, a
-// withheld one, a correction, each decision's spec digest held against the outcomes of its own run,
-// and the disclosed spec held against every committed digest. Every edit is made before the bundle
-// is linked and signed, so the signature and every link hold and the record check is the only one
-// that can object, which is the receipt a producer re-signs.
+// withheld one, a correction, a release, which commits no reason, each decision's spec digest held
+// against the outcomes of its own run, and the disclosed spec held against every committed digest.
+// Every edit is made before the bundle is linked and signed, so the signature and every link hold
+// and the record check is the only one that can object, which is the receipt a producer re-signs.
 func TestRecordsHoldWhatTheirEntriesCommitted(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -482,6 +488,91 @@ func TestRecordsHoldWhatTheirEntriesCommitted(t *testing.T) {
 		},
 		WantOK:     true,
 		WantCounts: recordCounts{Decisions: 1, OutcomesVerified: 1},
+	}, { // Test 69: A release reproduces its digest and is counted, its spec digest compared to none.
+		Edit:   recordWithRelease,
+		WantOK: true,
+		WantCounts: recordCounts{Decisions: 1, Releases: 1, Verified: 1, SpecsMatched: 1,
+			Outcomes: 1, Unchecked: recordOutcomeOlder(3), UncheckedRecords: 1},
+	}, { // Test 70: A release body changed after it was committed fails.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			c.release()["release_body"].(map[string]any)["spec_digest"] = recordTestSpecDigest
+		},
+		WantProblem: "release_body does not reproduce the content_digest its entry committed",
+	}, { // Test 71: A reason text beside a release body fails, since a release commits none.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			c.release()["reason_text"] = "released after the change review"
+		},
+		WantProblem: "discloses a reason beside its release_body, and a release commits no reason",
+	}, { // Test 72: A redaction marker beside a release body fails the same way.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			c.release()["reason_redacted"] = "personal_data"
+		},
+		WantProblem: "discloses a reason beside its release_body, and a release commits no reason",
+	}, { // Test 73: A release body committing a reason fails even when it matches its digest.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			random := hex.EncodeToString(recordTestBytes("random release"))
+			recordRebody(c.release(), "release", func(b map[string]any) {
+				b["reason_commitment"] = recordTestCommitment("aud_release", random, "released")
+			})
+			c.release()["reason_text"] = "released"
+			c.release()["reason_random"] = random
+		},
+		WantProblem: "release_body carries a reason_commitment, and a release commits no reason",
+	}, { // Test 74: An empty reason commitment in a release body fails too, whatever its value.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			recordRebody(c.release(), "release", func(b map[string]any) {
+				b["reason_commitment"] = ""
+			})
+		},
+		WantProblem: "release_body carries a reason_commitment, and a release commits no reason",
+	}, { // Test 75: A release nonce the digest did not commit fails.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			c.release()["release_nonce"] = hex.EncodeToString(recordTestBytes("another nonce"))
+		},
+		WantProblem: "has a release_nonce the content_digest did not commit",
+	}, { // Test 76: A release nonce with no body beside it fails.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			delete(c.release(), "release_body")
+		},
+		WantProblem: "release_body is missing or not an object",
+	}, { // Test 77: A case variant of a member a release reads fails beside the member.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			c.release()["Release_body"] = map[string]any{"step": "deploy"}
+		},
+		WantProblem: `carries "Release_body", which differs from release_body only in case`,
+	}, { // Test 78: A release body on a claim that is no record is ordinary and unchecked.
+		Edit:   func(c *recordCase) { c.Payloads[0]["release_body"] = map[string]any{"step": "x"} },
+		WantOK: true,
+		WantCounts: recordCounts{Decisions: 1, Verified: 1, SpecsMatched: 1, Outcomes: 1,
+			Unchecked: recordOutcomeOlder(2, "claim 0 release_body"), UncheckedRecords: 2},
+	}, { // Test 79: A RELEASE entry on a path no release takes is no record, its body unchecked.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			c.release()["path"] = "/runs/run_records/steps/run_step"
+		},
+		WantOK: true,
+		WantCounts: recordCounts{Decisions: 1, Verified: 1, SpecsMatched: 1, Outcomes: 1,
+			Unchecked: recordOutcomeOlder(3, "claim 2 release_body",
+				"claim 2 release_nonce"),
+			UncheckedRecords: 2},
+	}, { // Test 80: A reason member on a release claim that discloses no release is ordinary.
+		Edit: func(c *recordCase) {
+			recordWithRelease(c)
+			delete(c.release(), "release_body")
+			delete(c.release(), "release_nonce")
+			c.release()["reason_text"] = "released after the change review"
+		},
+		WantOK: true,
+		WantCounts: recordCounts{Decisions: 1, Verified: 1, SpecsMatched: 1, Outcomes: 1,
+			Unchecked: recordOutcomeOlder(3, "claim 2 reason_text"), UncheckedRecords: 2},
 	}}
 
 	cross := os.Getenv("LOOMSEAL_CROSS_DIR")
@@ -527,10 +618,11 @@ func TestRecordsHoldWhatTheirEntriesCommitted(t *testing.T) {
 				return
 			}
 			got := recordCounts{Decisions: r.DecisionRecords, Corrections: r.CorrectionRecords,
-				Verified: r.ReasonsVerified, Redacted: r.ReasonsRedacted, Withheld: r.ReasonsWithheld,
-				SpecsMatched: r.SpecsMatched, SpecsUnchecked: r.SpecsUnchecked,
-				OutcomesVerified: r.OutcomesVerified, Outcomes: r.OutcomesUnchecked,
-				Legacy: r.LegacyRecords, UncheckedRecords: r.DisclosedUnchecked}
+				Releases: r.ReleaseRecords, Verified: r.ReasonsVerified, Redacted: r.ReasonsRedacted,
+				Withheld: r.ReasonsWithheld, SpecsMatched: r.SpecsMatched,
+				SpecsUnchecked: r.SpecsUnchecked, OutcomesVerified: r.OutcomesVerified,
+				Outcomes: r.OutcomesUnchecked, Legacy: r.LegacyRecords,
+				UncheckedRecords: r.DisclosedUnchecked}
 			for _, m := range r.Disclosed {
 				if m.State == stateUnchecked {
 					got.Unchecked = append(got.Unchecked, fmt.Sprintf("claim %d %s", m.Claim, m.Member))
@@ -655,6 +747,34 @@ func recordTestDecision(run, spec string) map[string]any {
 	}
 	recordRekey(p, "decision")
 	return p
+}
+
+// recordTestRelease returns the payload of a release of one of run_records' steps, keyed and
+// committing no reason, released by the decision whose content digest decisionDigest is. Its body
+// names the step's own spec digest, which differs from the run's, as a step's spec does.
+func recordTestRelease(decisionDigest string) map[string]any {
+	body := map[string]any{
+		"run_id": "run_records", "step_run_id": "run_step", "step": "migrate",
+		"index": int64(1), "attempt": int64(0),
+		"roots":         []any{map[string]any{"id": "aud_decision", "content_digest": decisionDigest}},
+		"spec_digest":   recordTestOtherSpecDigest,
+		"inputs_digest": recordTestDigestOf("{}"),
+	}
+	p := map[string]any{
+		"actor": "system:dispatcher", "method": "RELEASE",
+		"path": "/runs/run_records/steps/run_step/release", "release_body": body,
+		"release_nonce": hex.EncodeToString(recordTestBytes("nonce release")),
+	}
+	recordRekey(p, "release")
+	return p
+}
+
+// recordWithRelease inserts, between the case's decision and its outcome, the release of a step
+// the decision released.
+func recordWithRelease(c *recordCase) {
+	n := len(c.Payloads)
+	release := recordTestRelease(c.decision()["content_digest"].(string))
+	c.Payloads = append(c.Payloads[:n-1:n-1], release, c.Payloads[n-1])
 }
 
 // recordTestExactOutcome returns an outcome claim payload of run that discloses no spec, and whose

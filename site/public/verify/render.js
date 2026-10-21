@@ -236,13 +236,16 @@
     }
     // A disclosed SwitchTender record, held against the digest its entry committed, and the reason
     // it carries. Gated on the whole verdict, like the command line, so a positive count never sits
-    // under a failure. A body under the legacy unkeyed form is named, since its digest confirms a
-    // guess.
+    // under a failure. The release count is named only when the bundle discloses one, as the
+    // command line names it. A body under the legacy unkeyed form is named, since its digest
+    // confirms a guess.
     var records = (report.decision_records || 0) + (report.correction_records || 0) +
-      (report.outcomes_verified || 0);
+      (report.release_records || 0) + (report.outcomes_verified || 0);
     if (report.ok && records > 0) {
+      var releases = report.release_records ? report.release_records + " release(s), " : "";
       row("records", (report.decision_records || 0) + " decision(s), " +
-        (report.correction_records || 0) + " correction(s), " + (report.outcomes_verified || 0) +
+        (report.correction_records || 0) + " correction(s), " + releases +
+        (report.outcomes_verified || 0) +
         " outcome(s) reproduce the digests their entries committed");
       var reasons = reasonsLine(report);
       if (reasons) row("reasons", reasons);

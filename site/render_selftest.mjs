@@ -147,6 +147,18 @@ check("legacy present", true, renderToHTML(legacy),
   "legacy     claim 1 decision_body is committed under the unkeyed digest form");
 check("legacy absent", false, renderToHTML(base({ decision_records: 1 })), "legacy ");
 
+// Releases: a bundle that discloses one names the count between the corrections and the outcomes,
+// a release alone raises the line, and a bundle with none reads as it did before releases existed.
+check("records line names releases", true,
+  renderToHTML(base({ decision_records: 1, release_records: 1, outcomes_verified: 1 })),
+  "records    1 decision(s), 0 correction(s), 1 release(s), 1 outcome(s) reproduce the digests");
+check("release alone raises the records line", true, renderToHTML(base({ release_records: 2 })),
+  "records    0 decision(s), 0 correction(s), 2 release(s), 0 outcome(s) reproduce the digests");
+check("release count absent with none", false, renderToHTML(legacy), "release(s)");
+check("release count absent under a failure", false,
+  renderToHTML(base({ ok: false, release_records: 1, problems: ["record: claim 2 fails"] })),
+  "records ");
+
 // Withheld reasons: a reason the holder marked redacted is worded as its claim, which nothing
 // commits, and never as a redaction that took place.
 const withheld = base({ decision_records: 1, correction_records: 1,
@@ -227,7 +239,7 @@ check("unsupported presentation carries no presented line", false, unsupportedPr
 if (bad === 0) {
   console.log("ALL NOTICES RENDERED  pin NONE, ALTERED, declared head, unknown claim type, " +
     "unopened proofs, install, " +
-    "attestors, unchecked members, line order, records, legacy, withheld reasons, " +
+    "attestors, unchecked members, line order, records, releases, legacy, withheld reasons, " +
     "verdict banners, presentations, unsupported presentations");
   process.exit(0);
 }

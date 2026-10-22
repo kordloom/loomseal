@@ -151,7 +151,7 @@ var memberName = regexp.MustCompile(`^[a-z0-9_]+$`)
 // checkRecordKinds holds the declaration's record kinds to the record check: the kinds are told
 // apart by their committed method alone, so a claim is at most one of them, and each kind reads
 // exactly the members the check reads for it, so the case variants a claim is refused for are the
-// names the check would otherwise have read.
+// names the check would otherwise have read. A kind that commits no reason reads no reason member.
 func checkRecordKinds(t *testing.T) {
 	t.Helper()
 	methods := map[string]string{}
@@ -167,7 +167,10 @@ func checkRecordKinds(t *testing.T) {
 	}
 	want := map[string][]string{"outcome": {"outcome_body", "outcome_nonce", "spec_body"}}
 	for name, kind := range recordKinds {
-		want[name] = append([]string{kind.Body, kind.Nonce}, reasonMembers...)
+		want[name] = []string{kind.Body, kind.Nonce}
+		if kind.Event != "" {
+			want[name] = append(want[name], reasonMembers...)
+		}
 	}
 	for name := range declared.Records.Kinds {
 		got := recordMembers(name)

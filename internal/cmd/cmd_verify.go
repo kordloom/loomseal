@@ -344,11 +344,17 @@ func renderReport(w io.Writer, r *verify.Report) {
 	}
 	// A disclosed SwitchTender record, held against the digest its entry committed, and the reason it
 	// carries, held against the commitment in it. Gated on the whole verdict for the reason the
-	// disclosed line is: a positive count printed under a failure argues against the verdict.
-	if r.OK && r.DecisionRecords+r.CorrectionRecords+r.OutcomesVerified > 0 {
-		fmt.Fprintf(w, "records    %d decision(s), %d correction(s), %d outcome(s) reproduce the "+
-			"digests their entries committed\n", r.DecisionRecords, r.CorrectionRecords,
-			r.OutcomesVerified)
+	// disclosed line is: a positive count printed under a failure argues against the verdict. The
+	// release count is named only on a bundle that discloses one, so a receipt without releases
+	// reads exactly as it did before release records existed.
+	if r.OK && r.DecisionRecords+r.CorrectionRecords+r.ReleaseRecords+r.OutcomesVerified > 0 {
+		counts := fmt.Sprintf("%d decision(s), %d correction(s), ", r.DecisionRecords,
+			r.CorrectionRecords)
+		if r.ReleaseRecords > 0 {
+			counts += fmt.Sprintf("%d release(s), ", r.ReleaseRecords)
+		}
+		fmt.Fprintf(w, "records    %s%d outcome(s) reproduce the digests their entries committed\n",
+			counts, r.OutcomesVerified)
 		if line := reasonsLine(r); line != "" {
 			fmt.Fprintf(w, "reasons    %s\n", line)
 		}

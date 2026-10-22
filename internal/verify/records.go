@@ -17,7 +17,8 @@ const switchTenderClaimType = "switchtender.audit/1"
 
 // recordKind describes one record a switchtender.audit/1 claim can disclose beside the fields its
 // link commits: the payload member holding the body, the member holding the nonce its digest is
-// keyed under, and the body member naming the event a reason commitment is bound to.
+// keyed under, and the body member naming the event a reason commitment is bound to, if the record
+// commits a reason at all.
 type recordKind struct {
 	// Name is the kind's name in schema/claim-members.json, which says what claims are this kind.
 	Name string
@@ -25,7 +26,8 @@ type recordKind struct {
 	Body string
 	// Nonce is the payload member holding the hex nonce the entry's content_digest is keyed under.
 	Nonce string
-	// Event is the body member naming the event the record's reason commitment is bound to.
+	// Event is the body member naming the event the record's reason commitment is bound to. Empty
+	// means the record commits no reason, so a claim of the kind that carries one fails.
 	Event string
 	// NeedsReason reports whether the record is nothing but a reason, so a body committing none is
 	// malformed rather than merely silent.
@@ -33,13 +35,15 @@ type recordKind struct {
 }
 
 // recordKinds are the records a switchtender.audit/1 claim discloses as a JSON object: an approval
-// decision and a correction appended to a decision's reason. A run's outcome is the third kind of
-// record, carried as text and checked by checkOutcome.
+// decision, a correction appended to a decision's reason, and the release of a run's step, which
+// commits no reason. A run's outcome is the fourth kind of record, carried as text and checked by
+// checkOutcome.
 var recordKinds = map[string]recordKind{
 	"decision": {Name: "decision", Body: "decision_body", Nonce: "decision_nonce",
 		Event: "decision_id"},
 	"correction": {Name: "correction", Body: "correction_body", Nonce: "correction_nonce",
 		Event: "correction_id", NeedsReason: true},
+	"release": {Name: "release", Body: "release_body", Nonce: "release_nonce"},
 }
 
 // Digest forms a record's entry commits it under, beside the legacy unkeyed sha256: form.
@@ -60,10 +64,11 @@ var reasonMembers = []string{"reason_text", "reason_random", "reason_redacted"}
 // checkRecords verifies the records switchtender.audit/1 claims disclose beside the fields their
 // links commit. The link commits the entry's content_digest, and the digest commits the record's
 // body, so a body that does not reproduce the digest is not the record the chain holds. A decision
-// or correction body then commits a reason, which a disclosed text must open. A reason the holder
-// marked redacted is not opened and is reported as withheld, with the category the holder claims,
-// rather than failed. A verified decision and a verified outcome of one run must name the same
-// spec digest, and a disclosed spec is held against every digest a verified record names.
+// or correction body then commits a reason, which a disclosed text must open, and a release commits
+// none. A reason the holder marked redacted is not opened and is reported as withheld, with the
+// category the holder claims, rather than failed. A verified decision and a verified outcome of one
+// run must name the same spec digest, and a disclosed spec is held against every digest a verified
+// record names.
 //
 // A claim is a record by the method and path its link commits, and only its own record's members
 // are read on it. The same names on any other claim are ordinary members, reported unchecked, so a
@@ -197,16 +202,15 @@ func (r *Report) disclosedSpec(i int, payload map[string]any) (string, bool) {
 	return "sha256:" + hex.EncodeToString(sum[:]), true
 }
 
-// checkRecordClaim checks the decision or correction a record claim discloses, if any, and returns
-// the spec digest a verified decision body commits, so the disclosed spec can be held against it.
+// checkRecordClaim checks the decision, correction, or release a record claim discloses, if any,
+// and returns the spec digest a verified decision body commits, so the disclosed spec can be held
+// against it. A claim discloses its record when it carries any member its kind is read for.
 func (r *Report) checkRecordClaim(i int, kind *recordKind, payload map[string]any, keyedAt int,
 	st memberStates) (string, bool) {
-	disclosed := false
-	for _, m := range append([]string{kind.Body, kind.Nonce}, reasonMembers...) {
-		if _, ok := payload[m]; ok {
-			disclosed = true
-		}
-	}
+	disclosed := slices.ContainsFunc(recordMembers(kind.Name), func(m string) bool {
+		_, ok := payload[m]
+		return ok
+	})
 	if !disclosed {
 		return "", false
 	}
@@ -221,10 +225,13 @@ func (r *Report) checkRecordClaim(i int, kind *recordKind, payload map[string]an
 		r.problem("record: claim %d %s %s", i, kind.Body, why)
 		return "", false
 	}
-	if kind.Name == "decision" {
+	switch kind.Name {
+	case "decision":
 		r.DecisionRecords++
-	} else {
+	case "correction":
 		r.CorrectionRecords++
+	case "release":
+		r.ReleaseRecords++
 	}
 	settle := func(member string) {
 		if legacy {
@@ -312,13 +319,25 @@ func recordDigestProblem(i int, payload map[string]any, kind *recordKind, body m
 // Text and its random value must open the commitment. A redaction marker in their place is the
 // holder's statement that it withheld both, with a category nothing commits, so the commitment
 // stays unopened and the category is reported as claimed, never as established. A commitment with
-// nothing disclosed is withheld.
+// nothing disclosed is withheld. A record of a kind that commits no reason fails when its body
+// carries a reason_commitment, whatever its value, or its claim carries any reason member.
 func (r *Report) checkReason(i int, payload map[string]any, kind *recordKind, body map[string]any,
 	st memberStates) {
 	text, hasText := payload["reason_text"]
 	random, hasRandom := payload["reason_random"]
 	category, hasRedacted := payload["reason_redacted"]
 	commitValue, hasCommit := body["reason_commitment"]
+	if kind.Event == "" {
+		switch {
+		case hasCommit:
+			r.problem("record: claim %d %s carries a reason_commitment, and a %s commits no reason",
+				i, kind.Body, kind.Name)
+		case hasText || hasRandom || hasRedacted:
+			r.problem("record: claim %d discloses a reason beside its %s, and a %s commits no reason",
+				i, kind.Body, kind.Name)
+		}
+		return
+	}
 	commitment, isString := commitValue.(string)
 	if hasCommit && !isString {
 		r.problem("record: claim %d %s carries a reason_commitment that is not a string", i, kind.Body)

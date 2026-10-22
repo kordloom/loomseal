@@ -1347,8 +1347,10 @@ The verifier performs these steps in order and fails closed:
    Evidence not supplied is reported as referenced, not checked, never as verified.
 7. For each `switchtender.audit/1` claim whose committed method and path make it a record: check
    the members its record is read for as "Disclosed records in switchtender.audit/1" states. A
-   reason the holder marked redacted is reported as withheld, with the category the holder claims
-   and nothing commits, and never fails. An outcome under an older digest form is reported as
+   decision, correction, or release body is held to its entry's `content_digest`, and a release
+   claim that discloses its record fails when it also discloses a reason, since a release commits
+   none. A reason the holder marked redacted is reported as withheld, with the category the holder
+   claims and nothing commits, and never fails. An outcome under an older digest form is reported as
    carried and unchecked, and a body under the legacy unkeyed form is listed as legacy. A verified
    decision and a verified outcome of one run must name the same spec digest, whether or not a
    spec is disclosed. Under `switchtender-audit-v1`, report every disclosed member in its state,
@@ -1431,6 +1433,8 @@ it only to the claims that are records.
 | `decision_nonce`   | string | The nonce the decision entry's `content_digest` is keyed under   |
 | `correction_body`  | object | A correction appended to a decision's reason                     |
 | `correction_nonce` | string | The nonce the correction entry's `content_digest` is keyed under |
+| `release_body`     | object | The release of one of a run's steps the entry committed          |
+| `release_nonce`    | string | The nonce the release entry's `content_digest` is keyed under    |
 | `reason_text`      | string | The reason a decision or correction body commits                 |
 | `reason_random`    | string | The 32 random bytes that hide the reason, as hex                 |
 | `reason_redacted`  | string | The category a holder claims for a withheld reason, uncommitted  |
@@ -1446,15 +1450,17 @@ what the chain committed:
 |--------------|------------|-------------------------------------------------------------|
 | decision     | `DECISION` | any                                                         |
 | correction   | `REASON`   | `/runs/{run}/decisions/{decision}/corrections/{correction}` |
+| release      | `RELEASE`  | `/runs/{run}/steps/{step}/release`                          |
 | outcome      | `RUN`      | `/runs/{run}/outcome/{status}`                              |
 
 A path matches segment by segment, and a `{name}` segment matches any non-empty segment. A decision
 claim is read for `decision_body`, `decision_nonce`, and the three reason members, a correction
-claim for `correction_body`, `correction_nonce`, and the three reason members, and an outcome claim
-for `outcome_body`, `outcome_nonce`, and `spec_body`. `schema/claim-members.json` states the same
-kinds and members. On any other claim, of this type or another, the same names are ordinary members:
-nothing reads them, nothing fails over them, and under `switchtender-audit-v1` they are reported
-unchecked. A bundle that carried one as a plain field before records existed verifies as it did.
+claim for `correction_body`, `correction_nonce`, and the three reason members, a release claim for
+`release_body` and `release_nonce`, and an outcome claim for `outcome_body`, `outcome_nonce`, and
+`spec_body`. `schema/claim-members.json` states the same kinds and members. On any other claim, of
+this type or another, the same names are ordinary members: nothing reads them, nothing fails over
+them, and under `switchtender-audit-v1` they are reported unchecked. A bundle that carried one as a
+plain field before records existed verifies as it did.
 
 **Names.** Member names are compared exactly. A record claim carrying a member whose name differs
 from one its record is read for only in case fails, whether or not the member itself is present. A
@@ -1465,11 +1471,11 @@ U+212A KELVIN SIGN by `k`, and U+017F LATIN SMALL LETTER LONG S by `s`. Every na
 declares is lowercase ASCII letters, digits, and underscores, and for such names the rule is
 exactly Unicode simple case folding.
 
-**Record digest.** A decision or correction claim discloses its record as the body member beside
-the nonce member. Once it carries either, or any reason member, the body must be a JSON object and
-the claim must carry a non-empty `content_digest`. Let B be the RFC 8785 canonical bytes of the
-body object and N the nonce member, the empty string when it is absent. The digest takes one of two
-forms:
+**Record digest.** A decision, correction, or release claim discloses its record as the body member
+beside the nonce member. Once it carries either, or a decision or correction claim carries any
+reason member, the body must be a JSON object and the claim must carry a non-empty `content_digest`.
+Let B be the RFC 8785 canonical bytes of the body object and N the nonce member, the empty string
+when it is absent. The digest takes one of two forms:
 
 - `sha256s:` and two 64 lowercase hex digests separated by a colon, the keyed form. N must be 64
   lowercase hex digits, decoding to 32 bytes K. The first digest must equal the hex SHA-256 of K,
@@ -1482,11 +1488,12 @@ forms:
   a body confirms it against an unkeyed digest, so a verifier lists every body it accepts under
   this form as legacy.
 
-A digest in any other form, or a body that does not reproduce it, fails the claim. A producer
-discloses each body as the exact object its digest was taken over, so a producer that reduces a
-body before digesting it, by redaction or any other step, discloses the reduced object. A nonce
-keys only its own entry, so a holder of one disclosed record confirms that record and learns
-nothing about the body of any other entry.
+A digest in any other form, or a body that does not reproduce it, fails the claim. A release body is
+held to its digest and to nothing else: a verifier reads no member inside it, so a release names no
+spec digest the rules under Spec compare. A producer discloses each body as the exact object its
+digest was taken over, so a producer that reduces a body before digesting it, by redaction or any
+other step, discloses the reduced object. A nonce keys only its own entry, so a holder of one
+disclosed record confirms that record and learns nothing about the body of any other entry.
 
 **Reason.** A verified body commits a reason when its `reason_commitment` member is a non-empty
 string. A correction exists to state a reason, so a correction body must commit one. The
@@ -1508,7 +1515,9 @@ string. The reason then travels in exactly one of three states:
   and not disclosed.
 
 Any other combination fails the claim: a random value with no text, text beside a redaction, or a
-reason member on a decision or correction claim whose body commits no reason. A verifier
+reason member on a decision or correction claim whose body commits no reason. A release commits no
+reason, so a release claim that discloses its record fails when it carries any of the three reason
+members, or when its body carries a `reason_commitment` member, whatever its value. A verifier
 reports how many reasons it opened and never echoes their text, for the reason it never echoes a
 revealed field's value.
 
@@ -1560,17 +1569,17 @@ spec is a further value every committed digest must equal, never the trigger for
 so omitting the optional `spec_body` cannot hide an approval of one spec beside an execution of
 another.
 
-**Compatibility.** These checks refuse only what a producer conforming to this section never
-emits: a record that does not reproduce its digest, a reason that does not open its commitment, a
-spec that a verified decision or outcome does not name, a verified decision and a verified outcome
-of one run that name different spec digests, an unkeyed digest after the keyed form began, or a
-record claim carrying a name that differs from one of its members only in case. A producer that
-can no longer rebuild a record matching its digest withholds the record, or discloses it knowing
-the bundle will fail, which is how a record altered at its source becomes visible. Each refusal is
-pinned by a must-not-verify vector. The same names on a claim that is no record are pinned by
-must-verify vectors, under `switchtender-audit-v1` and under a profile that commits the whole
-claim, so a bundle that used them before records existed keeps its verdict. A bundle carrying the
-records of two runs with different specs is pinned by a must-verify vector too.
+**Compatibility.** These checks refuse only what a producer conforming to this section never emits:
+a record that does not reproduce its digest, a reason that does not open its commitment, a spec that
+a verified decision or outcome does not name, a verified decision and a verified outcome of one run
+that name different spec digests, an unkeyed digest after the keyed form began, a reason disclosed
+beside a release, or a record claim carrying a name that differs from one of its members only in
+case. A producer that can no longer rebuild a record matching its digest withholds the record, or
+discloses it knowing the bundle will fail, which is how a record altered at its source becomes
+visible. Each refusal is pinned by a must-not-verify vector. The same names on a claim that is no
+record are pinned by must-verify vectors, under `switchtender-audit-v1` and under a profile that
+commits the whole claim, so a bundle that used them before records existed keeps its verdict. A
+bundle carrying the records of two runs with different specs is pinned by a must-verify vector too.
 
 ### Disclosed members and the three states
 
@@ -1648,13 +1657,13 @@ Before the first anchor, and after the newest one, the operator's key is the onl
 record rests on, which is why the report states the unanchored window.
 
 A verified bundle that discloses `switchtender.audit/1` records also proves that each disclosed
-decision, correction, and exact-form outcome is the record its entry committed, that each opened
-reason is the text the record committed when it was made, that a verified decision and a verified
-outcome of one run name the same spec digest, and that a disclosed spec is the one every verified
-decision and outcome named. It does not prove a reason is true, nor that a reason the holder
-marked redacted was withheld for the category the holder claims, since nothing commits the marker
-or the category, and it proves nothing about an outcome committed under an older digest form, which
-travels unchecked. A body under the legacy unkeyed form proves the same as any other, and its
+decision, correction, release, and exact-form outcome is the record its entry committed, that each
+opened reason is the text the record committed when it was made, that a verified decision and a
+verified outcome of one run name the same spec digest, and that a disclosed spec is the one every
+verified decision and outcome named. It does not prove a reason is true, nor that a reason the
+holder marked redacted was withheld for the category the holder claims, since nothing commits the
+marker or the category, and it proves nothing about an outcome committed under an older digest form,
+which travels unchecked. A body under the legacy unkeyed form proves the same as any other, and its
 digest also lets anyone who holds the bundle confirm a guess of the body, which is why a verifier
 lists it as legacy.
 

@@ -1263,7 +1263,8 @@ def _verify(raw_bytes, evidence_dir):
               "revealed_fields": [], "attestations_present": False, "attestations_verified": 0,
               "head_attestations_verified": 0, "head_attestors": [],
               "attestors": [], "install_binding": "", "records_present": False,
-              "decision_records": 0, "correction_records": 0, "reasons_verified": 0,
+              "decision_records": 0, "correction_records": 0, "release_records": 0,
+              "reasons_verified": 0,
               "reasons_redacted": [], "reasons_withheld": 0, "specs_matched": 0,
               "specs_unchecked": 0, "outcomes_verified": 0, "outcomes_unchecked": 0,
               "legacy_records": [], "disclosed": [], "disclosed_unchecked": 0, "_states": {}}
@@ -2113,10 +2114,12 @@ def _check_disclosures(b, report):
 # _RECORD_KINDS are the records a switchtender.audit/1 claim discloses as a JSON object, by the kind
 # name schema/claim-members.json gives them: (body member, nonce member, event member, needs a
 # reason). A correction is nothing but a reason, so a correction body committing none is
-# malformed. The outcome is the third kind, carried as text and checked by _check_outcome.
+# malformed. A release names no event because it commits no reason, so a release claim carrying
+# one fails. The outcome is the fourth kind, carried as text and checked by _check_outcome.
 _RECORD_KINDS = {
     "decision": ("decision_body", "decision_nonce", "decision_id", False),
     "correction": ("correction_body", "correction_nonce", "correction_id", True),
+    "release": ("release_body", "release_nonce", "", False),
 }
 
 # _KEYED_PREFIX opens the digest form that commits a record's canonical bytes under a nonce.
@@ -2300,12 +2303,13 @@ def _check_records(b, report):
 
     The link commits the entry's content_digest and the digest commits the record's body, so a body
     that does not reproduce the digest is not the record the chain holds. A decision or correction
-    body commits a reason, which disclosed text must open. A reason the holder marked redacted is
-    not opened and is reported as withheld, with the category the holder claims, rather than
-    failed. A verified decision and a verified outcome of one run must name the same spec digest,
-    and a disclosed spec is held against every digest a verified record names. A claim is a record
-    by its committed method and path, and only its own record's members are read on it: the same
-    names elsewhere are ordinary members, reported unchecked. Mirrors the Go checkRecords."""
+    body commits a reason, which disclosed text must open, and a release commits none. A reason the
+    holder marked redacted is not opened and is reported as withheld, with the category the holder
+    claims, rather than failed. A verified decision and a verified outcome of one run must name the
+    same spec digest, and a disclosed spec is held against every digest a verified record names. A
+    claim is a record by its committed method and path, and only its own record's members are read
+    on it: the same names elsewhere are ordinary members, reported unchecked. Mirrors the Go
+    checkRecords."""
     keyed_at = _first_keyed(b)
     specs, committed = [], []
     for i, c in enumerate(b["claims"]):
@@ -2339,10 +2343,11 @@ def _check_records(b, report):
 
 
 def _check_record_claim(i, kind, payload, keyed_at, report):
-    """Check the decision or correction a record claim discloses, if any, and return the spec digest
-    a verified decision body commits, or None."""
+    """Check the decision, correction, or release a record claim discloses, if any, and return the
+    spec digest a verified decision body commits, or None. A claim discloses its record when it
+    carries any member its kind is read for."""
     body_member, nonce_member, event_member, needs_reason = _RECORD_KINDS[kind]
-    if not any(m in payload for m in (body_member, nonce_member) + _REASON_MEMBERS):
+    if not any(m in payload for m in _record_members(kind)):
         return None
     report["records_present"] = True
     body = payload.get(body_member)
@@ -2351,7 +2356,9 @@ def _check_record_claim(i, kind, payload, keyed_at, report):
     legacy, why = _record_digest_problem(i, payload, nonce_member, body, keyed_at)
     if why:
         raise VError("record", f"claim {i} {body_member} {why}")
-    report["decision_records" if kind == "decision" else "correction_records"] += 1
+    # Each kind is counted under its own name: decision_records, correction_records, and
+    # release_records.
+    report[kind + "_records"] += 1
     if legacy:
         report["legacy_records"].append(f"claim {i} {body_member}")
     for member in (body_member, nonce_member):
@@ -2361,7 +2368,7 @@ def _check_record_claim(i, kind, payload, keyed_at, report):
             _settle(report, i, member, "checked", DECLARATION["records"]["legacy"])
         else:
             _settle_declared(report, i, "switchtender.audit/1", member)
-    _check_reason(i, payload, body_member, event_member, needs_reason, body, report)
+    _check_reason(i, kind, payload, body_member, event_member, needs_reason, body, report)
     if kind != "decision":
         return None
     spec = body.get("spec_digest")
@@ -2406,14 +2413,23 @@ def _record_digest_problem(i, payload, nonce_member, body, keyed_at):
     return False, "sits on a content_digest in neither the sha256s: nor the sha256: form"
 
 
-def _check_reason(i, payload, body_member, event_member, needs_reason, body, report):
+def _check_reason(i, kind, payload, body_member, event_member, needs_reason, body, report):
     """Check the reason a verified record body commits against what the claim discloses. Text and
     its random value must open the commitment. A redaction marker in their place is the holder's
     statement that it withheld both, with a category nothing commits, so the commitment stays
     unopened and the category is reported as claimed, never as established. A commitment with
-    nothing disclosed is withheld."""
+    nothing disclosed is withheld. A record of a kind that commits no reason fails when its body
+    carries a reason_commitment, whatever its value, or its claim carries any reason member."""
     has_text, has_random = "reason_text" in payload, "reason_random" in payload
     has_redacted = "reason_redacted" in payload
+    if not event_member:
+        if "reason_commitment" in body:
+            raise VError("record", f"claim {i} {body_member} carries a reason_commitment, and a "
+                                   f"{kind} commits no reason")
+        if has_text or has_random or has_redacted:
+            raise VError("record", f"claim {i} discloses a reason beside its {body_member}, and a "
+                                   f"{kind} commits no reason")
+        return
     commitment = body.get("reason_commitment", "")
     if not isinstance(commitment, str):
         raise VError("record", f"claim {i} {body_member} carries a reason_commitment that is not a "

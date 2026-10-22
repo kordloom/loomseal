@@ -5,6 +5,7 @@
     "kinds": {
       "decision": {"method": "DECISION"},
       "correction": {"method": "REASON", "path": "/runs/{run}/decisions/{decision}/corrections/{correction}"},
+      "release": {"method": "RELEASE", "path": "/runs/{run}/steps/{step}/release"},
       "outcome": {"method": "RUN", "path": "/runs/{run}/outcome/{status}"}
     },
     "elsewhere": "the claim is not a record that carries it, so nothing commits it",
@@ -22,6 +23,8 @@
       "decision_nonce": {"state": "checked", "by": "the entry's content_digest", "with": "decision_body", "records": ["decision"]},
       "correction_body": {"state": "checked", "by": "the entry's content_digest", "records": ["correction"]},
       "correction_nonce": {"state": "checked", "by": "the entry's content_digest", "with": "correction_body", "records": ["correction"]},
+      "release_body": {"state": "checked", "by": "the entry's content_digest", "records": ["release"]},
+      "release_nonce": {"state": "checked", "by": "the entry's content_digest", "with": "release_body", "records": ["release"]},
       "reason_text": {"state": "checked", "by": "the reason_commitment its record body carries", "records": ["decision", "correction"]},
       "reason_random": {"state": "checked", "by": "the reason_commitment its record body carries", "with": "reason_text", "records": ["decision", "correction"]},
       "reason_redacted": {"state": "redacted", "by": "the holder withheld the reason and claims this category, which nothing commits, and the commitment stays unopened", "records": ["decision", "correction"]},

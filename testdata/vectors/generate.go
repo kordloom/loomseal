@@ -5859,12 +5859,16 @@ const recordSpec = `{"command":"deploy","tool":"bash"}`
 // recomputes a different commitment and fails an honest receipt.
 const recordReason = "approved after the change review & the on-call <sign-off>"
 
+// recordStepSpec is the spec of the run's step a release names. A step's spec is not the run's, so
+// a release names a digest the run's decision and outcome never do.
+const recordStepSpec = `{"command":"migrate","step":"schema","tool":"bash"}`
+
 // records emits the vectors for the records a switchtender.audit/1 claim discloses beside the
-// fields its link commits: approval decisions, corrections to a decision's reason, the reasons
-// they commit, the run's outcome, and the run's spec. Every altered vector is re-signed with the
-// producer's own key, which is the threat the record check exists for: the signature holds and
-// every link recomputes, because no disclosed member is part of the link, and only the commitments
-// catch the edit.
+// fields its link commits: approval decisions, corrections to a decision's reason, the reasons they
+// commit, the releases of the run's steps, the run's outcome, and the run's spec. Every altered
+// vector is re-signed with the producer's own key, which is the threat the record check exists for:
+// the signature holds and every link recomputes, because no disclosed member is part of the link,
+// and only the commitments catch the edit.
 func (s *state) records() {
 	s.add("switchtender-record-reason", true, "signed, chained (full)", "",
 		"A decision body that reproduces its entry's keyed content digest, a reason that opens the "+
@@ -6012,6 +6016,27 @@ func (s *state) records() {
 		s.sign(s.recordReceipt(recordDisclosure{Reason: "text", NoSpec: true,
 			OutcomeSpec: specDigestOf(`{"command":"deploy --force --prod","tool":"bash"}`)})))
 
+	s.add("switchtender-record-release", true, "signed, chained (full)", "",
+		"A release of one of the run's steps reproduces its entry's keyed content digest and "+
+			"verifies beside the decision that released it, and the step's own spec digest in its "+
+			"body is held to no other record, since a release commits nothing a verifier reads.",
+		s.sign(s.recordReceipt(recordDisclosure{Reason: "text", Release: true})))
+
+	m = s.recordReceipt(recordDisclosure{Reason: "text", Release: true})
+	recordPayload(m, 2)["release_body"].(map[string]any)["spec_digest"] =
+		specDigestOf(`{"command":"migrate --force","step":"schema","tool":"bash"}`)
+	s.add("switchtender-record-release-altered", false, "", "record",
+		"A receipt whose disclosed release body was changed and re-signed fails, because the body "+
+			"no longer reproduces the content digest its entry committed and the link fixed.",
+		s.sign(m))
+
+	m = s.recordReceipt(recordDisclosure{Reason: "text", Release: true})
+	recordPayload(m, 2)["reason_text"] = "released after the change review"
+	s.add("switchtender-record-release-reason", false, "", "record",
+		"A reason disclosed beside a release body fails: a release commits no reason, so the text "+
+			"is nothing the chain fixed, and a reader must not be shown it as the release's reason.",
+		s.sign(m))
+
 	run := recordPayloads(recordDisclosure{Reason: "text", NoSpec: true})
 	run = append(run[:2:2], append(recordOtherRunPayloads(), run[2])...)
 	m = s.switchTenderChainOf(run)
@@ -6048,6 +6073,9 @@ type recordDisclosure struct {
 	// OutcomeTexts, when set, are the bytes of one outcome record each, in place of the single
 	// succeeded record, each committed under the exact form in its own entry.
 	OutcomeTexts []string
+	// Release adds an entry releasing one of the run's steps, after the decision that released it
+	// and before the outcome, with its body keyed under its own nonce.
+	Release bool
 }
 
 // recordReceipt builds a SwitchTender run receipt on switchtender-audit-v1 from the payloads
@@ -6059,7 +6087,8 @@ func (s *state) recordReceipt(d recordDisclosure) map[string]any {
 
 // recordPayloads shapes the claim payloads of a SwitchTender run receipt, in chain order: the
 // request that created the run, the approval decision unless the run needed none, an optional
-// correction to its reason, and the outcome, which carries the spec and the outcome record.
+// correction to its reason, an optional release of one of the run's steps, and the outcome, which
+// carries the spec and the outcome record.
 func recordPayloads(d recordDisclosure) []map[string]any {
 	specDigest := specDigestOf(recordSpec)
 
@@ -6121,6 +6150,10 @@ func recordPayloads(d recordDisclosure) []map[string]any {
 		})
 	}
 
+	if d.Release {
+		payloads = append(payloads, recordReleasePayload(decisionPayload, !d.NoDecision))
+	}
+
 	outcomeSpec := d.OutcomeSpec
 	if outcomeSpec == "" {
 		outcomeSpec = specDigest
@@ -6151,6 +6184,31 @@ func recordPayloads(d recordDisclosure) []map[string]any {
 		payloads = append(payloads, outcomePayload)
 	}
 	return payloads
+}
+
+// recordReleasePayload shapes the release of one of the run's steps: a body naming the step, its
+// position and attempt, the decision that released it by id and by the content digest its entry
+// committed, sorted by id, and digests of the step's spec and inputs, committed under the keyed
+// form and committing no reason. A release with no decision beside it names no roots.
+func recordReleasePayload(decisionPayload map[string]any, decided bool) map[string]any {
+	roots := []any{}
+	if decided {
+		roots = append(roots, map[string]any{
+			"id": "aud_decision", "content_digest": decisionPayload["content_digest"],
+		})
+	}
+	release := map[string]any{
+		"run_id": recordRun, "step_run_id": "run_step", "step": "schema", "index": int64(1),
+		"attempt": int64(0), "roots": roots, "spec_digest": specDigestOf(recordStepSpec),
+		"inputs_digest": specDigestOf("{}"),
+	}
+	nonce := recordBytes("nonce release")
+	return map[string]any{
+		"actor": "system:dispatcher", "actor_type": "system", "on_behalf_of": "deploy-bot",
+		"method": "RELEASE", "path": "/runs/" + recordRun + "/steps/run_step/release",
+		"content_digest": keyedRecordDigest(nonce, release),
+		"release_body":   release, "release_nonce": hex.EncodeToString(nonce),
+	}
 }
 
 // recordOtherRun is a second run whose records share a bundle with recordRun's.
@@ -6439,6 +6497,9 @@ func (s *state) tampers() {
 			{build: func() map[string]any {
 				return s.recordReceipt(recordDisclosure{NoDecision: true, LegacyOutcome: true})
 			}, older: true},
+			{build: func() map[string]any {
+				return s.recordReceipt(recordDisclosure{Reason: "text", Release: true})
+			}},
 		},
 		"loomseal.span/1":         {{build: s.switchTenderSpans}},
 		"loomseal.agentrun/1":     {{build: s.typedBuilder("loomseal.agentrun/1")}},

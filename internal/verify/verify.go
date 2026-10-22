@@ -225,7 +225,7 @@ type Report struct {
 	// decide whether the vouching party is worth trusting.
 	Attestors []string `json:"attestors,omitempty"`
 	// RecordsPresent reports whether any switchtender.audit/1 claim discloses a decision, correction,
-	// or outcome record beside the fields its link commits.
+	// release, or outcome record beside the fields its link commits.
 	RecordsPresent bool `json:"records_present,omitempty"`
 	// DecisionRecords is how many disclosed decision bodies reproduced the content digest their
 	// entry committed.
@@ -233,10 +233,13 @@ type Report struct {
 	// CorrectionRecords is how many disclosed correction bodies reproduced the content digest their
 	// entry committed.
 	CorrectionRecords int `json:"correction_records,omitempty"`
-	// LegacyRecords lists, as "claim N member", each verified decision or correction body its entry
-	// committed under the legacy unkeyed digest form, from before nonces. Anyone who can guess such a
-	// body can confirm it against the digest, so the form is accepted only on an entry that comes
-	// before the bundle's first keyed one, and every body accepted under it is named here.
+	// ReleaseRecords is how many disclosed release bodies reproduced the content digest their entry
+	// committed.
+	ReleaseRecords int `json:"release_records,omitempty"`
+	// LegacyRecords lists, as "claim N member", each verified decision, correction, or release body
+	// its entry committed under the legacy unkeyed digest form, from before nonces. Anyone who can
+	// guess such a body can confirm it against the digest, so the form is accepted only on an entry
+	// that comes before the bundle's first keyed one, and every body accepted under it is named here.
 	LegacyRecords []string `json:"legacy_records,omitempty"`
 	// ReasonsVerified is how many disclosed reasons opened the commitment their record carries. The
 	// text is not echoed here, for the reason a revealed field's value is not: the report says what
